@@ -1,0 +1,52 @@
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BASE_DIR / ".env"
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    PROJECT_NAME: str = "Credit Loan Platform API"
+    API_V1_STR: str = "/api"
+    
+    # 数据库配置
+    MYSQL_USER: str = "jhl"
+    MYSQL_PASSWORD: str = "cnptj*#SGYN^y5Fa"
+    MYSQL_HOST: str = "localhost"
+    MYSQL_PORT: str = "3306"
+    MYSQL_DATABASE: str = "credit_loan_db"
+    
+    @property
+    def SQLALCHEMY_DATABASE_URI(self) -> str:
+        return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+        
+    # JWT 认证配置
+    SECRET_KEY: str = "b47c8f6154b2d3550af3b9187a4128ef"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
+
+    # Panorama 风控配置
+    RISK_REPORT_CACHE_DAYS: int = 30
+    RISK_PANORAMA_ENABLED: bool = True
+    RISK_PANORAMA_API_URL: str = ""
+    RISK_PANORAMA_MERCHANT_NO: str = ""
+    RISK_PANORAMA_ACCESS_KEY: str = ""
+    RISK_PANORAMA_SECRET_KEY: str = ""
+
+    # e签宝身份核验配置
+    ESIGN_IDENTITY_ENABLED: bool = False
+    ESIGN_APP_ID: str = ""
+    ESIGN_APP_SECRET: str = ""
+    ESIGN_OPENAPI_BASE_URL: str = "https://openapi.esign.cn"
+    ESIGN_HTTP_TIMEOUT_SECONDS: int = 15
+    ESIGN_FACE_CONFIDENCE_THRESHOLD: float = 70.0
+
+settings = Settings()
