@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+
+    @property
+    def SQLALCHEMY_ASYNC_DATABASE_URI(self) -> str:
+        return f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
         
     # JWT 认证配置
     SECRET_KEY: str = "b47c8f6154b2d3550af3b9187a4128ef"
@@ -48,5 +52,9 @@ class Settings(BaseSettings):
     ESIGN_OPENAPI_BASE_URL: str = "https://openapi.esign.cn"
     ESIGN_HTTP_TIMEOUT_SECONDS: int = 15
     ESIGN_FACE_CONFIDENCE_THRESHOLD: float = 70.0
+
+    LOG_DIR: str = "logs"
+    LOG_FILE_NAME: str = "backend.log"
+    LOG_LEVEL: str = "INFO"
 
 settings = Settings()

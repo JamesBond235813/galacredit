@@ -1,25 +1,26 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy.orm import Session
 from datetime import datetime
+from sqlalchemy import select
 
-from app.core.database import SessionLocal
+from app.core.database import AsyncSessionLocal
 from app.models.loan import Loan
-from app.services.audit import log_user_event
-from app.services.loan_assignment import assign_collection_admins_for_overdue_loans
-from app.services.loan_ledger import ensure_installment_records, sync_loan_repayment_state
+from app.services.audit import log_user_event_async
+from app.services.loan_assignment import assign_collection_admins_for_overdue_loans_async
+from app.services.loan_ledger import ensure_installment_records_async, sync_loan_repayment_state
 
 scheduler = AsyncIOScheduler()
 
 
-def process_overdue_loans():
-    db: Session = SessionLocal()
-    try:
+async def process_overdue_loans():
+    async with AsyncSessionLocal() as db:
         now = datetime.utcnow()
-        active_loans = db.query(Loan).filter(Loan.status.in_(["DISBURSED", "OVERDUE"])).all()
+        active_loans = (
+            await db.execute(select(Loan).where(Loan.status.in_(["DISBURSED", "OVERDUE"])))
+        ).scalars().all()
 
         for loan in active_loans:
             previous_status = loan.status
-            ensure_installment_records(db, loan)
+            await ensure_installment_records_async(db, loan)
             sync_loan_repayment_state(loan, now=now)
 
             overdue_base_date = loan.due_date
@@ -33,7 +34,7 @@ def process_overdue_loans():
                     overdue_base_date = min(overdue_candidates)
 
             if previous_status != "OVERDUE" and loan.status == "OVERDUE" and loan.owner:
-                log_user_event(
+                await log_user_event_async(
                     db,
                     user=loan.owner,
                     loan=loan,
@@ -49,11 +50,9 @@ def process_overdue_loans():
             days_overdue = max((now.date() - overdue_base_date.date()).days, 1)
             loan.penalty_amount = float(days_overdue * 10)
 
-        assign_collection_admins_for_overdue_loans(db, now=now)
+        await assign_collection_admins_for_overdue_loans_async(db, now=now)
 
-        db.commit()
-    finally:
-        db.close()
+        await db.commit()
 
 
 def start_scheduler():

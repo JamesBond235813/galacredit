@@ -6,12 +6,13 @@ import xlrd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_admin_async
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_async_db
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.admin import Admin
 from app.models.channel import Channel
@@ -58,7 +59,7 @@ from app.schemas.loan import (
 )
 from app.schemas.risk import AdminRiskReportRequest, RiskReportResponse
 from app.schemas.user import PaginatedUserResponse, Token, UserDetailResponse
-from app.services.audit import log_user_event
+from app.services.audit import log_user_event_async
 from app.services.admin_permissions import (
     ALL_ADMIN_PERMISSION_KEYS,
     admin_has_permission,
@@ -72,6 +73,7 @@ from app.services.admin_permissions import (
 from app.services.channel_service import (
     build_channel_metrics,
     build_channel_summary,
+    get_channel_by_name_async,
     normalize_channel_name,
     normalize_channel_status,
 )
@@ -85,16 +87,16 @@ from app.services.loan_amounts import (
     sync_loan_fee_fields,
 )
 from app.services.loan_ledger import (
-    create_disbursement_transaction,
-    ensure_installment_records,
+    create_disbursement_transaction_async,
+    ensure_installment_records_async,
     get_loan_ledger_snapshot,
-    register_reduction,
-    register_repayment,
+    register_reduction_async,
+    register_repayment_async,
     serialize_transaction,
     sync_loan_repayment_state,
 )
 from app.services.loan_flow import (
-    get_latest_loan,
+    get_latest_loan_async,
     get_latest_normal_settled_loan,
     get_relend_count,
     get_relend_label,
@@ -102,19 +104,20 @@ from app.services.loan_flow import (
 from app.services.loan_assignment import (
     COLLECTION_TRANSFER_OVERDUE_DAYS,
     admin_has_role,
-    assign_collection_admin_if_needed,
-    assign_collection_admins_for_overdue_loans,
-    assign_review_admin_if_needed,
+    assign_collection_admin_if_needed_async,
+    assign_collection_admins_for_overdue_loans_async,
+    assign_review_admin_if_needed_async,
     is_collection_stage,
-    list_admins_by_role,
+    list_admins_by_role_async,
 )
 from app.services.risk_report import (
-    get_or_create_risk_report,
-    get_user_for_risk_report,
+    get_or_create_risk_report_async,
+    get_user_for_risk_report_async,
     serialize_risk_report,
 )
 
 router = APIRouter()
+
 
 LOAN_STATUSES = {
     "INIT",
@@ -478,6 +481,42 @@ def apply_loan_scope(query, scope: Optional[str]):
     return query
 
 
+def build_loan_scope_filters(scope: Optional[str]):
+    overdue_days_expr = func.datediff(func.current_date(), func.date(Loan.due_date))
+    today_start, tomorrow = get_today_range()
+
+    if scope == "REVIEWING":
+        return [Loan.status.in_(["REVIEWING", "APPROVED", "REJECTED"])]
+    if scope == "WITHDRAWING":
+        return [Loan.status == "WITHDRAWING"]
+    if scope == "FINANCE":
+        return [Loan.status.in_(["DISBURSED", "OVERDUE"])]
+    if scope == "DUE_TODAY":
+        return [
+            Loan.status.in_(["DISBURSED", "OVERDUE"]),
+            Loan.due_date >= today_start,
+            Loan.due_date < tomorrow,
+        ]
+    if scope == "OVERDUE":
+        return [
+            Loan.status == "OVERDUE",
+            Loan.due_date.isnot(None),
+            overdue_days_expr > COLLECTION_TRANSFER_OVERDUE_DAYS,
+        ]
+    if scope == "REPAYMENTS":
+        return [
+            or_(
+                Loan.status.in_(["DISBURSED", "SETTLED"]),
+                (
+                    (Loan.status == "OVERDUE")
+                    & Loan.due_date.isnot(None)
+                    & (overdue_days_expr <= COLLECTION_TRANSFER_OVERDUE_DAYS)
+                ),
+            )
+        ]
+    return []
+
+
 def get_overdue_days_expr():
     return func.greatest(func.datediff(func.current_date(), func.date(Loan.due_date)), 1)
 
@@ -491,7 +530,7 @@ def round_cash_amount(value: Optional[float]) -> float:
     return round(float(value or 0), 2)
 
 
-def build_project_cash_insights(db: Session, loans, today_start: datetime, tomorrow: datetime):
+async def build_project_cash_insights(db: AsyncSession, loans, today_start: datetime, tomorrow: datetime):
     ordered_statuses = {"WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"}
     issued_statuses = {"DISBURSED", "OVERDUE", "SETTLED"}
 
@@ -500,36 +539,33 @@ def build_project_cash_insights(db: Session, loans, today_start: datetime, tomor
     overdue_loans = [loan for loan in issued_loans if loan.status == "OVERDUE"]
     normal_outstanding_loans = [loan for loan in issued_loans if loan.status == "DISBURSED"]
 
-    total_users = db.query(func.count(User.id)).scalar() or 0
+    total_users = (await db.scalar(select(func.count(User.id)))) or 0
     today_new_users = (
-        db.query(func.count(User.id))
-        .filter(User.created_at >= today_start, User.created_at < tomorrow)
-        .scalar()
-        or 0
-    )
+        await db.scalar(
+            select(func.count(User.id)).where(User.created_at >= today_start, User.created_at < tomorrow)
+        )
+    ) or 0
 
     today_order_count = (
-        db.query(func.count(func.distinct(UserEvent.loan_id)))
-        .filter(
-            UserEvent.event_type == "ORDER_SUBMIT",
-            UserEvent.loan_id.isnot(None),
-            UserEvent.created_at >= today_start,
-            UserEvent.created_at < tomorrow,
+        await db.scalar(
+            select(func.count(func.distinct(UserEvent.loan_id))).where(
+                UserEvent.event_type == "ORDER_SUBMIT",
+                UserEvent.loan_id.isnot(None),
+                UserEvent.created_at >= today_start,
+                UserEvent.created_at < tomorrow,
+            )
         )
-        .scalar()
-        or 0
-    )
+    ) or 0
 
     today_received_amount = (
-        db.query(func.coalesce(func.sum(LoanTransaction.amount), 0))
-        .filter(
-            LoanTransaction.transaction_type.in_(["REPAYMENT", "SETTLEMENT"]),
-            LoanTransaction.created_at >= today_start,
-            LoanTransaction.created_at < tomorrow,
+        await db.scalar(
+            select(func.coalesce(func.sum(LoanTransaction.amount), 0)).where(
+                LoanTransaction.transaction_type.in_(["REPAYMENT", "SETTLEMENT"]),
+                LoanTransaction.created_at >= today_start,
+                LoanTransaction.created_at < tomorrow,
+            )
         )
-        .scalar()
-        or 0
-    )
+    ) or 0
 
     today_issued_loans = [
         loan
@@ -667,25 +703,24 @@ def build_project_cash_insights(db: Session, loans, today_start: datetime, tomor
 
 
 @router.post("/login", response_model=Token)
-def login(req: AdminLogin, db: Session = Depends(get_db)):
-    admin = db.query(Admin).filter(Admin.username == req.username).first()
+async def login(req: AdminLogin, db: AsyncSession = Depends(get_async_db)):
+    admin = (await db.execute(select(Admin).where(Admin.username == req.username))).scalar_one_or_none()
     if not admin or not verify_password(req.password, admin.password_hash):
         raise HTTPException(status_code=400, detail="用户名或密码错误")
-
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(subject=admin.username, expires_delta=access_token_expires)
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.get("/me", response_model=AdminResponse)
-def get_me(current_admin: Admin = Depends(get_current_admin)):
+async def get_me(current_admin: Admin = Depends(get_current_admin_async)):
     return serialize_admin_user(current_admin)
 
 
 @router.get("/stats", response_model=AdminStatsResponse)
-def get_stats(
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+async def get_stats(
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
     ensure_any_admin_page_permission(current_admin, ADMIN_STATS_PERMISSION_KEYS)
     today_start, tomorrow = get_today_range()
@@ -695,70 +730,89 @@ def get_stats(
 
     review_track_statuses = ["REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]
     unassigned_review_loans = (
-        db.query(Loan)
-        .filter(Loan.status.in_(review_track_statuses), Loan.review_admin_id.is_(None))
-        .all()
-    )
+        await db.execute(select(Loan).where(Loan.status.in_(review_track_statuses), Loan.review_admin_id.is_(None)))
+    ).scalars().all()
     for item in unassigned_review_loans:
-        assign_review_admin_if_needed(db, item)
-    assign_collection_admins_for_overdue_loans(db)
-    db.flush()
+        await assign_review_admin_if_needed_async(db, item)
+    await assign_collection_admins_for_overdue_loans_async(db)
+    await db.flush()
 
-    total_users = db.query(func.count(User.id)).scalar() or 0
-    today_new_users = db.query(func.count(User.id)).filter(
-        User.created_at >= today_start,
-        User.created_at < tomorrow,
-    ).scalar() or 0
-    today_applications = db.query(func.count(User.id)).filter(
-        User.application_submitted_at >= today_start,
-        User.application_submitted_at < tomorrow,
-    ).scalar() or 0
-    reviewing_query = db.query(func.count(Loan.id)).filter(Loan.status == "REVIEWING")
+    total_users = (await db.scalar(select(func.count(User.id)))) or 0
+    today_new_users = (await db.scalar(select(func.count(User.id)).where(User.created_at >= today_start, User.created_at < tomorrow))) or 0
+    today_applications = (
+        await db.scalar(
+            select(func.count(User.id)).where(
+                User.application_submitted_at >= today_start,
+                User.application_submitted_at < tomorrow,
+            )
+        )
+    ) or 0
+    reviewing_stmt = select(func.count(Loan.id)).where(Loan.status == "REVIEWING")
     if not is_admin and "REVIEW" in roles:
-        reviewing_query = reviewing_query.filter(Loan.review_admin_id == current_admin.id)
-    reviewing_loans = reviewing_query.scalar() or 0
-    approved_loans = db.query(func.count(Loan.id)).filter(Loan.status == "APPROVED").scalar() or 0
-    withdrawing_loans = db.query(func.count(Loan.id)).filter(Loan.status == "WITHDRAWING").scalar() or 0
-    disbursed_loans = db.query(func.count(Loan.id)).filter(Loan.status == "DISBURSED").scalar() or 0
-    due_today_loans = db.query(func.count(Loan.id)).filter(
-        Loan.status.in_(["DISBURSED", "OVERDUE"]),
-        Loan.due_date >= today_start,
-        Loan.due_date < tomorrow,
-    ).scalar() or 0
-    due_today_users = db.query(func.count(func.distinct(Loan.user_id))).filter(
-        Loan.status.in_(["DISBURSED", "OVERDUE"]),
-        Loan.due_date >= today_start,
-        Loan.due_date < tomorrow,
-    ).scalar() or 0
-    overdue_query = db.query(func.count(Loan.id)).filter(Loan.status == "OVERDUE")
+        reviewing_stmt = reviewing_stmt.where(Loan.review_admin_id == current_admin.id)
+    reviewing_loans = (await db.scalar(reviewing_stmt)) or 0
+    approved_loans = (await db.scalar(select(func.count(Loan.id)).where(Loan.status == "APPROVED"))) or 0
+    withdrawing_loans = (await db.scalar(select(func.count(Loan.id)).where(Loan.status == "WITHDRAWING"))) or 0
+    disbursed_loans = (await db.scalar(select(func.count(Loan.id)).where(Loan.status == "DISBURSED"))) or 0
+    due_today_loans = (
+        await db.scalar(
+            select(func.count(Loan.id)).where(
+                Loan.status.in_(["DISBURSED", "OVERDUE"]),
+                Loan.due_date >= today_start,
+                Loan.due_date < tomorrow,
+            )
+        )
+    ) or 0
+    due_today_users = (
+        await db.scalar(
+            select(func.count(func.distinct(Loan.user_id))).where(
+                Loan.status.in_(["DISBURSED", "OVERDUE"]),
+                Loan.due_date >= today_start,
+                Loan.due_date < tomorrow,
+            )
+        )
+    ) or 0
+    overdue_stmt = select(func.count(Loan.id)).where(Loan.status == "OVERDUE")
     if not is_admin and "COLLECTION" in roles:
-        overdue_query = overdue_query.filter(
+        overdue_stmt = overdue_stmt.where(
             Loan.collection_admin_id == current_admin.id,
             Loan.due_date.isnot(None),
             overdue_days_expr > COLLECTION_TRANSFER_OVERDUE_DAYS,
         )
-    overdue_loans = overdue_query.scalar() or 0
-    today_disbursed_amount = db.query(func.coalesce(func.sum(Loan.credit_limit), 0)).filter(
-        Loan.disbursed_at >= today_start,
-        Loan.disbursed_at < tomorrow,
-    ).scalar() or 0
-    today_reminders = db.query(func.count(Loan.id)).filter(
-        Loan.last_reminded_at >= today_start,
-        Loan.last_reminded_at < tomorrow,
-    ).scalar() or 0
-    today_collections = db.query(func.count(Loan.id)).filter(
-        Loan.last_collection_at >= today_start,
-        Loan.last_collection_at < tomorrow,
-    ).scalar() or 0
-    repay_attempt_query = db.query(func.coalesce(func.sum(Loan.repay_attempt_count), 0)).filter(
+    overdue_loans = (await db.scalar(overdue_stmt)) or 0
+    today_disbursed_amount = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Loan.credit_limit), 0)).where(
+                Loan.disbursed_at >= today_start,
+                Loan.disbursed_at < tomorrow,
+            )
+        )
+    ) or 0
+    today_reminders = (
+        await db.scalar(
+            select(func.count(Loan.id)).where(
+                Loan.last_reminded_at >= today_start,
+                Loan.last_reminded_at < tomorrow,
+            )
+        )
+    ) or 0
+    today_collections = (
+        await db.scalar(
+            select(func.count(Loan.id)).where(
+                Loan.last_collection_at >= today_start,
+                Loan.last_collection_at < tomorrow,
+            )
+        )
+    ) or 0
+    repay_attempt_stmt = select(func.coalesce(func.sum(Loan.repay_attempt_count), 0)).where(
         or_(
             Loan.status == "DISBURSED",
             (Loan.status == "OVERDUE") & Loan.due_date.isnot(None) & (overdue_days_expr <= COLLECTION_TRANSFER_OVERDUE_DAYS),
-        ),
+        )
     )
     if not is_admin and "REVIEW" in roles:
-        repay_attempt_query = repay_attempt_query.filter(Loan.review_admin_id == current_admin.id)
-    repay_attempt_total = repay_attempt_query.scalar() or 0
+        repay_attempt_stmt = repay_attempt_stmt.where(Loan.review_admin_id == current_admin.id)
+    repay_attempt_total = (await db.scalar(repay_attempt_stmt)) or 0
 
     return {
         "total_users": total_users,
@@ -777,15 +831,16 @@ def get_stats(
         "today_collections": today_collections,
     }
 
-
 @router.get("/repayment-stats", response_model=RepaymentStatsResponse)
-def get_repayment_stats(
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+async def get_repayment_stats(
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
     ensure_any_admin_page_permission(current_admin, REPAYMENT_STATS_PERMISSION_KEYS)
     repayment_statuses = ["DISBURSED", "OVERDUE", "SETTLED"]
-    loans = db.query(Loan).options(joinedload(Loan.installments)).filter(Loan.status.in_(repayment_statuses)).all()
+    loans = (
+        await db.execute(select(Loan).options(joinedload(Loan.installments)).where(Loan.status.in_(repayment_statuses)))
+    ).scalars().all()
 
     receivable_user_count = len({loan.user_id for loan in loans})
     receivable_amount = round(sum(calculate_total_repayment_amount(loan) for loan in loans), 2)
@@ -818,12 +873,9 @@ def get_repayment_stats(
             overdue_outstanding_amount += metrics["remaining_amount"]
 
     repeat_borrow_subquery = (
-        db.query(Loan.user_id)
-        .group_by(Loan.user_id)
-        .having(func.count(Loan.id) >= 2)
-        .subquery()
+        select(Loan.user_id).group_by(Loan.user_id).having(func.count(Loan.id) >= 2).subquery()
     )
-    repeat_borrow_count = db.query(func.count()).select_from(repeat_borrow_subquery).scalar() or 0
+    repeat_borrow_count = (await db.scalar(select(func.count()).select_from(repeat_borrow_subquery))) or 0
 
     repayment_rate = (float(received_amount) / float(receivable_amount) * 100) if receivable_amount else 0
     repeat_borrow_rate = (float(repeat_borrow_count) / float(receivable_user_count) * 100) if receivable_user_count else 0
@@ -848,28 +900,27 @@ def get_repayment_stats(
         "reduced_fee_amount": round(float(reduced_fee_amount), 2),
     }
 
-
 @router.get("/project-cash-insights", response_model=ProjectCashInsightResponse)
-def get_project_cash_insights(
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+async def get_project_cash_insights(
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
     ensure_admin_page_permission(current_admin, "overview")
     today_start, tomorrow = get_today_range()
     loans = (
-        db.query(Loan)
-        .options(
-            joinedload(Loan.owner).joinedload(User.source_channel),
-            joinedload(Loan.installments),
+        await db.execute(
+            select(Loan)
+            .options(
+                joinedload(Loan.owner).joinedload(User.source_channel),
+                joinedload(Loan.installments),
+            )
+            .where(Loan.status.in_(["WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]))
         )
-        .filter(Loan.status.in_(["WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]))
-        .all()
-    )
-    return build_project_cash_insights(db, loans, today_start, tomorrow)
-
+    ).scalars().all()
+    return await build_project_cash_insights(db, loans, today_start, tomorrow)
 
 @router.get("/loans", response_model=PaginatedLoanResponse)
-def get_loans(
+async def get_loans(
     status: Optional[str] = Query(None, description="订单状态"),
     phone: Optional[str] = Query(None, description="手机号/姓名/身份证号"),
     scope: Optional[str] = Query(None, description="业务筛选"),
@@ -878,8 +929,8 @@ def get_loans(
     overdue_max_days: Optional[int] = Query(None, ge=1, description="最大逾期天数"),
     skip: int = 0,
     limit: int = 20,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
     permission_key = resolve_loan_scope_permission(scope, due_date_preset, status)
     if permission_key:
@@ -900,29 +951,31 @@ def get_loans(
     limit = min(max(limit, 1), 100)
     review_track_statuses = ["REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]
     unassigned_review_loans = (
-        db.query(Loan)
-        .filter(Loan.status.in_(review_track_statuses), Loan.review_admin_id.is_(None))
-        .all()
-    )
+        await db.execute(select(Loan).where(Loan.status.in_(review_track_statuses), Loan.review_admin_id.is_(None)))
+    ).scalars().all()
     for item in unassigned_review_loans:
-        assign_review_admin_if_needed(db, item)
+        await assign_review_admin_if_needed_async(db, item)
 
-    assign_collection_admins_for_overdue_loans(db)
-    db.flush()
+    await assign_collection_admins_for_overdue_loans_async(db)
+    await db.flush()
 
-    query = db.query(Loan).options(
-        joinedload(Loan.owner).joinedload(User.source_channel),
-        joinedload(Loan.owner).joinedload(User.loans),
-        joinedload(Loan.review_admin),
-        joinedload(Loan.collection_admin),
-    ).join(User)
+    stmt = (
+        select(Loan)
+        .options(
+            joinedload(Loan.owner).joinedload(User.source_channel),
+            joinedload(Loan.owner).joinedload(User.loans),
+            joinedload(Loan.review_admin),
+            joinedload(Loan.collection_admin),
+        )
+        .join(User)
+    )
 
     if status and status != "ALL":
-        query = query.filter(Loan.status == status)
+        stmt = stmt.where(Loan.status == status)
 
     if phone:
         keyword = f"%{phone.strip()}%"
-        query = query.filter(
+        stmt = stmt.where(
             or_(
                 User.phone.like(keyword),
                 User.name.like(keyword),
@@ -930,26 +983,28 @@ def get_loans(
             )
         )
 
-    query = apply_loan_scope(query, scope)
+    scope_filters = build_loan_scope_filters(scope)
+    if scope_filters:
+        stmt = stmt.where(*scope_filters)
 
     roles = current_admin_roles(current_admin)
     if "ADMIN" not in roles:
         if scope == "OVERDUE":
             if "COLLECTION" in roles:
-                query = query.filter(Loan.collection_admin_id == current_admin.id)
+                stmt = stmt.where(Loan.collection_admin_id == current_admin.id)
             elif "REVIEW" in roles:
-                query = query.filter(Loan.review_admin_id == current_admin.id)
+                stmt = stmt.where(Loan.review_admin_id == current_admin.id)
         elif scope in {"REVIEWING", "REPAYMENTS"}:
             if "REVIEW" in roles:
-                query = query.filter(Loan.review_admin_id == current_admin.id)
+                stmt = stmt.where(Loan.review_admin_id == current_admin.id)
         elif "REVIEW" in roles:
-            query = query.filter(Loan.review_admin_id == current_admin.id)
+            stmt = stmt.where(Loan.review_admin_id == current_admin.id)
 
     if due_date_preset:
         today_start, tomorrow = get_today_range()
         day_start = today_start if due_date_preset == "TODAY" else tomorrow
         day_end = day_start + timedelta(days=1)
-        query = query.filter(
+        stmt = stmt.where(
             Loan.due_date.isnot(None),
             Loan.due_date >= day_start,
             Loan.due_date < day_end,
@@ -957,19 +1012,23 @@ def get_loans(
 
     if overdue_min_days is not None or overdue_max_days is not None:
         overdue_days_expr = get_overdue_days_expr()
-        query = query.filter(Loan.status == "OVERDUE", Loan.due_date.isnot(None))
+        stmt = stmt.where(Loan.status == "OVERDUE", Loan.due_date.isnot(None))
 
         if overdue_min_days is not None:
-            query = query.filter(overdue_days_expr >= overdue_min_days)
+            stmt = stmt.where(overdue_days_expr >= overdue_min_days)
         if overdue_max_days is not None:
-            query = query.filter(overdue_days_expr <= overdue_max_days)
+            stmt = stmt.where(overdue_days_expr <= overdue_max_days)
 
-    total = query.count()
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
 
     if scope in {"DUE_TODAY", "OVERDUE"} or due_date_preset in {"TODAY", "TOMORROW"}:
-        loans = query.order_by(Loan.due_date.asc(), Loan.created_at.desc()).offset(skip).limit(limit).all()
+        loans = (
+            await db.execute(stmt.order_by(Loan.due_date.asc(), Loan.created_at.desc()).offset(skip).limit(limit))
+        ).scalars().all()
     else:
-        loans = query.order_by(Loan.created_at.desc()).offset(skip).limit(limit).all()
+        loans = (
+            await db.execute(stmt.order_by(Loan.created_at.desc()).offset(skip).limit(limit))
+        ).scalars().all()
 
     return {
         "total": total,
@@ -978,22 +1037,21 @@ def get_loans(
         "items": [serialize_loan(loan) for loan in loans],
     }
 
-
 @router.get("/users", response_model=PaginatedUserResponse)
-def get_users(
+async def get_users(
     keyword: Optional[str] = Query(None, description="手机号/姓名/身份证"),
     skip: int = 0,
     limit: int = 20,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
     ensure_admin_page_permission(current_admin, "users")
     limit = min(max(limit, 1), 100)
-    query = db.query(User).options(joinedload(User.loans), joinedload(User.source_channel)).outerjoin(Channel)
+    stmt = select(User).options(joinedload(User.loans), joinedload(User.source_channel)).outerjoin(Channel)
 
     if keyword:
         pattern = f"%{keyword.strip()}%"
-        query = query.filter(
+        stmt = stmt.where(
             or_(
                 User.phone.like(pattern),
                 User.name.like(pattern),
@@ -1003,8 +1061,11 @@ def get_users(
             )
         )
 
-    total = query.count()
-    users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    total_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.scalar(total_stmt)) or 0
+    users = (
+        await db.execute(stmt.order_by(User.created_at.desc()).offset(skip).limit(limit))
+    ).scalars().all()
 
     return {
         "total": total,
@@ -1014,18 +1075,19 @@ def get_users(
     }
 
 
-@router.get("/loans/{loan_id}/ledger", response_model=LoanLedgerResponse)
-def get_loan_ledger(
-    loan_id: int,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
-):
-    loan = db.query(Loan).options(
-        joinedload(Loan.installments),
-        joinedload(Loan.transactions),
-        joinedload(Loan.review_admin),
-        joinedload(Loan.collection_admin),
-    ).filter(Loan.id == loan_id).first()
+async def _get_loan_ledger(db: AsyncSession, current_admin: Admin, loan_id: int):
+    loan = (
+        await db.execute(
+            select(Loan)
+            .options(
+                joinedload(Loan.installments),
+                joinedload(Loan.transactions),
+                joinedload(Loan.review_admin),
+                joinedload(Loan.collection_admin),
+            )
+            .where(Loan.id == loan_id)
+        )
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
 
@@ -1049,82 +1111,91 @@ def get_loan_ledger(
     }
 
 
-@router.get("/users/{user_id}", response_model=UserDetailResponse)
-def get_user_detail(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/loans/{loan_id}/ledger", response_model=LoanLedgerResponse)
+async def get_loan_ledger(
+    loan_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_loan_ledger(db, current_admin, loan_id)
+
+
+async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int):
     ensure_admin_page_permission(current_admin, "users")
-    user = db.query(User).options(
-        joinedload(User.loans),
-        joinedload(User.events),
-        joinedload(User.source_channel),
-    ).filter(User.id == user_id).first()
+    user = (
+        await db.execute(
+            select(User)
+            .options(
+                joinedload(User.loans),
+                joinedload(User.events),
+                joinedload(User.source_channel),
+            )
+            .where(User.id == user_id)
+        )
+    ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     return serialize_user_detail(user)
 
 
-@router.post("/risk/report", response_model=RiskReportResponse)
-def get_risk_report(
-    req: AdminRiskReportRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/users/{user_id}", response_model=UserDetailResponse)
+async def get_user_detail(
+    user_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_user_detail(db, current_admin, user_id)
+
+
+async def _get_risk_report(db: AsyncSession, req: AdminRiskReportRequest, current_admin: Admin):
     ensure_admin_page_permission(current_admin, "applications")
-    user = get_user_for_risk_report(db, req.user_id)
-    report = get_or_create_risk_report(
+    user = await get_user_for_risk_report_async(db, req.user_id)
+    report = await get_or_create_risk_report_async(
         db,
         name=user.name,
         id_card=user.id_card_num,
         phone=user.phone,
     )
-
-    log_user_event(
+    await log_user_event_async(
         db,
         user=user,
-        loan=get_latest_loan(db, user.id),
+        loan=await get_latest_loan_async(db, user.id),
         actor_type="ADMIN",
         operator_name=current_admin.username,
         event_type="ADMIN_RISK_REPORT",
         title="查询风控报告",
         detail="后台发起全景雷达风控报告查询",
     )
-
-    db.commit()
-    db.refresh(report)
+    await db.commit()
+    await db.refresh(report)
     return serialize_risk_report(report)
 
 
-@router.get("/channels", response_model=PaginatedChannelResponse)
-def get_channels(
-    keyword: Optional[str] = Query(None, description="渠道名称/业务员"),
-    status: Optional[str] = Query("ALL", description="渠道状态"),
-    skip: int = 0,
-    limit: int = 20,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/risk/report", response_model=RiskReportResponse)
+async def get_risk_report(
+    req: AdminRiskReportRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_risk_report(db, req,  current_admin)
+
+
+async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optional[str], status: Optional[str], skip: int, limit: int):
     ensure_admin_page_permission(current_admin, "channels")
     limit = min(max(limit, 1), 100)
-
-    query = db.query(Channel).options(joinedload(Channel.users).joinedload(User.loans))
+    stmt = select(Channel).options(joinedload(Channel.users).joinedload(User.loans))
     if keyword:
         pattern = f"%{keyword.strip().lower()}%"
-        query = query.filter(
+        stmt = stmt.where(
             or_(
                 Channel.channel_name.like(pattern),
                 Channel.sales_name.like(f"%{keyword.strip()}%"),
             )
         )
-
     if status and status != "ALL":
-        query = query.filter(Channel.status == normalize_channel_status(status))
-
-    matched_channels = query.order_by(Channel.created_at.desc()).all()
+        stmt = stmt.where(Channel.status == normalize_channel_status(status))
+    matched_channels = (await db.execute(stmt.order_by(Channel.created_at.desc()))).scalars().all()
     channel_items = [serialize_channel(channel) for channel in matched_channels]
-
     return {
         "total": len(channel_items),
         "page": skip // limit + 1,
@@ -1134,21 +1205,27 @@ def get_channels(
     }
 
 
-@router.post("/channels")
-def create_channel(
-    req: ChannelCreateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/channels", response_model=PaginatedChannelResponse)
+async def get_channels(
+    keyword: Optional[str] = Query(None, description="渠道名称/业务员"),
+    status: Optional[str] = Query("ALL", description="渠道状态"),
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_channels(db, current_admin, keyword, status, skip, limit)
+
+
+async def _create_channel(db: AsyncSession, current_admin: Admin, req: ChannelCreateRequest):
     ensure_admin_page_permission(current_admin, "channels")
     channel_name = normalize_channel_name(req.channel_name)
     sales_name = req.sales_name.strip()
     if not sales_name:
         raise HTTPException(status_code=400, detail="请填写业务员姓名")
-    exists = db.query(Channel).filter(Channel.channel_name == channel_name).first()
+    exists = (await db.execute(select(Channel).where(Channel.channel_name == channel_name))).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=400, detail="渠道名称已存在")
-
     channel = Channel(
         channel_name=channel_name,
         sales_name=sales_name,
@@ -1156,23 +1233,31 @@ def create_channel(
         note=(req.note or "").strip() or None,
     )
     db.add(channel)
-    db.commit()
-    db.refresh(channel)
+    await db.commit()
+    await db.refresh(channel)
     return serialize_channel(channel)
 
 
-@router.patch("/channels/{channel_id}")
-def update_channel(
-    channel_id: int,
-    req: ChannelUpdateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/channels")
+async def create_channel(
+    req: ChannelCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _create_channel(db, current_admin, req)
+
+
+async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: int, req: ChannelUpdateRequest):
     ensure_admin_page_permission(current_admin, "channels")
-    channel = db.query(Channel).options(joinedload(Channel.users).joinedload(User.loans)).filter(Channel.id == channel_id).first()
+    channel = (
+        await db.execute(
+            select(Channel)
+            .options(joinedload(Channel.users).joinedload(User.loans))
+            .where(Channel.id == channel_id)
+        )
+    ).scalar_one_or_none()
     if not channel:
         raise HTTPException(status_code=404, detail="渠道不存在")
-
     payload = req.model_dump(exclude_unset=True)
     if "sales_name" in payload and payload["sales_name"] is not None:
         sales_name = payload["sales_name"].strip()
@@ -1183,33 +1268,33 @@ def update_channel(
         channel.status = normalize_channel_status(payload["status"])
     if "note" in payload:
         channel.note = (payload["note"] or "").strip() or None
-
-    db.commit()
-    db.refresh(channel)
+    await db.commit()
+    await db.refresh(channel)
     return serialize_channel(channel)
 
 
-@router.get("/products", response_model=PaginatedProductResponse)
-def get_products(
-    keyword: Optional[str] = Query(None, description="商品名称"),
-    is_active: Optional[bool] = Query(None, description="是否上架"),
-    skip: int = 0,
-    limit: int = 20,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.patch("/channels/{channel_id}")
+async def update_channel(
+    channel_id: int,
+    req: ChannelUpdateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _update_channel(db, current_admin, channel_id, req)
+
+
+async def _get_products(db: AsyncSession, current_admin: Admin, keyword: Optional[str], is_active: Optional[bool], skip: int, limit: int):
     ensure_admin_page_permission(current_admin, "products")
     limit = min(max(limit, 1), 100)
-
-    query = db.query(Product)
+    stmt = select(Product)
     if keyword:
-        query = query.filter(Product.name.like(f"%{keyword.strip()}%"))
+        stmt = stmt.where(Product.name.like(f"%{keyword.strip()}%"))
     if is_active is not None:
-        query = query.filter(Product.is_active.is_(is_active))
-
-    total = query.count()
-    items = query.order_by(Product.updated_at.desc(), Product.id.desc()).offset(skip).limit(limit).all()
-
+        stmt = stmt.where(Product.is_active.is_(is_active))
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
+    items = (
+        await db.execute(stmt.order_by(Product.updated_at.desc(), Product.id.desc()).offset(skip).limit(limit))
+    ).scalars().all()
     return {
         "total": total,
         "page": skip // limit + 1,
@@ -1218,14 +1303,20 @@ def get_products(
     }
 
 
-@router.post("/products")
-def create_product(
-    req: ProductCreateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/products", response_model=PaginatedProductResponse)
+async def get_products(
+    keyword: Optional[str] = Query(None, description="商品名称"),
+    is_active: Optional[bool] = Query(None, description="是否上架"),
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
-    ensure_admin_page_permission(current_admin, "products")
+    return await _get_products(db, current_admin, keyword, is_active, skip, limit)
 
+
+async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCreateRequest):
+    ensure_admin_page_permission(current_admin, "products")
     payment_amount = resolve_product_payment_amount(req.ecard_face_value, req.rights_price, req.payment_amount)
     product = Product(
         name=req.name.strip(),
@@ -1238,23 +1329,25 @@ def create_product(
         is_active=req.is_active,
     )
     db.add(product)
-    db.commit()
-    db.refresh(product)
+    await db.commit()
+    await db.refresh(product)
     return serialize_product(product)
 
 
-@router.patch("/products/{product_id}")
-def update_product(
-    product_id: int,
-    req: ProductUpdateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/products")
+async def create_product(
+    req: ProductCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _create_product(db, current_admin, req)
+
+
+async def _update_product(db: AsyncSession, current_admin: Admin, product_id: int, req: ProductUpdateRequest):
     ensure_admin_page_permission(current_admin, "products")
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="商品不存在")
-
     payload = req.model_dump(exclude_unset=True)
     if "name" in payload and payload["name"] is not None:
         product.name = payload["name"].strip()
@@ -1270,48 +1363,42 @@ def update_product(
         product.term_days = payload["term_days"]
     if "is_active" in payload and payload["is_active"] is not None:
         product.is_active = bool(payload["is_active"])
-
     if "payment_amount" in payload and payload["payment_amount"] is not None:
         product.payment_amount = round_money(payload["payment_amount"])
     elif "ecard_face_value" in payload or "rights_price" in payload:
         product.payment_amount = resolve_product_payment_amount(product.ecard_face_value, product.rights_price)
-
-    db.commit()
-    db.refresh(product)
+    await db.commit()
+    await db.refresh(product)
     return serialize_product(product)
 
 
-@router.get("/ecard-pool", response_model=PaginatedEcardPoolResponse)
-def get_ecard_pool(
-    keyword: Optional[str] = Query(None, description="卡号关键词"),
-    status: Optional[str] = Query("ALL", description="卡状态"),
-    face_value: Optional[float] = Query(None, description="面额"),
-    skip: int = 0,
-    limit: int = 20,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.patch("/products/{product_id}")
+async def update_product(
+    product_id: int,
+    req: ProductUpdateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _update_product(db, current_admin, product_id, req)
+
+
+async def _get_ecard_pool(db: AsyncSession, current_admin: Admin, keyword: Optional[str], status: Optional[str], face_value: Optional[float], skip: int, limit: int):
     ensure_admin_page_permission(current_admin, "ecard-pool")
     limit = min(max(limit, 1), 100)
-
-    query = db.query(EcardPool)
+    stmt = select(EcardPool)
     if keyword:
-        query = query.filter(EcardPool.account.like(f"%{keyword.strip()}%"))
+        stmt = stmt.where(EcardPool.account.like(f"%{keyword.strip()}%"))
     if status and status != "ALL":
         upper_status = status.upper()
         if upper_status not in ECARD_POOL_STATUSES:
             raise HTTPException(status_code=400, detail="卡池状态非法")
-        query = query.filter(EcardPool.status == upper_status)
+        stmt = stmt.where(EcardPool.status == upper_status)
     if face_value is not None:
-        query = query.filter(EcardPool.face_value == round_money(face_value))
-
-    total = query.count()
+        stmt = stmt.where(EcardPool.face_value == round_money(face_value))
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
     items = (
-        query.order_by(EcardPool.expires_at.asc(), EcardPool.id.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+        await db.execute(stmt.order_by(EcardPool.expires_at.asc(), EcardPool.id.desc()).offset(skip).limit(limit))
+    ).scalars().all()
     return {
         "total": total,
         "page": skip // limit + 1,
@@ -1320,17 +1407,24 @@ def get_ecard_pool(
     }
 
 
-@router.post("/ecard-pool")
-def create_ecard_pool_item(
-    req: EcardPoolCreateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/ecard-pool", response_model=PaginatedEcardPoolResponse)
+async def get_ecard_pool(
+    keyword: Optional[str] = Query(None, description="卡号关键词"),
+    status: Optional[str] = Query("ALL", description="卡状态"),
+    face_value: Optional[float] = Query(None, description="面额"),
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_ecard_pool(db, current_admin, keyword, status, face_value, skip, limit)
+
+
+async def _create_ecard_pool_item(db: AsyncSession, current_admin: Admin, req: EcardPoolCreateRequest):
     ensure_admin_page_permission(current_admin, "ecard-pool")
     account = req.account.strip()
-    if db.query(EcardPool).filter(EcardPool.account == account).first():
+    if (await db.execute(select(EcardPool).where(EcardPool.account == account))).scalar_one_or_none():
         raise HTTPException(status_code=400, detail="卡号已存在")
-
     item = EcardPool(
         account=account,
         password=req.password.strip(),
@@ -1340,8 +1434,8 @@ def create_ecard_pool_item(
         note=(req.note or "").strip() or None,
     )
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return serialize_ecard_pool_item(item)
 
 
@@ -1393,21 +1487,27 @@ def _load_excel_rows(upload_file: UploadFile):
     return rows
 
 
-@router.post("/ecard-pool/batch-upload")
-def upload_ecard_pool_items(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/ecard-pool")
+async def create_ecard_pool_item(
+    req: EcardPoolCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _create_ecard_pool_item(db, current_admin, req)
+
+
+async def _upload_ecard_pool_items(db: AsyncSession, file: UploadFile, current_admin: Admin):
     ensure_admin_page_permission(current_admin, "ecard-pool")
     rows = _load_excel_rows(file)
     if not rows:
         raise HTTPException(status_code=400, detail="上传文件内容不能为空")
 
     upload_accounts = [str(row[0]).strip() for row in rows if row and row[0] is not None]
-    existing_accounts = {
-        account for account, in db.query(EcardPool.account).filter(EcardPool.account.in_(upload_accounts)).all()
-    }
+    existing_accounts = set()
+    if upload_accounts:
+        existing_accounts = set(
+            (await db.execute(select(EcardPool.account).where(EcardPool.account.in_(upload_accounts)))).scalars().all()
+        )
     created = 0
     errors = []
     seen_accounts = set()
@@ -1458,16 +1558,25 @@ def upload_ecard_pool_items(
         seen_accounts.add(account)
         created += 1
 
-    db.commit()
+    await db.commit()
     return {
         "created": created,
         "errors": errors,
     }
 
 
+@router.post("/ecard-pool/batch-upload")
+async def upload_ecard_pool_items(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _upload_ecard_pool_items(db, file,  current_admin)
+
+
 @router.get("/ecard-pool/template")
-def download_ecard_pool_template(
-    current_admin: Admin = Depends(get_current_admin),
+async def download_ecard_pool_template(
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
     ensure_admin_page_permission(current_admin, "ecard-pool")
 
@@ -1487,15 +1596,9 @@ def download_ecard_pool_template(
     )
 
 
-@router.patch("/ecard-pool/{item_id}")
-def update_ecard_pool_item(
-    item_id: int,
-    req: EcardPoolUpdateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
-):
+async def _update_ecard_pool_item(db: AsyncSession, current_admin: Admin, item_id: int, req: EcardPoolUpdateRequest):
     ensure_admin_page_permission(current_admin, "ecard-pool")
-    item = db.query(EcardPool).filter(EcardPool.id == item_id).first()
+    item = (await db.execute(select(EcardPool).where(EcardPool.id == item_id))).scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="卡池记录不存在")
 
@@ -1512,26 +1615,36 @@ def update_ecard_pool_item(
     if "expires_at" in payload and payload["expires_at"] is not None:
         item.expires_at = payload["expires_at"]
 
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return serialize_ecard_pool_item(item)
 
 
-@router.post("/loans/{loan_id}/review")
-def review_loan(
-    loan_id: int,
-    req: LoanReviewRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.patch("/ecard-pool/{item_id}")
+async def update_ecard_pool_item(
+    item_id: int,
+    req: EcardPoolUpdateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _update_ecard_pool_item(db, current_admin, item_id, req)
+
+
+async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanReviewRequest):
     ensure_admin_page_permission(current_admin, "applications")
-    loan = db.query(Loan).options(joinedload(Loan.owner), joinedload(Loan.review_admin)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(
+            select(Loan)
+            .options(joinedload(Loan.owner), joinedload(Loan.review_admin))
+            .where(Loan.id == loan_id)
+        )
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status in {"WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"}:
         raise HTTPException(status_code=400, detail="当前订单已进入发卡/付款流程，不能重新审批")
 
-    assign_review_admin_if_needed(db, loan)
+    await assign_review_admin_if_needed_async(db, loan)
     if not is_super_admin(current_admin):
         if int(loan.review_admin_id or 0) != int(current_admin.id):
             raise HTTPException(status_code=403, detail="仅可处理分配给你的审批订单")
@@ -1620,7 +1733,7 @@ def review_loan(
         title = "后台审批拒绝"
         event_type = "ADMIN_REJECTED"
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=owner,
         loan=loan,
@@ -1631,20 +1744,26 @@ def review_loan(
         detail=detail,
     )
 
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return serialize_loan(loan)
 
 
-@router.patch("/loans/{loan_id}")
-def update_loan(
+@router.post("/loans/{loan_id}/review")
+async def review_loan(
     loan_id: int,
-    req: LoanUpdateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    req: LoanReviewRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _review_loan(db, current_admin, loan_id, req)
+
+
+async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanUpdateRequest):
     ensure_admin_page_permission(current_admin, "disbursements")
-    loan = db.query(Loan).options(joinedload(Loan.owner)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
 
@@ -1744,7 +1863,7 @@ def update_loan(
         note_text = (payload.get("collection_note") or "").strip()
         previous_note = (previous_collection_note or "").strip()
         if note_text and note_text != previous_note:
-            log_user_event(
+            await log_user_event_async(
                 db,
                 user=owner,
                 loan=loan,
@@ -1755,7 +1874,7 @@ def update_loan(
                 detail=note_text,
             )
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=owner,
         loan=loan,
@@ -1766,20 +1885,26 @@ def update_loan(
         detail="；".join(change_messages),
     )
 
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return serialize_loan(loan)
 
 
-@router.post("/loans/{loan_id}/disburse")
-def disburse_loan(
+@router.patch("/loans/{loan_id}")
+async def update_loan(
     loan_id: int,
-    req: DisburseRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    req: LoanUpdateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _update_loan(db, current_admin, loan_id, req)
+
+
+async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: DisburseRequest):
     ensure_admin_page_permission(current_admin, "disbursements")
-    loan = db.query(Loan).options(joinedload(Loan.owner)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status != "WITHDRAWING":
@@ -1794,15 +1919,16 @@ def disburse_loan(
     now = datetime.utcnow()
     ecard_face_value = round_money(loan.ecard_face_value or loan.credit_limit)
     ecard_item = (
-        db.query(EcardPool)
-        .filter(
-            EcardPool.status == "AVAILABLE",
-            EcardPool.face_value == ecard_face_value,
-            EcardPool.expires_at >= now,
+        await db.execute(
+            select(EcardPool)
+            .where(
+                EcardPool.status == "AVAILABLE",
+                EcardPool.face_value == ecard_face_value,
+                EcardPool.expires_at >= now,
+            )
+            .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
         )
-        .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
-        .first()
-    )
+    ).scalar_one_or_none()
     if not ecard_item:
         raise HTTPException(status_code=400, detail=f"卡池库存不足：未找到面额 {ecard_face_value:.2f} 元且有效的京东E卡")
 
@@ -1831,15 +1957,15 @@ def disburse_loan(
     ecard_item.loan_id = loan.id
     ecard_item.assigned_at = now
 
-    ensure_installment_records(db, loan)
-    create_disbursement_transaction(
+    await ensure_installment_records_async(db, loan)
+    await create_disbursement_transaction_async(
         db,
         loan,
         operator_name=current_admin.username,
         note="后台确认发放京东E卡",
     )
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
@@ -1858,19 +1984,26 @@ def disburse_loan(
         ),
     )
 
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return {"msg": "发卡成功", "loan": serialize_loan(loan)}
 
 
-@router.post("/loans/{loan_id}/settle")
-def settle_loan(
+@router.post("/loans/{loan_id}/disburse")
+async def disburse_loan(
     loan_id: int,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    req: DisburseRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _disburse_loan(db, current_admin, loan_id, req)
+
+
+async def _settle_loan(db: AsyncSession, current_admin: Admin, loan_id: int):
     ensure_admin_page_permission(current_admin, "financials")
-    loan = db.query(Loan).options(joinedload(Loan.owner)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status not in {"DISBURSED", "OVERDUE"}:
@@ -1878,7 +2011,7 @@ def settle_loan(
 
     remaining_amount = calculate_remaining_repayment_amount(loan)
     if remaining_amount > 0:
-        register_repayment(
+        await register_repayment_async(
             db,
             loan,
             remaining_amount,
@@ -1887,7 +2020,7 @@ def settle_loan(
             transaction_type="SETTLEMENT",
         )
     sync_loan_repayment_state(loan)
-    log_user_event(
+    await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
@@ -1898,19 +2031,29 @@ def settle_loan(
         detail="后台已登记该订单完成还款结清。",
     )
 
-    db.commit()
+    await db.commit()
     return {"msg": "结清成功"}
 
 
-@router.post("/loans/{loan_id}/finance-reconcile")
-def finance_reconcile_loan(
+@router.post("/loans/{loan_id}/settle")
+async def settle_loan(
+    loan_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _settle_loan(db, current_admin, loan_id)
+
+
+async def _finance_reconcile_loan(
+    db: AsyncSession,
+    current_admin: Admin,
     loan_id: int,
     req: LoanFinanceReconcileRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
 ):
     ensure_admin_page_permission(current_admin, "financials")
-    loan = db.query(Loan).options(joinedload(Loan.owner)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status not in {"DISBURSED", "OVERDUE"}:
@@ -1928,10 +2071,10 @@ def finance_reconcile_loan(
     if next_repaid_amount + next_reduction_amount > total_amount + 1e-6:
         raise HTTPException(status_code=400, detail="收款金额与减免金额累计不能超过总还款额")
 
-    ensure_installment_records(db, loan)
+    await ensure_installment_records_async(db, loan)
 
     if received_amount > 0:
-        register_repayment(
+        await register_repayment_async(
             db,
             loan,
             received_amount,
@@ -1940,7 +2083,7 @@ def finance_reconcile_loan(
         )
 
     if reduction_amount > 0:
-        register_reduction(
+        await register_reduction_async(
             db,
             loan,
             reduction_amount,
@@ -1964,7 +2107,7 @@ def finance_reconcile_loan(
     if loan.status == "SETTLED":
         detail_parts.append("订单已完成平账结清")
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
@@ -1975,20 +2118,30 @@ def finance_reconcile_loan(
         detail="；".join(detail_parts),
     )
 
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return serialize_loan(loan)
 
 
-@router.post("/loans/{loan_id}/remind")
-def remind_loan(
+@router.post("/loans/{loan_id}/finance-reconcile")
+async def finance_reconcile_loan(
     loan_id: int,
-    req: LoanFollowUpRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    req: LoanFinanceReconcileRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _finance_reconcile_loan(db, current_admin, loan_id, req)
+
+
+async def _remind_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanFollowUpRequest):
     ensure_admin_page_permission(current_admin, "repayments")
-    loan = db.query(Loan).options(joinedload(Loan.owner), joinedload(Loan.review_admin)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(
+            select(Loan)
+            .options(joinedload(Loan.owner), joinedload(Loan.review_admin))
+            .where(Loan.id == loan_id)
+        )
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status not in {"DISBURSED", "OVERDUE"}:
@@ -2003,7 +2156,7 @@ def remind_loan(
     loan.last_reminded_at = datetime.utcnow()
     note = (req.note or "已执行当日还款提醒").strip()
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
@@ -2014,20 +2167,30 @@ def remind_loan(
         detail=f"第 {loan.reminder_count} 次提醒；备注：{note}",
     )
 
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return serialize_loan(loan)
 
 
-@router.post("/loans/{loan_id}/collect")
-def collect_loan(
+@router.post("/loans/{loan_id}/remind")
+async def remind_loan(
     loan_id: int,
     req: LoanFollowUpRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _remind_loan(db, current_admin, loan_id, req)
+
+
+async def _collect_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanFollowUpRequest):
     ensure_admin_page_permission(current_admin, "collections")
-    loan = db.query(Loan).options(joinedload(Loan.owner), joinedload(Loan.collection_admin)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(
+            select(Loan)
+            .options(joinedload(Loan.owner), joinedload(Loan.collection_admin))
+            .where(Loan.id == loan_id)
+        )
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status != "OVERDUE":
@@ -2035,7 +2198,7 @@ def collect_loan(
     if not is_collection_stage(loan):
         raise HTTPException(status_code=400, detail=f"逾期超过 {COLLECTION_TRANSFER_OVERDUE_DAYS} 天后才可进入催收")
 
-    assign_collection_admin_if_needed(db, loan)
+    await assign_collection_admin_if_needed_async(db, loan)
     if not is_super_admin(current_admin):
         if int(loan.collection_admin_id or 0) != int(current_admin.id):
             raise HTTPException(status_code=403, detail="仅可跟进分配给你的催收订单")
@@ -2044,7 +2207,7 @@ def collect_loan(
     loan.last_collection_at = datetime.utcnow()
     loan.collection_note = (req.note or "已执行逾期催收").strip()
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
@@ -2055,23 +2218,34 @@ def collect_loan(
         detail=f"第 {loan.collection_count} 次催收；备注：{loan.collection_note}",
     )
 
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return serialize_loan(loan)
 
 
-@router.post("/loans/{loan_id}/ack-repay-attempt", response_model=RepayAttemptAckResponse)
-def ack_repay_attempt(
+@router.post("/loans/{loan_id}/collect")
+async def collect_loan(
     loan_id: int,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    req: LoanFollowUpRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _collect_loan(db, current_admin, loan_id, req)
+
+
+async def _ack_repay_attempt(db: AsyncSession, current_admin: Admin, loan_id: int):
     ensure_any_admin_page_permission(current_admin, ("repayments", "collections"))
-    loan = db.query(Loan).options(
-        joinedload(Loan.owner),
-        joinedload(Loan.review_admin),
-        joinedload(Loan.collection_admin),
-    ).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(
+            select(Loan)
+            .options(
+                joinedload(Loan.owner),
+                joinedload(Loan.review_admin),
+                joinedload(Loan.collection_admin),
+            )
+            .where(Loan.id == loan_id)
+        )
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     ensure_stage_access_for_admin(current_admin, loan)
@@ -2079,7 +2253,7 @@ def ack_repay_attempt(
     cleared_count = int(loan.repay_attempt_count or 0)
     if cleared_count > 0:
         loan.repay_attempt_count = 0
-        log_user_event(
+        await log_user_event_async(
             db,
             user=loan.owner,
             loan=loan,
@@ -2089,8 +2263,8 @@ def ack_repay_attempt(
             title="查看还款跟进",
             detail=f"后台查看跟进时已清除还款点击提醒 {cleared_count} 次。",
         )
-        db.commit()
-        db.refresh(loan)
+        await db.commit()
+        await db.refresh(loan)
 
     return {
         "loan_id": loan.id,
@@ -2099,12 +2273,16 @@ def ack_repay_attempt(
     }
 
 
-@router.get("/loan-assignees", response_model=list[LoanAssigneeItemResponse])
-def get_loan_assignees(
-    stage: str = Query(..., description="review | collection"),
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/loans/{loan_id}/ack-repay-attempt", response_model=RepayAttemptAckResponse)
+async def ack_repay_attempt(
+    loan_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _ack_repay_attempt(db, current_admin, loan_id)
+
+
+async def _get_loan_assignees(db: AsyncSession, current_admin: Admin, stage: str):
     if not is_super_admin(current_admin):
         raise HTTPException(status_code=403, detail="仅超级管理员可查看可分配人员")
 
@@ -2113,25 +2291,30 @@ def get_loan_assignees(
         raise HTTPException(status_code=400, detail="分配阶段参数非法")
 
     role_key = "REVIEW" if normalized_stage == "review" else "COLLECTION"
-    assignees = list_admins_by_role(db, role_key)
+    assignees = await list_admins_by_role_async(db, role_key)
     return [{"id": item.id, "username": item.username} for item in assignees]
 
 
-@router.post("/loans/{loan_id}/assign", response_model=LoanAssignmentResponse)
-def assign_loan(
-    loan_id: int,
-    req: LoanAssignRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/loan-assignees", response_model=list[LoanAssigneeItemResponse])
+async def get_loan_assignees(
+    stage: str = Query(..., description="review | collection"),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_loan_assignees(db, current_admin, stage)
+
+
+async def _assign_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanAssignRequest):
     if not is_super_admin(current_admin):
         raise HTTPException(status_code=403, detail="仅超级管理员可手动改派订单")
 
-    loan = db.query(Loan).options(joinedload(Loan.owner)).filter(Loan.id == loan_id).first()
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
 
-    assignee = db.query(Admin).filter(Admin.id == req.admin_id).first()
+    assignee = (await db.execute(select(Admin).where(Admin.id == req.admin_id))).scalar_one_or_none()
     if not assignee:
         raise HTTPException(status_code=404, detail="分配目标不存在")
 
@@ -2158,7 +2341,7 @@ def assign_loan(
         title = "超管手动改派催收负责人"
         detail = f"催收负责人由 #{previous or '-'} 调整为 #{assignee.id}（{assignee.username}）"
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
@@ -2169,7 +2352,7 @@ def assign_loan(
         detail=detail,
     )
 
-    db.commit()
+    await db.commit()
     return {
         "loan_id": loan.id,
         "stage": stage,
@@ -2178,24 +2361,29 @@ def assign_loan(
     }
 
 
-@router.get("/admin-users", response_model=PaginatedAdminUserResponse)
-def get_admin_users(
-    keyword: Optional[str] = Query(None, description="用户名"),
-    skip: int = 0,
-    limit: int = 20,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/loans/{loan_id}/assign", response_model=LoanAssignmentResponse)
+async def assign_loan(
+    loan_id: int,
+    req: LoanAssignRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _assign_loan(db, current_admin, loan_id, req)
+
+
+async def _get_admin_users(db: AsyncSession, current_admin: Admin, keyword: Optional[str], skip: int, limit: int):
     ensure_admin_page_permission(current_admin, "admin-users")
     limit = min(max(limit, 1), 100)
 
-    query = db.query(Admin)
+    stmt = select(Admin)
     if keyword:
         pattern = f"%{keyword.strip()}%"
-        query = query.filter(Admin.username.like(pattern))
+        stmt = stmt.where(Admin.username.like(pattern))
 
-    total = query.count()
-    admins = query.order_by(Admin.created_at.desc(), Admin.id.desc()).offset(skip).limit(limit).all()
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
+    admins = (
+        await db.execute(stmt.order_by(Admin.created_at.desc(), Admin.id.desc()).offset(skip).limit(limit))
+    ).scalars().all()
     return {
         "total": total,
         "page": skip // limit + 1,
@@ -2204,18 +2392,24 @@ def get_admin_users(
     }
 
 
-@router.post("/admin-users", response_model=AdminUserItemResponse)
-def create_admin_user(
-    req: AdminUserCreateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.get("/admin-users", response_model=PaginatedAdminUserResponse)
+async def get_admin_users(
+    keyword: Optional[str] = Query(None, description="用户名"),
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _get_admin_users(db, current_admin, keyword, skip, limit)
+
+
+async def _create_admin_user(db: AsyncSession, current_admin: Admin, req: AdminUserCreateRequest):
     ensure_admin_page_permission(current_admin, "admin-users")
     username = req.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="请输入后台用户名")
 
-    if db.query(Admin).filter(Admin.username == username).first():
+    if (await db.execute(select(Admin).where(Admin.username == username))).scalar_one_or_none():
         raise HTTPException(status_code=400, detail="后台用户名已存在")
 
     roles, permissions = resolve_roles_and_permissions(req.roles, req.permissions)
@@ -2229,20 +2423,23 @@ def create_admin_user(
         permissions=serialize_admin_permissions(permissions),
     )
     db.add(admin)
-    db.commit()
-    db.refresh(admin)
+    await db.commit()
+    await db.refresh(admin)
     return serialize_admin_user(admin, current_admin)
 
 
-@router.patch("/admin-users/{admin_id}", response_model=AdminUserItemResponse)
-def update_admin_user(
-    admin_id: int,
-    req: AdminUserUpdateRequest,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+@router.post("/admin-users", response_model=AdminUserItemResponse)
+async def create_admin_user(
+    req: AdminUserCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _create_admin_user(db, current_admin, req)
+
+
+async def _update_admin_user(db: AsyncSession, current_admin: Admin, admin_id: int, req: AdminUserUpdateRequest):
     ensure_admin_page_permission(current_admin, "admin-users")
-    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    admin = (await db.execute(select(Admin).where(Admin.id == admin_id))).scalar_one_or_none()
     if not admin:
         raise HTTPException(status_code=404, detail="后台用户不存在")
 
@@ -2254,7 +2451,9 @@ def update_admin_user(
         username = payload["username"].strip()
         if not username:
             raise HTTPException(status_code=400, detail="请输入后台用户名")
-        duplicated = db.query(Admin).filter(Admin.username == username, Admin.id != admin_id).first()
+        duplicated = (
+            await db.execute(select(Admin).where(Admin.username == username, Admin.id != admin_id))
+        ).scalar_one_or_none()
         if duplicated:
             raise HTTPException(status_code=400, detail="后台用户名已存在")
         admin.username = username
@@ -2276,24 +2475,38 @@ def update_admin_user(
         admin.roles = serialize_admin_roles(roles)
         admin.permissions = serialize_admin_permissions(permissions)
 
-    db.commit()
-    db.refresh(admin)
+    await db.commit()
+    await db.refresh(admin)
     return serialize_admin_user(admin, current_admin)
 
 
-@router.delete("/admin-users/{admin_id}")
-def delete_admin_user(
+@router.patch("/admin-users/{admin_id}", response_model=AdminUserItemResponse)
+async def update_admin_user(
     admin_id: int,
-    db: Session = Depends(get_db),
-    current_admin: Admin = Depends(get_current_admin),
+    req: AdminUserUpdateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
 ):
+    return await _update_admin_user(db, current_admin, admin_id, req)
+
+
+async def _delete_admin_user(db: AsyncSession, current_admin: Admin, admin_id: int):
     ensure_admin_page_permission(current_admin, "admin-users")
-    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    admin = (await db.execute(select(Admin).where(Admin.id == admin_id))).scalar_one_or_none()
     if not admin:
         raise HTTPException(status_code=404, detail="后台用户不存在")
     if admin.id == current_admin.id:
         raise HTTPException(status_code=400, detail="当前登录账号不允许删除")
 
     db.delete(admin)
-    db.commit()
+    await db.commit()
     return {"msg": "删除成功"}
+
+
+@router.delete("/admin-users/{admin_id}")
+async def delete_admin_user(
+    admin_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _delete_admin_user(db, current_admin, admin_id)

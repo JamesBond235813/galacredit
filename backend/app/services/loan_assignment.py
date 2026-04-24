@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Iterable, List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Admin
 from app.models.loan import Loan
@@ -15,8 +16,8 @@ def admin_has_role(admin: Admin, role_key: str) -> bool:
     return "ADMIN" in roles or role_key in roles
 
 
-def list_admins_by_role(db: Session, role_key: str) -> List[Admin]:
-    admins = db.query(Admin).order_by(Admin.id.asc()).all()
+async def list_admins_by_role_async(db: AsyncSession, role_key: str) -> List[Admin]:
+    admins = (await db.execute(select(Admin).order_by(Admin.id.asc()))).scalars().all()
     matched = [item for item in admins if role_key in parse_admin_roles(getattr(item, "roles", None))]
     if matched:
         return matched
@@ -31,13 +32,17 @@ def pick_round_robin_admin_id(loan_id: int, admins: Iterable[Admin]) -> Optional
     return pool[index].id
 
 
-def assign_review_admin_if_needed(db: Session, loan: Loan, force: bool = False) -> Optional[int]:
+async def assign_review_admin_if_needed_async(
+    db: AsyncSession,
+    loan: Loan,
+    force: bool = False,
+) -> Optional[int]:
     if loan is None:
         return None
     if loan.review_admin_id and not force:
         return loan.review_admin_id
 
-    reviewers = list_admins_by_role(db, "REVIEW")
+    reviewers = await list_admins_by_role_async(db, "REVIEW")
     review_admin_id = pick_round_robin_admin_id(loan.id, reviewers)
     if review_admin_id:
         loan.review_admin_id = review_admin_id
@@ -52,8 +57,8 @@ def is_collection_stage(loan: Loan, now: Optional[datetime] = None) -> bool:
     return overdue_days > COLLECTION_TRANSFER_OVERDUE_DAYS
 
 
-def assign_collection_admin_if_needed(
-    db: Session,
+async def assign_collection_admin_if_needed_async(
+    db: AsyncSession,
     loan: Loan,
     force: bool = False,
     now: Optional[datetime] = None,
@@ -63,7 +68,7 @@ def assign_collection_admin_if_needed(
     if loan.collection_admin_id and not force:
         return loan.collection_admin_id
 
-    collectors = list_admins_by_role(db, "COLLECTION")
+    collectors = await list_admins_by_role_async(db, "COLLECTION")
     collection_admin_id = pick_round_robin_admin_id(loan.id, collectors)
     if collection_admin_id:
         loan.collection_admin_id = collection_admin_id
@@ -72,13 +77,16 @@ def assign_collection_admin_if_needed(
     return loan.collection_admin_id
 
 
-def assign_collection_admins_for_overdue_loans(db: Session, now: Optional[datetime] = None) -> int:
+async def assign_collection_admins_for_overdue_loans_async(
+    db: AsyncSession,
+    now: Optional[datetime] = None,
+) -> int:
     now_dt = now or datetime.utcnow()
-    loans = db.query(Loan).filter(Loan.status == "OVERDUE").all()
+    loans = (await db.execute(select(Loan).where(Loan.status == "OVERDUE"))).scalars().all()
     changed = 0
     for loan in loans:
         prev_assignee = loan.collection_admin_id
-        assigned = assign_collection_admin_if_needed(db, loan, force=False, now=now_dt)
+        assigned = await assign_collection_admin_if_needed_async(db, loan, force=False, now=now_dt)
         if assigned and assigned != prev_assignee:
             changed += 1
     return changed

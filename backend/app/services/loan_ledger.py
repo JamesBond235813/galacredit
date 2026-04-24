@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loan import Loan
 from app.models.loan_installment import LoanInstallment
@@ -114,7 +114,7 @@ def build_installment_blueprint(loan: Loan) -> List[Dict[str, Any]]:
     return items
 
 
-def ensure_installment_records(db: Session, loan: Loan) -> List[LoanInstallment]:
+async def ensure_installment_records_async(db: AsyncSession, loan: Loan) -> List[LoanInstallment]:
     if loan.status not in ACTIVE_LEDGER_STATUSES:
         return getattr(loan, "installments", []) or []
     if not getattr(loan, "disbursed_at", None) or not getattr(loan, "term_days", None):
@@ -137,7 +137,7 @@ def ensure_installment_records(db: Session, loan: Loan) -> List[LoanInstallment]
         db.add(installment)
         items.append(installment)
 
-    db.flush()
+    await db.flush()
     loan.installments = sorted(items, key=lambda item: item.period_no)
 
     existing_repaid_amount = round_money(getattr(loan, "repaid_amount", 0))
@@ -554,8 +554,8 @@ def serialize_transaction(transaction: LoanTransaction) -> Dict[str, Any]:
     }
 
 
-def create_disbursement_transaction(
-    db: Session,
+async def create_disbursement_transaction_async(
+    db: AsyncSession,
     loan: Loan,
     operator_name: Optional[str] = None,
     note: Optional[str] = None,
@@ -570,7 +570,7 @@ def create_disbursement_transaction(
         note=note,
     )
     db.add(transaction)
-    db.flush()
+    await db.flush()
     return transaction
 
 
@@ -668,8 +668,8 @@ def _apply_reduction_amount_to_installments(installments: List[LoanInstallment],
     return components
 
 
-def register_repayment(
-    db: Session,
+async def register_repayment_async(
+    db: AsyncSession,
     loan: Loan,
     amount: Any,
     operator_name: Optional[str] = None,
@@ -680,7 +680,7 @@ def register_repayment(
     if received_amount <= 0:
         return None
 
-    installments = ensure_installment_records(db, loan)
+    installments = await ensure_installment_records_async(db, loan)
     loan.repaid_amount = round_money(getattr(loan, "repaid_amount", 0) + received_amount)
 
     penalty_remaining = round_money(getattr(loan, "penalty_amount", 0) - getattr(loan, "paid_penalty_amount", 0) - getattr(loan, "reduced_penalty_amount", 0))
@@ -701,13 +701,13 @@ def register_repayment(
         note=note,
     )
     db.add(transaction)
-    db.flush()
+    await db.flush()
     sync_loan_repayment_state(loan)
     return transaction
 
 
-def register_reduction(
-    db: Session,
+async def register_reduction_async(
+    db: AsyncSession,
     loan: Loan,
     amount: Any,
     operator_name: Optional[str] = None,
@@ -718,7 +718,7 @@ def register_reduction(
     if reduction_amount <= 0:
         return None
 
-    installments = ensure_installment_records(db, loan)
+    installments = await ensure_installment_records_async(db, loan)
     loan.reduction_amount = round_money(getattr(loan, "reduction_amount", 0) + reduction_amount)
 
     penalty_remaining = round_money(getattr(loan, "penalty_amount", 0) - getattr(loan, "paid_penalty_amount", 0) - getattr(loan, "reduced_penalty_amount", 0))
@@ -739,6 +739,6 @@ def register_reduction(
         note=note,
     )
     db.add(transaction)
-    db.flush()
+    await db.flush()
     sync_loan_repayment_state(loan)
     return transaction

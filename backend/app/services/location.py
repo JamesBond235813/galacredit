@@ -1,34 +1,33 @@
 import json
 from typing import Dict, Optional
-from urllib import parse, request
+
+import httpx
 
 
-def reverse_geocode(latitude: float, longitude: float, timeout_seconds: int = 8) -> Dict[str, Optional[str]]:
+async def reverse_geocode(latitude: float, longitude: float, timeout_seconds: int = 8) -> Dict[str, Optional[str]]:
     """
     轻量反向地理编码（OpenStreetMap Nominatim）。
     失败时返回空结构，不影响主流程。
     """
     try:
-        query = parse.urlencode(
-            {
-                "format": "jsonv2",
-                "lat": f"{latitude:.7f}",
-                "lon": f"{longitude:.7f}",
-                "accept-language": "zh-CN",
-                "addressdetails": 1,
-            }
-        )
-        url = f"https://nominatim.openstreetmap.org/reverse?{query}"
-        req = request.Request(
-            url=url,
-            headers={
-                "User-Agent": "credit-list-h5/1.0 (location reverse geocode)",
-                "Accept": "application/json",
-            },
-            method="GET",
-        )
-        with request.urlopen(req, timeout=timeout_seconds) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        params = {
+            "format": "jsonv2",
+            "lat": f"{latitude:.7f}",
+            "lon": f"{longitude:.7f}",
+            "accept-language": "zh-CN",
+            "addressdetails": 1,
+        }
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            resp = await client.get(
+                url="https://nominatim.openstreetmap.org/reverse",
+                params=params,
+                headers={
+                    "User-Agent": "credit-list-h5/1.0 (location reverse geocode)",
+                    "Accept": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            payload = resp.json()
     except Exception:
         return {
             "address": None,

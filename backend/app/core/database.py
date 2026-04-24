@@ -1,6 +1,8 @@
+import asyncio
 import pymysql
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine, inspect, text, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 from .config import settings
 from app.services.admin_permissions import serialize_admin_permissions, serialize_admin_roles
@@ -10,8 +12,13 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=3600,
 )
+async_engine = create_async_engine(
+    settings.SQLALCHEMY_ASYNC_DATABASE_URI,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+AsyncSessionLocal = async_sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)
 
 Base = declarative_base()
 
@@ -143,12 +150,11 @@ def sync_legacy_schema():
                     connection.execute(text(ddl))
 
 
-def ensure_default_admins():
+async def ensure_default_admins():
     from app.core.security import get_password_hash
     from app.models.admin import Admin
 
-    db = SessionLocal()
-    try:
+    async with AsyncSessionLocal() as db:
         default_accounts = {
             "admin": "admin123",
             "xiaojiang": "admin123",
@@ -156,7 +162,7 @@ def ensure_default_admins():
         changed = False
 
         for username, password in default_accounts.items():
-            exists = db.query(Admin).filter(Admin.username == username).first()
+            exists = (await db.execute(select(Admin).where(Admin.username == username))).scalar_one_or_none()
             roles = serialize_admin_roles(["ADMIN"])
             permissions = serialize_admin_permissions(None)
             if exists:
@@ -179,16 +185,13 @@ def ensure_default_admins():
             changed = True
 
         if changed:
-            db.commit()
-    finally:
-        db.close()
+            await db.commit()
 
 
-def ensure_default_products():
+async def ensure_default_products():
     from app.models.product import Product
 
-    db = SessionLocal()
-    try:
+    async with AsyncSessionLocal() as db:
         default_products = [
             {
                 "name": "京东E卡1000元 + 韶关丹霞山2日旅游",
@@ -221,35 +224,32 @@ def ensure_default_products():
 
         changed = False
         for item in default_products:
-            exists = db.query(Product).filter(Product.name == item["name"]).first()
+            exists = (await db.execute(select(Product).where(Product.name == item["name"]))).scalar_one_or_none()
             if exists:
                 continue
             db.add(Product(**item))
             changed = True
 
         if changed:
-            db.commit()
-    finally:
-        db.close()
+            await db.commit()
 
 
-def migrate_loan_to_new_semantics():
+async def migrate_loan_to_new_semantics():
     from app.models.loan import Loan
     from app.models.product import Product
 
     def _round_money(value):
         return round(float(value or 0), 2)
 
-    db = SessionLocal()
-    try:
-        products = db.query(Product).all()
+    async with AsyncSessionLocal() as db:
+        products = (await db.execute(select(Product))).scalars().all()
         rights_desc_preset = {
             1000: "酒店住宿3晚 + 丹霞山公园门票4张 + 酒店晚餐4顿",
             1500: "酒店住宿4晚 + 丹霞山公园门票2张 + 酒店晚餐3顿",
             2000: "酒店住宿4晚 + 丹霞山公园门票6张 + 酒店晚餐4顿",
         }
 
-        loans = db.query(Loan).all()
+        loans = (await db.execute(select(Loan))).scalars().all()
         changed = False
         for loan in loans:
             credit_limit = _round_money(getattr(loan, "credit_limit", 0))
@@ -325,12 +325,10 @@ def migrate_loan_to_new_semantics():
                     changed = True
 
         if changed:
-            db.commit()
-    finally:
-        db.close()
+            await db.commit()
 
 
-def migrate_user_events_to_new_semantics():
+async def migrate_user_events_to_new_semantics():
     from app.models.user_event import UserEvent
 
     text_pairs = [
@@ -352,9 +350,8 @@ def migrate_user_events_to_new_semantics():
         ("放款", "发卡"),
     ]
 
-    db = SessionLocal()
-    try:
-        events = db.query(UserEvent).all()
+    async with AsyncSessionLocal() as db:
+        events = (await db.execute(select(UserEvent))).scalars().all()
         changed = False
         for event in events:
             original_type = (event.event_type or "").strip()
@@ -384,9 +381,7 @@ def migrate_user_events_to_new_semantics():
                 changed = True
 
         if changed:
-            db.commit()
-    finally:
-        db.close()
+            await db.commit()
 
 
 def initialize_database():
@@ -397,14 +392,17 @@ def initialize_database():
 
     Base.metadata.create_all(bind=engine)
     sync_legacy_schema()
-    ensure_default_admins()
-    ensure_default_products()
-    migrate_loan_to_new_semantics()
-    migrate_user_events_to_new_semantics()
+    asyncio.run(ensure_default_admins())
+    asyncio.run(ensure_default_products())
+    asyncio.run(migrate_loan_to_new_semantics())
+    asyncio.run(migrate_user_events_to_new_semantics())
 
-def get_db():
-    db = SessionLocal()
-    try:
+
+async def get_db():
+    async with AsyncSessionLocal() as db:
         yield db
-    finally:
-        db.close()
+
+
+async def get_async_db():
+    async for db in get_db():
+        yield db

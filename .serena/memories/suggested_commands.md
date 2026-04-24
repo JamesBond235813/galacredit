@@ -1,30 +1,30 @@
-# 建议命令
+# 建议命令（最新版）
 
-## 通用（Darwin/macOS）
-- `ls -la` 查看目录
-- `cd <path>` 切换目录
-- `rg <pattern>` 全局搜索文本
-- `rg --files` 列出文件
-- `find . -name "<name>"` 按名称查找
-- `git status` 查看变更
-- `git diff` 查看差异
+## 通用（macOS/Darwin）
+- `ls -la`
+- `cd <path>`
+- `rg <pattern>`
+- `rg --files`
+- `find . -name "<name>"`
+- `git status`
+- `git diff`
 
-## 后端（在 `backend/`）
-- 安装依赖: `pip install -r requirements.txt`
-- 本地启动（推荐）: `uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload`
-- 备选启动: `python app/main.py`
+## 后端（`backend/`）
+- 安装依赖：`pip install -r requirements.txt`
+- 启动（项目规范要求）：`python -m app.main`
+- 备选启动：`uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload`
 
-## 用户端 H5（在 `frontend_h5/`）
-- 安装依赖: `npm install`
-- 开发: `npm run dev`
-- 构建: `npm run build`
-- 预览: `npm run preview`
+## 前端 H5（`frontend_h5/`）
+- 安装依赖：`npm install`
+- 开发：`npm run dev`
+- 构建：`npm run build`
+- 预览：`npm run preview`
 
-## 管理端（在 `frontend_admin/`）
-- 安装依赖: `npm install`
-- 开发: `npm run dev`
-- 构建: `npm run build`
-- 预览: `npm run preview`
+## 前端管理端（`frontend_admin/`）
+- 安装依赖：`npm install`
+- 开发：`npm run dev`
+- 构建：`npm run build`
+- 预览：`npm run preview`
 
-## 当前仓库现状
-- 暂未发现明确 lint/test 脚本（package.json 中仅有 dev/build/preview）。
+## 备注
+- 当前 package.json 中未声明 lint/test 脚本；执行测试流程时需要按实际测试文件与框架手动组织命令。

@@ -1,15 +1,17 @@
+import asyncio
 import pymysql
 from app.core.config import settings
-from app.core.database import Base, engine
+from sqlalchemy import select
+
+from app.core.database import Base, AsyncSessionLocal, engine
 from app.models.user import User
 from app.models.loan import Loan
 from app.models.admin import Admin
-from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def init_db():
+async def init_db():
     # 1. 连接MySQL并创建数据库 (避免因为数据库不存在导致SQLAlchemy报错)
     try:
         conn = pymysql.connect(
@@ -32,16 +34,16 @@ def init_db():
     print("Tables created.")
     
     # 3. 初始化超级管理员账号
-    with Session(engine) as session:
-        admin = session.query(Admin).filter(Admin.username == "admin").first()
+    async with AsyncSessionLocal() as session:
+        admin = (await session.execute(select(Admin).where(Admin.username == "admin"))).scalar_one_or_none()
         if not admin:
             admin_user = Admin(
                 username="admin",
                 password_hash=pwd_context.hash("admin123")
             )
             session.add(admin_user)
-            session.commit()
+            await session.commit()
             print("Admin user 'admin' (password: 'admin123') created.")
 
 if __name__ == "__main__":
-    init_db()
+    asyncio.run(init_db())

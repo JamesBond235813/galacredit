@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loan import Loan
 from app.models.user import User
@@ -25,8 +25,8 @@ def _stringify_detail(detail: Any) -> Optional[str]:
     return str(detail)
 
 
-def log_user_event(
-    db: Session,
+async def log_user_event_async(
+    db: AsyncSession,
     *,
     user: User,
     event_type: str,
@@ -46,5 +46,5 @@ def log_user_event(
         detail=_stringify_detail(detail),
     )
     db.add(event)
-    db.flush()
+    await db.flush()
     return event

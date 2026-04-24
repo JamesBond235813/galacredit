@@ -3,47 +3,53 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user_async
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_async_db
 from app.models.user import User
 from app.schemas.channel import ChannelBindRequest, ChannelBindResponse
 from app.schemas.loan import LoanResponse
 from app.schemas.user import ApplicationSubmitRequest, UserLocationUpsertRequest, UserResponse
-from app.services.audit import log_user_event
-from app.services.channel_service import bind_user_source_channel, get_channel_by_name
+from app.services.audit import log_user_event_async
+from app.services.channel_service import bind_user_source_channel_async, get_channel_by_name_async
 from app.services.esign_identity import ESignIdentityError, esign_identity_client
 from app.services.location import reverse_geocode
 from app.services.loan_amounts import DEFAULT_FEE_RATE, serialize_loan_snapshot
-from app.services.loan_flow import create_init_loan, get_or_create_loan, get_latest_loan
-from app.services.loan_assignment import assign_review_admin_if_needed
+from app.services.loan_flow import (
+    create_init_loan_async,
+    get_latest_loan_async,
+    get_or_create_loan_async,
+)
+from app.services.loan_assignment import assign_review_admin_if_needed_async
 
 router = APIRouter()
 
 
 @router.get("/info", response_model=UserResponse)
-def get_user_info(current_user: User = Depends(get_current_user)):
+async def get_user_info(current_user: User = Depends(get_current_user_async)):
     return current_user
 
 
 @router.post("/channel-bind", response_model=ChannelBindResponse)
-def bind_channel(
+async def bind_channel(
     req: ChannelBindRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ):
-    channel = get_channel_by_name(db, req.channel_name, active_only=True)
+    db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
+    channel = await get_channel_by_name_async(db, req.channel_name, active_only=True)
     if not channel:
         raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
 
-    loan = get_or_create_loan(db, current_user.id)
-    attribution_status = bind_user_source_channel(db, user=current_user, channel=channel, loan=loan)
-    db.commit()
-    db.refresh(current_user)
+    loan = await get_or_create_loan_async(db, current_user.id)
+    attribution_status = await bind_user_source_channel_async(db, user=db_user, channel=channel, loan=loan)
+    await db.commit()
+    await db.refresh(db_user)
 
-    bound_channel = current_user.source_channel
+    bound_channel = db_user.source_channel
     if attribution_status == "BOUND":
         msg = f"已绑定专属渠道 {channel.sales_name}"
     elif attribution_status == "REFRESHED":
@@ -53,7 +59,6 @@ def bind_channel(
             f"当前账号已归属 {bound_channel.sales_name}（{bound_channel.channel_name}），"
             "本次不覆盖原渠道。"
         )
-
     return {
         "msg": msg,
         "source_channel_name": bound_channel.channel_name if bound_channel else None,
@@ -65,8 +70,8 @@ def bind_channel(
 async def mock_ocr(
     front_image: UploadFile = File(None),
     back_image: UploadFile = File(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ):
     if not front_image:
         raise HTTPException(status_code=400, detail="请上传身份证人像面。")
@@ -76,7 +81,7 @@ async def mock_ocr(
 
     if settings.ESIGN_IDENTITY_ENABLED:
         try:
-            ocr_result = esign_identity_client.id_card_ocr(front_bytes, back_bytes)
+            ocr_result = await esign_identity_client.id_card_ocr(front_bytes, back_bytes)
         except ESignIdentityError as exc:
             raise HTTPException(status_code=400, detail=f"身份证识别失败：{exc}") from exc
         current_user.name = (ocr_result.get("name") or "").strip()
@@ -93,8 +98,8 @@ async def mock_ocr(
 
     current_user.ocr_submitted_at = datetime.utcnow()
 
-    loan = get_or_create_loan(db, current_user.id)
-    log_user_event(
+    loan = await get_or_create_loan_async(db, current_user.id)
+    await log_user_event_async(
         db,
         user=current_user,
         loan=loan,
@@ -112,23 +117,23 @@ async def mock_ocr(
     )
 
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError as exc:
-        db.rollback()
+        await db.rollback()
         message = str(getattr(exc.orig, "args", [""])[-1] or exc)
         if "Duplicate entry" in message and "users.id_card_num" in message:
             raise HTTPException(status_code=400, detail="该身份证号已被其他账号使用，请核对后重试。") from exc
         raise HTTPException(status_code=500, detail="实名信息保存失败，请稍后重试。") from exc
 
-    db.refresh(current_user)
+    await db.refresh(current_user)
     return current_user
 
 
 @router.post("/face-auth")
 async def mock_face_auth(
     face_image: UploadFile = File(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ):
     if not current_user.name or not current_user.id_card_num:
         raise HTTPException(status_code=400, detail="请先完成身份证识别并确认实名信息。")
@@ -140,7 +145,7 @@ async def mock_face_auth(
 
         face_image_bytes = await face_image.read()
         try:
-            compare_result = esign_identity_client.face_compare(
+            compare_result = await esign_identity_client.face_compare(
                 name=current_user.name,
                 id_card_num=current_user.id_card_num,
                 face_image_bytes=face_image_bytes,
@@ -151,8 +156,8 @@ async def mock_face_auth(
             mismatch_message = "人脸识别信息与身份证信息不符，请重新尝试借款。"
             if "不符" in fail_detail or "不匹配" in fail_detail or "未通过" in fail_detail:
                 fail_detail = mismatch_message
-            loan = get_or_create_loan(db, current_user.id)
-            log_user_event(
+            loan = await get_or_create_loan_async(db, current_user.id)
+            await log_user_event_async(
                 db,
                 user=current_user,
                 loan=loan,
@@ -163,7 +168,7 @@ async def mock_face_auth(
                     "失败原因": fail_detail,
                 },
             )
-            db.commit()
+            await db.commit()
             raise HTTPException(status_code=400, detail=fail_detail) from exc
     else:
         await asyncio.sleep(1.0)
@@ -172,8 +177,8 @@ async def mock_face_auth(
     current_user.face_auth_status = "PASSED"
     current_user.face_auth_at = datetime.utcnow()
 
-    loan = get_or_create_loan(db, current_user.id)
-    log_user_event(
+    loan = await get_or_create_loan_async(db, current_user.id)
+    await log_user_event_async(
         db,
         user=current_user,
         loan=loan,
@@ -186,42 +191,40 @@ async def mock_face_auth(
         },
     )
 
-    db.commit()
+    await db.commit()
     return {"msg": "人脸认证及三要素校验成功", "score": score}
 
 
 @router.post("/application", response_model=LoanResponse)
-def submit_application(
+async def submit_application(
     req: ApplicationSubmitRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ):
+    db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     is_resubmitting = False
     contacts = req.emergency_contacts
     if len(contacts) != 2:
         raise HTTPException(status_code=400, detail="请完整填写两位紧急联系人")
-
     if contacts[0].phone == contacts[1].phone:
         raise HTTPException(status_code=400, detail="两位紧急联系人手机号不能相同")
 
-    loan = get_latest_loan(db, current_user.id)
-    if loan is None:
-        loan = create_init_loan(db, current_user.id)
-    elif loan.status == "SETTLED":
-        loan = create_init_loan(db, current_user.id)
+    loan = await get_latest_loan_async(db, current_user.id)
+    if loan is None or loan.status == "SETTLED":
+        loan = await create_init_loan_async(db, current_user.id)
     elif loan.status == "REVIEWING":
         is_resubmitting = True
     elif loan.status in {"APPROVED", "WITHDRAWING", "DISBURSED", "OVERDUE"}:
         raise HTTPException(status_code=400, detail="当前订单流程进行中，暂不能重复提交资料")
 
-    current_user.emergency_contact1_name = contacts[0].name.strip()
-    current_user.emergency_contact1_relation = contacts[0].relation.strip()
-    current_user.emergency_contact1_phone = contacts[0].phone.strip()
-    current_user.emergency_contact2_name = contacts[1].name.strip()
-    current_user.emergency_contact2_relation = contacts[1].relation.strip()
-    current_user.emergency_contact2_phone = contacts[1].phone.strip()
-    current_user.application_submitted_at = datetime.utcnow()
-    current_user.approved_limit = 0
+    db_user.emergency_contact1_name = contacts[0].name.strip()
+    db_user.emergency_contact1_relation = contacts[0].relation.strip()
+    db_user.emergency_contact1_phone = contacts[0].phone.strip()
+    db_user.emergency_contact2_name = contacts[1].name.strip()
+    db_user.emergency_contact2_relation = contacts[1].relation.strip()
+    db_user.emergency_contact2_phone = contacts[1].phone.strip()
+    db_user.application_submitted_at = datetime.utcnow()
+    db_user.approved_limit = 0
 
     loan.status = "REVIEWING"
     loan.credit_limit = 0
@@ -257,37 +260,36 @@ def submit_application(
     loan.ecard_account = None
     loan.ecard_password = None
     loan.ecard_expires_at = None
-    loan.created_at = current_user.application_submitted_at
-    assign_review_admin_if_needed(db, loan)
+    loan.created_at = db_user.application_submitted_at
+    await assign_review_admin_if_needed_async(db, loan)
 
-    log_user_event(
+    await log_user_event_async(
         db,
-        user=current_user,
+        user=db_user,
         loan=loan,
         event_type="APPLICATION_RESUBMIT" if is_resubmitting else "APPLICATION_SUBMIT",
         title="更新补充资料并继续审核" if is_resubmitting else "提交补充资料",
         detail={
-            "联系人1": f"{current_user.emergency_contact1_name}/{current_user.emergency_contact1_relation}/{current_user.emergency_contact1_phone}",
-            "联系人2": f"{current_user.emergency_contact2_name}/{current_user.emergency_contact2_relation}/{current_user.emergency_contact2_phone}",
+            "联系人1": f"{db_user.emergency_contact1_name}/{db_user.emergency_contact1_relation}/{db_user.emergency_contact1_phone}",
+            "联系人2": f"{db_user.emergency_contact2_name}/{db_user.emergency_contact2_relation}/{db_user.emergency_contact2_phone}",
         },
     )
-
-    db.commit()
-    db.refresh(loan)
+    await db.commit()
+    await db.refresh(loan)
     return serialize_loan_snapshot(loan)
 
 
 @router.post("/location")
-def upsert_user_location(
+async def upsert_user_location(
     req: UserLocationUpsertRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ):
     latitude = round(float(req.latitude), 7)
     longitude = round(float(req.longitude), 7)
     accuracy = None if req.accuracy is None else round(float(req.accuracy), 2)
 
-    location = reverse_geocode(latitude=latitude, longitude=longitude)
+    location = await reverse_geocode(latitude=latitude, longitude=longitude)
 
     current_user.location_latitude = str(latitude)
     current_user.location_longitude = str(longitude)
@@ -300,8 +302,8 @@ def upsert_user_location(
     current_user.location_street = location.get("street")
     current_user.location_updated_at = datetime.utcnow()
 
-    loan = get_or_create_loan(db, current_user.id)
-    log_user_event(
+    loan = await get_or_create_loan_async(db, current_user.id)
+    await log_user_event_async(
         db,
         user=current_user,
         loan=loan,
@@ -320,7 +322,7 @@ def upsert_user_location(
         },
     )
 
-    db.commit()
+    await db.commit()
     return {
         "msg": "位置已更新",
         "location_updated_at": current_user.location_updated_at,

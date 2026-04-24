@@ -2,17 +2,22 @@ import random
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_async_db
 from app.core.security import create_access_token
 from app.models.user import User
 from app.schemas.channel import ChannelLandingResponse
 from app.schemas.user import LoginRequest, SendCodeRequest, Token
-from app.services.audit import log_user_event
-from app.services.channel_service import bind_user_source_channel, get_channel_by_name, serialize_channel_landing
-from app.services.loan_flow import get_entry_loan
+from app.services.audit import log_user_event_async
+from app.services.channel_service import (
+    bind_user_source_channel_async,
+    get_channel_by_name_async,
+    serialize_channel_landing,
+)
+from app.services.loan_flow import get_or_create_loan_async
 
 router = APIRouter()
 
@@ -20,22 +25,22 @@ MOCK_CODES = {}
 
 
 @router.post("/send-code")
-def send_code(req: SendCodeRequest):
+async def send_code(req: SendCodeRequest):
     code = f"{random.randint(1000, 9999)}"
     MOCK_CODES[req.phone] = code
     return {"msg": "验证码发送成功", "code": code}
 
 
 @router.get("/channels/{channel_name}", response_model=ChannelLandingResponse)
-def get_channel_entry(channel_name: str, db: Session = Depends(get_db)):
-    channel = get_channel_by_name(db, channel_name, active_only=True)
+async def get_channel_entry(channel_name: str, db: AsyncSession = Depends(get_async_db)):
+    channel = await get_channel_by_name_async(db, channel_name, active_only=True)
     if not channel:
         raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
     return serialize_channel_landing(channel)
 
 
 @router.post("/login", response_model=Token)
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+async def login(req: LoginRequest, db: AsyncSession = Depends(get_async_db)):
     real_code = MOCK_CODES.get(req.phone)
     if not real_code or req.code != real_code:
         raise HTTPException(status_code=400, detail="验证码错误或已失效")
@@ -43,25 +48,29 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     channel = None
     if req.channel_name:
-        channel = get_channel_by_name(db, req.channel_name, active_only=True)
+        channel = await get_channel_by_name_async(db, req.channel_name, active_only=True)
         if not channel:
             raise HTTPException(status_code=400, detail="渠道链接不存在或已停用")
 
-    user = db.query(User).filter(User.phone == req.phone).first()
+    user = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
     is_new_user = user is None
 
     if user is None:
         user = User(phone=req.phone, face_auth_status="PENDING")
         db.add(user)
-        db.flush()
+        await db.flush()
 
-    loan = get_entry_loan(db, user.id)
+    loan = await get_or_create_loan_async(db, user.id)
 
     user.last_login_at = now
-    attribution_status = bind_user_source_channel(db, user=user, channel=channel, loan=loan) if channel else None
+    attribution_status = (
+        await bind_user_source_channel_async(db, user=user, channel=channel, loan=loan)
+        if channel
+        else None
+    )
 
     if is_new_user:
-        log_user_event(
+        await log_user_event_async(
             db,
             user=user,
             loan=loan,
@@ -78,7 +87,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     if channel and attribution_status in {"BOUND", "REFRESHED"}:
         login_detail += f" 入口渠道：{channel.sales_name}（{channel.channel_name}）。"
 
-    log_user_event(
+    await log_user_event_async(
         db,
         user=user,
         loan=loan,
@@ -88,7 +97,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         detail=login_detail,
     )
 
-    db.commit()
+    await db.commit()
     MOCK_CODES.pop(req.phone, None)
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

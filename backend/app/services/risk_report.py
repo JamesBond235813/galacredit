@@ -1,15 +1,16 @@
 import copy
 import hashlib
+import asyncio
 import json
 import time
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
-from urllib import error as urllib_error
-from urllib import request as urllib_request
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.risk_report import RiskControlReport
@@ -34,8 +35,8 @@ def serialize_risk_report(report: RiskControlReport) -> Dict[str, Any]:
     }
 
 
-def get_user_for_risk_report(db: Session, user_id: int) -> User:
-    user = db.query(User).filter(User.id == user_id).first()
+async def get_user_for_risk_report_async(db: AsyncSession, user_id: int) -> User:
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     if not user.name or not user.id_card_num or not user.phone:
@@ -43,8 +44,27 @@ def get_user_for_risk_report(db: Session, user_id: int) -> User:
     return user
 
 
-def get_or_create_risk_report(db: Session, *, name: str, id_card: str, phone: str) -> RiskControlReport:
-    cached_report = get_cached_risk_report(db, name=name, id_card=id_card)
+async def get_cached_risk_report_async(db: AsyncSession, *, name: str, id_card: str) -> Optional[RiskControlReport]:
+    thirty_days_ago = datetime.utcnow() - timedelta(days=settings.RISK_REPORT_CACHE_DAYS)
+    stmt = select(RiskControlReport).where(
+        RiskControlReport.name == name,
+        RiskControlReport.id_card == id_card,
+        RiskControlReport.query_time >= thirty_days_ago,
+    )
+    if settings.RISK_PANORAMA_ENABLED and _has_panorama_credentials():
+        stmt = stmt.where(RiskControlReport.source == RISK_SOURCE_PANORAMA)
+    stmt = stmt.order_by(RiskControlReport.query_time.desc())
+    return (await db.execute(stmt)).scalars().first()
+
+
+async def get_or_create_risk_report_async(
+    db: AsyncSession,
+    *,
+    name: str,
+    id_card: str,
+    phone: str,
+) -> RiskControlReport:
+    cached_report = await get_cached_risk_report_async(db, name=name, id_card=id_card)
     if cached_report:
         return cached_report
 
@@ -61,31 +81,17 @@ def get_or_create_risk_report(db: Session, *, name: str, id_card: str, phone: st
         updated_at=now,
     )
     db.add(report)
-    db.flush()
+    await db.flush()
     return report
-
-
-def get_cached_risk_report(db: Session, *, name: str, id_card: str) -> Optional[RiskControlReport]:
-    thirty_days_ago = datetime.utcnow() - timedelta(days=settings.RISK_REPORT_CACHE_DAYS)
-    query = db.query(RiskControlReport).filter(
-        RiskControlReport.name == name,
-        RiskControlReport.id_card == id_card,
-        RiskControlReport.query_time >= thirty_days_ago,
-    )
-
-    if settings.RISK_PANORAMA_ENABLED and _has_panorama_credentials():
-        query = query.filter(RiskControlReport.source == RISK_SOURCE_PANORAMA)
-
-    return query.order_by(RiskControlReport.query_time.desc()).first()
 
 
 def fetch_risk_report_payload(*, name: str, id_card: str, phone: str) -> tuple[Dict[str, Any], str]:
     if settings.RISK_PANORAMA_ENABLED and _has_panorama_credentials():
-        return fetch_panorama_report(name=name, id_card=id_card, phone=phone), RISK_SOURCE_PANORAMA
+        return asyncio.run(fetch_panorama_report_async(name=name, id_card=id_card, phone=phone)), RISK_SOURCE_PANORAMA
     return build_mock_risk_report(), RISK_SOURCE_MOCK
 
 
-def fetch_panorama_report(*, name: str, id_card: str, phone: str) -> Dict[str, Any]:
+async def fetch_panorama_report_async(*, name: str, id_card: str, phone: str) -> Dict[str, Any]:
     timestamp = int(time.time() * 1000)
     access_key = settings.RISK_PANORAMA_ACCESS_KEY
     secret_key = settings.RISK_PANORAMA_SECRET_KEY
@@ -109,21 +115,19 @@ def fetch_panorama_report(*, name: str, id_card: str, phone: str) -> Dict[str, A
         "merchantNo": settings.RISK_PANORAMA_MERCHANT_NO,
         "body": body_json,
     }
-    request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib_request.Request(
-        settings.RISK_PANORAMA_API_URL,
-        data=request_body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
     try:
-        with urllib_request.urlopen(request, timeout=30) as response:
-            response_text = response.read().decode("utf-8")
-    except urllib_error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="ignore")
-        raise HTTPException(status_code=502, detail=f"风控服务请求失败：{error_body or exc.reason}") from exc
-    except urllib_error.URLError as exc:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                settings.RISK_PANORAMA_API_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            response_text = response.text
+    except httpx.HTTPStatusError as exc:
+        error_body = exc.response.text
+        raise HTTPException(status_code=502, detail=f"风控服务请求失败：{error_body or exc}") from exc
+    except httpx.RequestError as exc:
         raise HTTPException(status_code=502, detail="风控服务连接失败，请稍后重试") from exc
 
     try:

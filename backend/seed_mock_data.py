@@ -1,11 +1,14 @@
+import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
 
-from app.core.database import SessionLocal, initialize_database
+from sqlalchemy import select
+
+from app.core.database import AsyncSessionLocal, initialize_database
 from app.models.channel import Channel
 from app.models.loan import Loan
 from app.models.user import User
-from app.services.audit import log_user_event
+from app.services.audit import log_user_event_async
 from app.services.loan_amounts import DEFAULT_FEE_RATE, calculate_total_repayment_amount, sync_loan_fee_fields
 
 TEST_PHONE_PREFIX = "1999100"
@@ -72,8 +75,8 @@ def set_event_time(event, when: datetime):
     return event
 
 
-def add_event(db, *, user, loan, when: datetime, event_type: str, title: str, detail, actor_type="USER", operator_name=None):
-    event = log_user_event(
+async def add_event(db, *, user, loan, when: datetime, event_type: str, title: str, detail, actor_type="USER", operator_name=None):
+    event = await log_user_event_async(
         db,
         user=user,
         loan=loan,
@@ -110,7 +113,7 @@ def populate_application(user: User, index: int, submitted_at: datetime):
     user.application_submitted_at = submitted_at
 
 
-def create_previous_settled_loan(db, user: User, index: int, now: datetime):
+async def create_previous_settled_loan(db, user: User, index: int, now: datetime):
     credit_limit = AMOUNTS[(index + 1) % len(AMOUNTS)]
     term_days = TERMS[(index + 1) % len(TERMS)]
     fee_rate = FEE_RATES[(index + 1) % len(FEE_RATES)]
@@ -134,9 +137,9 @@ def create_previous_settled_loan(db, user: User, index: int, now: datetime):
     loan.reduction_amount = round(loan.fee_amount * 0.1, 2)
     loan.repaid_amount = round(calculate_total_repayment_amount(loan) - loan.reduction_amount, 2)
     db.add(loan)
-    db.flush()
+    await db.flush()
 
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -145,7 +148,7 @@ def create_previous_settled_loan(db, user: User, index: int, now: datetime):
         title="历史借款提交",
         detail="模拟历史已结清订单，用于测试复借统计。",
     )
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -156,7 +159,7 @@ def create_previous_settled_loan(db, user: User, index: int, now: datetime):
         title="历史订单审批通过",
         detail=f"额度 {credit_limit} 元；期限 {term_days} 天；综合息费率 {fee_rate * 100:.0f}%",
     )
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -167,7 +170,7 @@ def create_previous_settled_loan(db, user: User, index: int, now: datetime):
         title="历史订单放款完成",
         detail=f"已放款 {credit_limit} 元。",
     )
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -180,7 +183,7 @@ def create_previous_settled_loan(db, user: User, index: int, now: datetime):
     )
 
 
-def build_current_loan(db, user: User, status_code: str, index: int, now: datetime) -> Loan:
+async def build_current_loan(db, user: User, status_code: str, index: int, now: datetime) -> Loan:
     credit_limit = AMOUNTS[index % len(AMOUNTS)]
     term_days = TERMS[index % len(TERMS)]
     fee_rate = FEE_RATES[index % len(FEE_RATES)]
@@ -208,7 +211,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
         disbursed_at=None,
     )
     db.add(loan)
-    db.flush()
+    await db.flush()
 
     if status_code == "INIT":
         return loan
@@ -216,8 +219,8 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     ocr_time = created_at + timedelta(hours=3)
     face_time = ocr_time + timedelta(hours=2)
     populate_identity(user, index, ocr_time, face_time)
-    add_event(db, user=user, loan=loan, when=ocr_time, event_type="OCR_SUBMIT", title="提交身份证识别", detail="已上传身份证正反面并完成模拟识别。")
-    add_event(db, user=user, loan=loan, when=face_time, event_type="FACE_AUTH_PASS", title="完成人脸识别", detail="人脸识别及三要素校验通过。")
+    await add_event(db, user=user, loan=loan, when=ocr_time, event_type="OCR_SUBMIT", title="提交身份证识别", detail="已上传身份证正反面并完成模拟识别。")
+    await add_event(db, user=user, loan=loan, when=face_time, event_type="FACE_AUTH_PASS", title="完成人脸识别", detail="人脸识别及三要素校验通过。")
 
     if status_code == "INIT":
         return loan
@@ -225,7 +228,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     application_time = face_time + timedelta(hours=2)
     populate_application(user, index, application_time)
     loan.created_at = application_time
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -248,7 +251,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
         loan.review_note = "资料完整，但暂不符合当前授信策略。"
         loan.approved_at = None
         user.approved_limit = 0
-        add_event(
+        await add_event(
             db,
             user=user,
             loan=loan,
@@ -269,7 +272,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     loan.approved_at = review_time
     sync_loan_fee_fields(loan)
     user.approved_limit = int(credit_limit)
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -286,7 +289,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
 
     withdraw_time = review_time + timedelta(hours=8)
     loan.status = "WITHDRAWING"
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -320,7 +323,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     loan.due_date = due_date
     loan.penalty_amount = 0
 
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -335,7 +338,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     if status_code == "DISBURSED_TODAY":
         loan.reminder_count = 1 + index % 2
         loan.last_reminded_at = due_date_from_today(now, 0, 8 + index % 3)
-        add_event(
+        await add_event(
             db,
             user=user,
             loan=loan,
@@ -349,7 +352,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     elif status_code == "DISBURSED_ACTIVE":
         if index % 2 == 0:
             loan.repaid_amount = round(min(credit_limit * 0.25, calculate_total_repayment_amount(loan)), 2)
-            add_event(
+            await add_event(
                 db,
                 user=user,
                 loan=loan,
@@ -373,7 +376,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
         if days >= 7:
             loan.repaid_amount = float(credit_limit * 0.3)
 
-        add_event(
+        await add_event(
             db,
             user=user,
             loan=loan,
@@ -383,7 +386,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
             title="系统自动转为逾期",
             detail=f"最后还款日已过，订单自动转为逾期 {days} 天。",
         )
-        add_event(
+        await add_event(
             db,
             user=user,
             loan=loan,
@@ -399,7 +402,7 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
         loan.status = "SETTLED"
         loan.reduction_amount = round(loan.fee_amount * 0.15, 2)
         loan.repaid_amount = round(calculate_total_repayment_amount(loan) - loan.reduction_amount, 2)
-        add_event(
+        await add_event(
             db,
             user=user,
             loan=loan,
@@ -414,8 +417,12 @@ def build_current_loan(db, user: User, status_code: str, index: int, now: dateti
     return loan
 
 
-def create_user_record(db, index: int, status_code: str, now: datetime):
-    channel = db.query(Channel).filter(Channel.channel_name == CHANNEL_POOL[index % len(CHANNEL_POOL)][0]).first()
+async def create_user_record(db, index: int, status_code: str, now: datetime):
+    channel = (
+        await db.execute(
+            select(Channel).where(Channel.channel_name == CHANNEL_POOL[index % len(CHANNEL_POOL)][0])
+        )
+    ).scalar_one_or_none()
     created_at = now - timedelta(days=20 - index % 9, hours=2 + index % 6)
     user = User(
         phone=make_phone(index),
@@ -429,14 +436,14 @@ def create_user_record(db, index: int, status_code: str, now: datetime):
         last_login_at=created_at + timedelta(hours=1),
     )
     db.add(user)
-    db.flush()
+    await db.flush()
 
     if status_code in {"APPROVED", "WITHDRAWING", "DISBURSED_TODAY", "DISBURSED_TOMORROW", "DISBURSED_ACTIVE", "OVERDUE_1", "OVERDUE_2", "OVERDUE_7", "SETTLED"} and index % 8 == 0:
-        create_previous_settled_loan(db, user, index, now)
+        await create_previous_settled_loan(db, user, index, now)
 
-    loan = build_current_loan(db, user, status_code, index, now)
+    loan = await build_current_loan(db, user, status_code, index, now)
 
-    add_event(
+    await add_event(
         db,
         user=user,
         loan=loan,
@@ -447,62 +454,56 @@ def create_user_record(db, index: int, status_code: str, now: datetime):
     )
 
 
-def ensure_seed_channels(db):
+async def ensure_seed_channels(db):
     channels = []
     for channel_name, sales_name in CHANNEL_POOL:
-        channel = db.query(Channel).filter(Channel.channel_name == channel_name).first()
+        channel = (await db.execute(select(Channel).where(Channel.channel_name == channel_name))).scalar_one_or_none()
         if channel is None:
             channel = Channel(channel_name=channel_name, sales_name=sales_name, status="ACTIVE", note="模拟渠道数据")
             db.add(channel)
-            db.flush()
+            await db.flush()
         channels.append(channel)
     return channels
 
 
-def clear_previous_seed_data(db):
-    seeded_users = (
-        db.query(User)
-        .filter(User.phone.like(f"{TEST_PHONE_PREFIX}%"))
-        .all()
-    )
+async def clear_previous_seed_data(db):
+    seeded_users = (await db.execute(select(User).where(User.phone.like(f"{TEST_PHONE_PREFIX}%")))).scalars().all()
     for user in seeded_users:
         db.delete(user)
-    db.commit()
+    await db.commit()
     return len(seeded_users)
 
 
-def seed_mock_data():
+async def seed_mock_data():
     initialize_database()
-    db = SessionLocal()
-    now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-    planned_total = sum(count for _, count in STATUS_PLAN)
-    if planned_total != TOTAL_USERS:
-        raise ValueError(f"状态规划总数 {planned_total} 与目标总数 {TOTAL_USERS} 不一致")
+    async with AsyncSessionLocal() as db:
+        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        planned_total = sum(count for _, count in STATUS_PLAN)
+        if planned_total != TOTAL_USERS:
+            raise ValueError(f"状态规划总数 {planned_total} 与目标总数 {TOTAL_USERS} 不一致")
 
-    try:
-        ensure_seed_channels(db)
-        removed_count = clear_previous_seed_data(db)
+        try:
+            await ensure_seed_channels(db)
+            removed_count = await clear_previous_seed_data(db)
 
-        current_index = 0
-        status_counter = {}
-        for status_code, count in STATUS_PLAN:
-            for _ in range(count):
-                create_user_record(db, current_index, status_code, now)
-                status_counter[status_code] = status_counter.get(status_code, 0) + 1
-                current_index += 1
+            current_index = 0
+            status_counter = {}
+            for status_code, count in STATUS_PLAN:
+                for _ in range(count):
+                    await create_user_record(db, current_index, status_code, now)
+                    status_counter[status_code] = status_counter.get(status_code, 0) + 1
+                    current_index += 1
 
-        db.commit()
+            await db.commit()
 
-        print(f"清理旧模拟用户 {removed_count} 条。")
-        print(f"新增模拟用户 {current_index} 条。")
-        for status_code, count in status_counter.items():
-            print(f"{status_code}: {count}")
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+            print(f"清理旧模拟用户 {removed_count} 条。")
+            print(f"新增模拟用户 {current_index} 条。")
+            for status_code, count in status_counter.items():
+                print(f"{status_code}: {count}")
+        except Exception:
+            await db.rollback()
+            raise
 
 
 if __name__ == "__main__":
-    seed_mock_data()
+    asyncio.run(seed_mock_data())

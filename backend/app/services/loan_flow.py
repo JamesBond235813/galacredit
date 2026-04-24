@@ -1,26 +1,9 @@
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loan import Loan
-
-
-def get_latest_loan(db: Session, user_id: int) -> Optional[Loan]:
-    return db.query(Loan).filter(Loan.user_id == user_id).order_by(Loan.id.desc()).first()
-
-
-def create_init_loan(db: Session, user_id: int) -> Loan:
-    loan = Loan(user_id=user_id, status="INIT")
-    db.add(loan)
-    db.flush()
-    return loan
-
-
-def get_entry_loan(db: Session, user_id: int) -> Loan:
-    loan = get_latest_loan(db, user_id)
-    if loan is None or loan.status == "SETTLED":
-        loan = create_init_loan(db, user_id)
-    return loan
 
 
 def get_prior_settled_loans(loans, current_loan_id: Optional[int] = None):
@@ -59,5 +42,20 @@ def get_relend_label(loans, current_loan_id: Optional[int] = None) -> str:
     return f"复借{relend_count}"
 
 
-def get_or_create_loan(db: Session, user_id: int) -> Loan:
-    return get_entry_loan(db, user_id)
+async def get_latest_loan_async(db: AsyncSession, user_id: int) -> Optional[Loan]:
+    result = await db.execute(select(Loan).where(Loan.user_id == user_id).order_by(Loan.id.desc()))
+    return result.scalars().first()
+
+
+async def create_init_loan_async(db: AsyncSession, user_id: int) -> Loan:
+    loan = Loan(user_id=user_id, status="INIT")
+    db.add(loan)
+    await db.flush()
+    return loan
+
+
+async def get_or_create_loan_async(db: AsyncSession, user_id: int) -> Loan:
+    loan = await get_latest_loan_async(db, user_id)
+    if loan is None or loan.status == "SETTLED":
+        loan = await create_init_loan_async(db, user_id)
+    return loan

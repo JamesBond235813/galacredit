@@ -2,12 +2,13 @@ import re
 from datetime import datetime
 from typing import Iterable, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.channel import Channel
 from app.models.loan import Loan
 from app.models.user import User
-from app.services.audit import log_user_event
+from app.services.audit import log_user_event_async
 from app.services.loan_amounts import calculate_remaining_repayment_amount, round_money
 
 CHANNEL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
@@ -30,19 +31,24 @@ def normalize_channel_status(value: Optional[str]) -> str:
     return status
 
 
-def get_channel_by_name(db: Session, channel_name: str, *, active_only: bool = False) -> Optional[Channel]:
+async def get_channel_by_name_async(
+    db: AsyncSession,
+    channel_name: str,
+    *,
+    active_only: bool = False,
+) -> Optional[Channel]:
     try:
         normalized_name = normalize_channel_name(channel_name)
     except ValueError:
         return None
-    query = db.query(Channel).filter(Channel.channel_name == normalized_name)
+    query = select(Channel).where(Channel.channel_name == normalized_name)
     if active_only:
-        query = query.filter(Channel.status == "ACTIVE")
-    return query.first()
+        query = query.where(Channel.status == "ACTIVE")
+    return (await db.execute(query)).scalar_one_or_none()
 
 
-def bind_user_source_channel(
-    db: Session,
+async def bind_user_source_channel_async(
+    db: AsyncSession,
     *,
     user: User,
     channel: Channel,
@@ -54,7 +60,7 @@ def bind_user_source_channel(
         user.source_channel = channel
         user.channel_bound_at = now
         user.last_channel_visit_at = now
-        log_user_event(
+        await log_user_event_async(
             db,
             user=user,
             loan=loan,

@@ -5,7 +5,8 @@ import json
 import re
 import time
 from typing import Any, Dict, Optional
-from urllib import error, request
+
+import httpx
 
 from app.core.config import settings
 
@@ -107,29 +108,29 @@ class ESignIdentityClient:
             headers["Content-MD5"] = content_md5
         return headers
 
-    def _http_request(self, method: str, path: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _http_request(self, method: str, path: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         self.ensure_configured()
         payload = None
         if body is not None:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         headers = self._build_signature_headers(method, path, payload)
-        req = request.Request(
-            url=self._build_url(path),
-            data=payload,
-            headers=headers,
-            method=method.upper(),
-        )
 
         try:
-            with request.urlopen(req, timeout=settings.ESIGN_HTTP_TIMEOUT_SECONDS) as resp:
-                raw = resp.read().decode("utf-8")
-                return json.loads(raw) if raw else {}
-        except error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="ignore")
-            raise ESignIdentityError(self._translate_http_error(exc.code, raw)) from exc
-        except error.URLError as exc:
-            raise ESignIdentityError(f"网络请求失败: {exc.reason}") from exc
+            async with httpx.AsyncClient(timeout=settings.ESIGN_HTTP_TIMEOUT_SECONDS) as client:
+                response = await client.request(
+                    method=method.upper(),
+                    url=self._build_url(path),
+                    content=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.json() if response.text else {}
+        except httpx.HTTPStatusError as exc:
+            raw = exc.response.text
+            raise ESignIdentityError(self._translate_http_error(exc.response.status_code, raw)) from exc
+        except httpx.RequestError as exc:
+            raise ESignIdentityError(f"网络请求失败: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise ESignIdentityError("服务返回了无法解析的响应。") from exc
 
@@ -191,7 +192,7 @@ class ESignIdentityClient:
             return resp
         raise ESignIdentityError(default_err)
 
-    def id_card_ocr(self, info_face_bytes: bytes, emblem_face_bytes: Optional[bytes]) -> Dict[str, Any]:
+    async def id_card_ocr(self, info_face_bytes: bytes, emblem_face_bytes: Optional[bytes]) -> Dict[str, Any]:
         if not info_face_bytes:
             raise ESignIdentityError("请上传身份证人像面。")
 
@@ -201,7 +202,7 @@ class ESignIdentityClient:
         if emblem_face_bytes:
             body["emblemImg"] = self._to_base64(emblem_face_bytes)
 
-        resp = self._http_request("POST", "/v2/identity/auth/api/ocr/idcard", body=body)
+        resp = await self._http_request("POST", "/v2/identity/auth/api/ocr/idcard", body=body)
         data = self._extract_response_data(resp, "身份证识别失败，请重新拍摄后重试。")
 
         return {
@@ -211,11 +212,11 @@ class ESignIdentityClient:
             "id_expiry": (self._normalize_valid_period(data.get("validityPeriod")) or "").strip(),
         }
 
-    def face_compare(self, name: str, id_card_num: str, face_image_bytes: bytes) -> Dict[str, Any]:
+    async def face_compare(self, name: str, id_card_num: str, face_image_bytes: bytes) -> Dict[str, Any]:
         if not face_image_bytes:
             raise ESignIdentityError("请上传人脸照片。")
 
-        resp = self._http_request(
+        resp = await self._http_request(
             "POST",
             "/v2/identity/verify/individual/faceCompare/withoutSource",
             body={
