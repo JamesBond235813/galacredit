@@ -16,4 +16,10 @@ class Channel(Base):
     note = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    users = relationship("User", back_populates="source_channel")
+    users = relationship(
+        "User",
+        back_populates="source_channel",
+        primaryjoin="Channel.id == User.source_channel_id",
+        foreign_keys="User.source_channel_id",
+        lazy="selectin",
+    )

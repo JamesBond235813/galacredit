@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, DateTime, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -7,7 +7,7 @@ class Loan(Base):
     __tablename__ = "loans"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
     
     # 状态：INIT, REVIEWING, APPROVED, REJECTED, WITHDRAWING, DISBURSED, SETTLED, OVERDUE
     status = Column(String(50), default="INIT", index=True)
@@ -31,8 +31,8 @@ class Loan(Base):
     last_collection_at = Column(DateTime, nullable=True)
     collection_note = Column(String(255), nullable=True)
     repay_attempt_count = Column(Integer, default=0)
-    review_admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
-    collection_admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
+    review_admin_id = Column(Integer, nullable=True, index=True)
+    collection_admin_id = Column(Integer, nullable=True, index=True)
     collection_transferred_at = Column(DateTime, nullable=True)
 
     product_id = Column(Integer, nullable=True, index=True)
@@ -51,19 +51,48 @@ class Loan(Base):
     created_at = Column(DateTime, default=datetime.utcnow) # 提现申请时间
     disbursed_at = Column(DateTime, nullable=True) # 放款时间
     
-    owner = relationship("User", back_populates="loans")
-    review_admin = relationship("Admin", foreign_keys=[review_admin_id])
-    collection_admin = relationship("Admin", foreign_keys=[collection_admin_id])
-    events = relationship("UserEvent", back_populates="loan", cascade="all, delete-orphan")
+    owner = relationship(
+        "User",
+        back_populates="loans",
+        primaryjoin="Loan.user_id == User.id",
+        foreign_keys=[user_id],
+        lazy="selectin",
+    )
+    review_admin = relationship(
+        "Admin",
+        primaryjoin="Loan.review_admin_id == Admin.id",
+        foreign_keys=[review_admin_id],
+        lazy="selectin",
+    )
+    collection_admin = relationship(
+        "Admin",
+        primaryjoin="Loan.collection_admin_id == Admin.id",
+        foreign_keys=[collection_admin_id],
+        lazy="selectin",
+    )
+    events = relationship(
+        "UserEvent",
+        back_populates="loan",
+        cascade="all, delete-orphan",
+        primaryjoin="Loan.id == UserEvent.loan_id",
+        foreign_keys="UserEvent.loan_id",
+        lazy="selectin",
+    )
     installments = relationship(
         "LoanInstallment",
         back_populates="loan",
         cascade="all, delete-orphan",
+        primaryjoin="Loan.id == LoanInstallment.loan_id",
+        foreign_keys="LoanInstallment.loan_id",
         order_by="LoanInstallment.period_no",
+        lazy="selectin",
     )
     transactions = relationship(
         "LoanTransaction",
         back_populates="loan",
         cascade="all, delete-orphan",
+        primaryjoin="Loan.id == LoanTransaction.loan_id",
+        foreign_keys="LoanTransaction.loan_id",
         order_by="LoanTransaction.created_at.desc()",
+        lazy="selectin",
     )

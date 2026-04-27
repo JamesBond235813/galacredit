@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -33,7 +33,7 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     ocr_submitted_at = Column(DateTime, nullable=True)
     application_submitted_at = Column(DateTime, nullable=True)
-    source_channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True, index=True)
+    source_channel_id = Column(Integer, nullable=True, index=True)
     channel_bound_at = Column(DateTime, nullable=True)
     last_channel_visit_at = Column(DateTime, nullable=True)
     
@@ -42,6 +42,26 @@ class User(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    source_channel = relationship("Channel", back_populates="users")
-    loans = relationship("Loan", back_populates="owner", cascade="all, delete-orphan")
-    events = relationship("UserEvent", back_populates="user", cascade="all, delete-orphan")
+    source_channel = relationship(
+        "Channel",
+        back_populates="users",
+        primaryjoin="User.source_channel_id == Channel.id",
+        foreign_keys=[source_channel_id],
+        lazy="selectin",
+    )
+    loans = relationship(
+        "Loan",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        primaryjoin="User.id == Loan.user_id",
+        foreign_keys="Loan.user_id",
+        lazy="selectin",
+    )
+    events = relationship(
+        "UserEvent",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        primaryjoin="User.id == UserEvent.user_id",
+        foreign_keys="UserEvent.user_id",
+        lazy="selectin",
+    )

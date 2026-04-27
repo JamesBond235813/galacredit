@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loan import Loan
@@ -22,6 +23,19 @@ TRANSACTION_TYPE_LABELS = {
     "REDUCTION": "减免登记",
     "SETTLEMENT": "结清补录",
 }
+
+
+def _get_loaded_relation(entity: Any, relation_name: str):
+    """读取已加载关系，避免在异步上下文外触发懒加载。
+
+    :param entity: ORM 实体对象
+    :param relation_name: 关系字段名
+    :return: 已加载的关系值，未加载时返回 None
+    """
+    if entity is None:
+        return None
+    state = getattr(entity, "__dict__", {})
+    return state.get(relation_name)
 
 
 def _to_cents(value: Any) -> int:
@@ -116,11 +130,21 @@ def build_installment_blueprint(loan: Loan) -> List[Dict[str, Any]]:
 
 async def ensure_installment_records_async(db: AsyncSession, loan: Loan) -> List[LoanInstallment]:
     if loan.status not in ACTIVE_LEDGER_STATUSES:
-        return getattr(loan, "installments", []) or []
+        return _get_loaded_relation(loan, "installments") or []
     if not getattr(loan, "disbursed_at", None) or not getattr(loan, "term_days", None):
-        return getattr(loan, "installments", []) or []
-    if getattr(loan, "installments", None):
-        return loan.installments
+        return _get_loaded_relation(loan, "installments") or []
+
+    # 显式查询分期记录，避免访问关系属性触发懒加载导致 MissingGreenlet。
+    existing_items = (
+        await db.execute(
+            select(LoanInstallment)
+            .where(LoanInstallment.loan_id == loan.id)
+            .order_by(LoanInstallment.period_no.asc())
+        )
+    ).scalars().all()
+    if existing_items:
+        loan.installments = existing_items
+        return existing_items
 
     items = []
     for blueprint in build_installment_blueprint(loan):
@@ -312,8 +336,9 @@ def build_virtual_installments(loan: Loan, now: Optional[datetime] = None) -> Tu
 
 def sync_installment_records(loan: Loan, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     current_time = now or datetime.utcnow()
+    loaded_installments = _get_loaded_relation(loan, "installments") or []
     rows = []
-    for item in sorted(getattr(loan, "installments", []) or [], key=lambda current: current.period_no):
+    for item in sorted(loaded_installments, key=lambda current: current.period_no):
         paid_amount = round_money(
             getattr(item, "paid_amount", 0)
             or (
@@ -356,7 +381,7 @@ def sync_installment_records(loan: Loan, now: Optional[datetime] = None) -> List
     _sync_row_statuses(rows, now=current_time)
 
     row_map = {row["id"]: row for row in rows}
-    for item in getattr(loan, "installments", []) or []:
+    for item in loaded_installments:
         row = row_map.get(item.id)
         if not row:
             continue
@@ -475,11 +500,12 @@ def get_loan_ledger_snapshot(
     now: Optional[datetime] = None,
     sync_models: bool = False,
 ) -> Dict[str, Any]:
-    if getattr(loan, "installments", None):
+    loaded_installments = _get_loaded_relation(loan, "installments") or []
+    if loaded_installments:
         rows = sync_installment_records(loan, now=now) if sync_models else []
         if not rows:
             rows = []
-            for item in sorted(loan.installments, key=lambda current: current.period_no):
+            for item in sorted(loaded_installments, key=lambda current: current.period_no):
                 rows.append(
                     {
                         "id": item.id,
@@ -525,7 +551,8 @@ def sync_loan_repayment_state(loan: Loan, now: Optional[datetime] = None) -> str
     if loan.status not in ACTIVE_LEDGER_STATUSES:
         return loan.status
 
-    ledger = get_loan_ledger_snapshot(loan, now=now, sync_models=bool(getattr(loan, "installments", None)))
+    loaded_installments = _get_loaded_relation(loan, "installments") or []
+    ledger = get_loan_ledger_snapshot(loan, now=now, sync_models=bool(loaded_installments))
     summary = ledger["summary"]
 
     if summary["remaining_amount"] <= 0:

@@ -149,6 +149,9 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
     interest_amount = calculate_interest_amount(credit_limit, term_days)
     guarantee_fee_amount = calculate_guarantee_fee_amount(fee_amount, credit_limit, term_days)
 
+    review_admin = getattr(loan, "__dict__", {}).get("review_admin")
+    collection_admin = getattr(loan, "__dict__", {}).get("collection_admin")
+
     payload = {
         "id": loan.id,
         "user_id": loan.user_id,
@@ -183,9 +186,9 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "last_collection_at": getattr(loan, "last_collection_at", None),
         "collection_note": getattr(loan, "collection_note", None),
         "review_admin_id": getattr(loan, "review_admin_id", None),
-        "review_admin_name": getattr(getattr(loan, "review_admin", None), "username", None),
+        "review_admin_name": getattr(review_admin, "username", None),
         "collection_admin_id": getattr(loan, "collection_admin_id", None),
-        "collection_admin_name": getattr(getattr(loan, "collection_admin", None), "username", None),
+        "collection_admin_name": getattr(collection_admin, "username", None),
         "collection_transferred_at": getattr(loan, "collection_transferred_at", None),
         "repay_attempt_count": int(getattr(loan, "repay_attempt_count", 0) or 0),
         "product_id": getattr(loan, "product_id", None),
@@ -212,7 +215,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "disbursed_at": getattr(loan, "disbursed_at", None),
     }
 
-    latest_settled_loan = getattr(loan, "latest_settled_loan", None)
+    latest_settled_loan = getattr(loan, "__dict__", {}).get("latest_settled_loan")
     if latest_settled_loan is not None:
         payload["latest_settled_loan"] = serialize_loan_snapshot(latest_settled_loan)
 
@@ -225,8 +228,8 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         payload["fund_flow_summary"] = ledger["summary"]
 
     if include_user:
-        owner = getattr(loan, "owner", None)
-        source_channel = getattr(owner, "source_channel", None) if owner else None
+        owner = getattr(loan, "__dict__", {}).get("owner")
+        source_channel = getattr(owner, "__dict__", {}).get("source_channel") if owner else None
         payload.update(
             {
                 "user_phone": owner.phone if owner else "",

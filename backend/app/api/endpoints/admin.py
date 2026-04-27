@@ -1,16 +1,17 @@
+import asyncio
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Optional
 
 import xlrd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.api.deps import get_current_admin_async
+from app.api.deps import get_admin_by_token_async, get_current_admin_async
 from app.core.config import settings
 from app.core.database import get_async_db
 from app.core.security import create_access_token, get_password_hash, verify_password
@@ -154,6 +155,7 @@ REPAYMENT_STATS_PERMISSION_KEYS = (
 )
 
 ECARD_POOL_STATUSES = {"AVAILABLE", "ASSIGNED", "EXPIRED", "VOID"}
+ADMIN_STATS_WS_PUSH_SECONDS = 5
 
 
 def get_today_range():
@@ -161,6 +163,36 @@ def get_today_range():
     today_start = datetime(now.year, now.month, now.day)
     tomorrow = today_start + timedelta(days=1)
     return today_start, tomorrow
+
+
+async def _get_ws_admin_by_token(db: AsyncSession, token: Optional[str]) -> Optional[Admin]:
+    """通过 WebSocket Token 获取管理员。
+
+    :param db: 异步数据库会话
+    :param token: token 字符串
+    :return: 管理员对象；token 非法或为空时返回 None
+    """
+    if not token:
+        return None
+    try:
+        return await get_admin_by_token_async(db, token)
+    except HTTPException:
+        return None
+
+
+def _extract_ws_token(websocket: WebSocket) -> Optional[str]:
+    """提取 WebSocket 连接中的管理员 token。
+
+    :param websocket: WebSocket 连接对象
+    :return: token 字符串
+    """
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return query_token
+    auth_header = websocket.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip() or None
+    return None
 
 
 def calculate_due_date(disbursed_at: datetime, term_days: Optional[int]):
@@ -728,14 +760,7 @@ async def get_stats(
     is_admin = "ADMIN" in roles
     overdue_days_expr = func.datediff(func.current_date(), func.date(Loan.due_date))
 
-    review_track_statuses = ["REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]
-    unassigned_review_loans = (
-        await db.execute(select(Loan).where(Loan.status.in_(review_track_statuses), Loan.review_admin_id.is_(None)))
-    ).scalars().all()
-    for item in unassigned_review_loans:
-        await assign_review_admin_if_needed_async(db, item)
-    await assign_collection_admins_for_overdue_loans_async(db)
-    await db.flush()
+    # 统计接口只读，避免请求路径执行分配写入导致与调度任务并发时出现锁等待。
 
     total_users = (await db.scalar(select(func.count(User.id)))) or 0
     today_new_users = (await db.scalar(select(func.count(User.id)).where(User.created_at >= today_start, User.created_at < tomorrow))) or 0
@@ -831,6 +856,36 @@ async def get_stats(
         "today_collections": today_collections,
     }
 
+
+@router.websocket("/ws/stats")
+async def admin_stats_ws(websocket: WebSocket, db: AsyncSession = Depends(get_async_db)):
+    """通过 WebSocket 推送后台统计数据。
+
+    :param websocket: WebSocket 连接
+    :param db: 异步数据库会话
+    :return: None
+    """
+    await websocket.accept()
+    token = _extract_ws_token(websocket)
+    current_admin = await _get_ws_admin_by_token(db, token)
+    if current_admin is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    try:
+        ensure_any_admin_page_permission(current_admin, ADMIN_STATS_PERMISSION_KEYS)
+    except HTTPException:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    try:
+        while True:
+            payload = await get_stats(db=db, current_admin=current_admin)
+            await websocket.send_json({"type": "admin_stats", "data": payload})
+            await asyncio.sleep(ADMIN_STATS_WS_PUSH_SECONDS)
+    except WebSocketDisconnect:
+        return
+
 @router.get("/repayment-stats", response_model=RepaymentStatsResponse)
 async def get_repayment_stats(
     db: AsyncSession = Depends(get_async_db),
@@ -840,7 +895,7 @@ async def get_repayment_stats(
     repayment_statuses = ["DISBURSED", "OVERDUE", "SETTLED"]
     loans = (
         await db.execute(select(Loan).options(joinedload(Loan.installments)).where(Loan.status.in_(repayment_statuses)))
-    ).scalars().all()
+    ).unique().scalars().all()
 
     receivable_user_count = len({loan.user_id for loan in loans})
     receivable_amount = round(sum(calculate_total_repayment_amount(loan) for loan in loans), 2)
@@ -916,7 +971,7 @@ async def get_project_cash_insights(
             )
             .where(Loan.status.in_(["WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]))
         )
-    ).scalars().all()
+    ).unique().scalars().all()
     return await build_project_cash_insights(db, loans, today_start, tomorrow)
 
 @router.get("/loans", response_model=PaginatedLoanResponse)
@@ -949,15 +1004,7 @@ async def get_loans(
         raise HTTPException(status_code=400, detail="最小逾期天数不能大于最大逾期天数")
 
     limit = min(max(limit, 1), 100)
-    review_track_statuses = ["REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]
-    unassigned_review_loans = (
-        await db.execute(select(Loan).where(Loan.status.in_(review_track_statuses), Loan.review_admin_id.is_(None)))
-    ).scalars().all()
-    for item in unassigned_review_loans:
-        await assign_review_admin_if_needed_async(db, item)
-
-    await assign_collection_admins_for_overdue_loans_async(db)
-    await db.flush()
+    # 列表接口只读，避免请求路径执行分配写入导致与调度任务并发时出现锁等待。
 
     stmt = (
         select(Loan)
@@ -967,7 +1014,7 @@ async def get_loans(
             joinedload(Loan.review_admin),
             joinedload(Loan.collection_admin),
         )
-        .join(User)
+        .join(User, Loan.user_id == User.id)
     )
 
     if status and status != "ALL":
@@ -1024,11 +1071,11 @@ async def get_loans(
     if scope in {"DUE_TODAY", "OVERDUE"} or due_date_preset in {"TODAY", "TOMORROW"}:
         loans = (
             await db.execute(stmt.order_by(Loan.due_date.asc(), Loan.created_at.desc()).offset(skip).limit(limit))
-        ).scalars().all()
+        ).unique().scalars().all()
     else:
         loans = (
             await db.execute(stmt.order_by(Loan.created_at.desc()).offset(skip).limit(limit))
-        ).scalars().all()
+        ).unique().scalars().all()
 
     return {
         "total": total,
@@ -1047,7 +1094,11 @@ async def get_users(
 ):
     ensure_admin_page_permission(current_admin, "users")
     limit = min(max(limit, 1), 100)
-    stmt = select(User).options(joinedload(User.loans), joinedload(User.source_channel)).outerjoin(Channel)
+    stmt = (
+        select(User)
+        .options(joinedload(User.loans), joinedload(User.source_channel))
+        .outerjoin(Channel, User.source_channel_id == Channel.id)
+    )
 
     if keyword:
         pattern = f"%{keyword.strip()}%"
@@ -1065,7 +1116,7 @@ async def get_users(
     total = (await db.scalar(total_stmt)) or 0
     users = (
         await db.execute(stmt.order_by(User.created_at.desc()).offset(skip).limit(limit))
-    ).scalars().all()
+    ).unique().scalars().all()
 
     return {
         "total": total,
@@ -1087,7 +1138,7 @@ async def _get_loan_ledger(db: AsyncSession, current_admin: Admin, loan_id: int)
             )
             .where(Loan.id == loan_id)
         )
-    ).scalar_one_or_none()
+    ).unique().scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
 
@@ -1132,7 +1183,7 @@ async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int)
             )
             .where(User.id == user_id)
         )
-    ).scalar_one_or_none()
+    ).unique().scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     return serialize_user_detail(user)
@@ -1194,7 +1245,7 @@ async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optiona
         )
     if status and status != "ALL":
         stmt = stmt.where(Channel.status == normalize_channel_status(status))
-    matched_channels = (await db.execute(stmt.order_by(Channel.created_at.desc()))).scalars().all()
+    matched_channels = (await db.execute(stmt.order_by(Channel.created_at.desc()))).unique().scalars().all()
     channel_items = [serialize_channel(channel) for channel in matched_channels]
     return {
         "total": len(channel_items),
@@ -1255,7 +1306,7 @@ async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: in
             .options(joinedload(Channel.users).joinedload(User.loans))
             .where(Channel.id == channel_id)
         )
-    ).scalar_one_or_none()
+    ).unique().scalar_one_or_none()
     if not channel:
         raise HTTPException(status_code=404, detail="渠道不存在")
     payload = req.model_dump(exclude_unset=True)
@@ -1928,7 +1979,7 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
             )
             .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if not ecard_item:
         raise HTTPException(status_code=400, detail=f"卡池库存不足：未找到面额 {ecard_face_value:.2f} 元且有效的京东E卡")
 

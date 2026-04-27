@@ -40,6 +40,23 @@ async def get_current_admin(
     db: AsyncSession = Depends(get_async_db),
     token: str = Depends(admin_oauth2_scheme),
 ) -> Admin:
+    admin = await get_admin_by_token_async(db, token)
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate admin credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return admin
+
+
+async def get_admin_by_token_async(db: AsyncSession, token: str) -> Admin:
+    """根据 JWT Token 获取后台管理员。
+
+    :param db: 异步数据库会话
+    :param token: Bearer Token 字符串
+    :return: 管理员对象；无效时抛出 401
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate admin credentials",

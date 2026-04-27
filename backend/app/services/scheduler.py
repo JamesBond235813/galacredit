@@ -1,6 +1,7 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.database import AsyncSessionLocal
 from app.models.loan import Loan
@@ -15,19 +16,23 @@ async def process_overdue_loans():
     async with AsyncSessionLocal() as db:
         now = datetime.utcnow()
         active_loans = (
-            await db.execute(select(Loan).where(Loan.status.in_(["DISBURSED", "OVERDUE"])))
+            await db.execute(
+                select(Loan)
+                .options(selectinload(Loan.owner))
+                .where(Loan.status.in_(["DISBURSED", "OVERDUE"]))
+            )
         ).scalars().all()
 
         for loan in active_loans:
             previous_status = loan.status
-            await ensure_installment_records_async(db, loan)
+            installments = await ensure_installment_records_async(db, loan)
             sync_loan_repayment_state(loan, now=now)
 
             overdue_base_date = loan.due_date
-            if getattr(loan, "installments", None):
+            if installments:
                 overdue_candidates = [
                     item.due_date
-                    for item in loan.installments
+                    for item in installments
                     if item.status == "OVERDUE" and item.due_date is not None
                 ]
                 if overdue_candidates:

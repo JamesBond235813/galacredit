@@ -2,6 +2,7 @@ from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.loan import Loan
 
@@ -43,7 +44,17 @@ def get_relend_label(loans, current_loan_id: Optional[int] = None) -> str:
 
 
 async def get_latest_loan_async(db: AsyncSession, user_id: int) -> Optional[Loan]:
-    result = await db.execute(select(Loan).where(Loan.user_id == user_id).order_by(Loan.id.desc()))
+    # 预加载序列化会访问的关系，避免在同步序列化阶段触发异步懒加载导致 MissingGreenlet。
+    result = await db.execute(
+        select(Loan)
+        .options(
+            selectinload(Loan.installments),
+            selectinload(Loan.review_admin),
+            selectinload(Loan.collection_admin),
+        )
+        .where(Loan.user_id == user_id)
+        .order_by(Loan.id.desc())
+    )
     return result.scalars().first()
 
 

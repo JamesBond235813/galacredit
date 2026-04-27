@@ -7,6 +7,7 @@ import time
 from typing import Any, Dict, Optional
 
 import httpx
+from httpcore._sync import http_proxy
 
 from app.core.config import settings
 
@@ -115,9 +116,11 @@ class ESignIdentityClient:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         headers = self._build_signature_headers(method, path, payload)
-
+        _http_proxy = None
+        if settings.ESIGN_HTTP_PROXY:
+            _http_proxy = settings.ESIGN_HTTP_PROXY
         try:
-            async with httpx.AsyncClient(timeout=settings.ESIGN_HTTP_TIMEOUT_SECONDS) as client:
+            async with httpx.AsyncClient(timeout=settings.ESIGN_HTTP_TIMEOUT_SECONDS, proxy=_http_proxy) as client:
                 response = await client.request(
                     method=method.upper(),
                     url=self._build_url(path),

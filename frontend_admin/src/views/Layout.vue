@@ -97,7 +97,9 @@ const menuBadgeStats = ref({
   due_today_users: 0,
   repay_attempt_total: 0
 });
-let statsTimer = null;
+const STATS_WS_RECONNECT_MS = 3000;
+let statsSocket = null;
+let statsReconnectTimer = null;
 
 const iconMap = {
   overview: DataAnalysis,
@@ -157,6 +159,83 @@ const syncMenuBadgeStats = async () => {
   }
 };
 
+const applyMenuBadgeStats = (stats) => {
+  menuBadgeStats.value = {
+    reviewing_loans: Number(stats.reviewing_loans || 0),
+    withdrawing_loans: Number(stats.withdrawing_loans || 0),
+    due_today_users: Number(stats.due_today_users || stats.due_today_loans || 0),
+    repay_attempt_total: Number(stats.repay_attempt_total || 0)
+  };
+};
+
+const buildStatsWsUrl = () => {
+  const token = localStorage.getItem('admin_token');
+  if (!token) {
+    return null;
+  }
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${wsProtocol}://${window.location.host}/api/admin/ws/stats?token=${encodeURIComponent(token)}`;
+};
+
+const scheduleStatsSocketReconnect = () => {
+  if (statsReconnectTimer || !localStorage.getItem('admin_token')) {
+    return;
+  }
+  statsReconnectTimer = window.setTimeout(() => {
+    statsReconnectTimer = null;
+    connectStatsSocket();
+  }, STATS_WS_RECONNECT_MS);
+};
+
+const closeStatsSocket = () => {
+  if (statsSocket) {
+    statsSocket.onopen = null;
+    statsSocket.onmessage = null;
+    statsSocket.onclose = null;
+    statsSocket.onerror = null;
+    statsSocket.close();
+    statsSocket = null;
+  }
+};
+
+const connectStatsSocket = () => {
+  const wsUrl = buildStatsWsUrl();
+  if (!wsUrl) {
+    return;
+  }
+
+  closeStatsSocket();
+  const socket = new WebSocket(wsUrl);
+  statsSocket = socket;
+
+  socket.onopen = () => {
+    // 首次连上后同步一次，避免首帧前菜单角标为空。
+    syncMenuBadgeStats();
+  };
+
+  socket.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      if (payload?.type === 'admin_stats' && payload?.data) {
+        applyMenuBadgeStats(payload.data);
+      }
+    } catch (error) {
+      // Ignore malformed websocket messages.
+    }
+  };
+
+  socket.onerror = () => {
+    socket.close();
+  };
+
+  socket.onclose = () => {
+    if (statsSocket === socket) {
+      statsSocket = null;
+    }
+    scheduleStatsSocketReconnect();
+  };
+};
+
 const getMenuBadgeCount = (menuKey) => {
   if (menuKey === 'applications') {
     return Number(menuBadgeStats.value.reviewing_loans || 0);
@@ -184,6 +263,7 @@ const handleRepayAttemptAck = (event) => {
 
 const handleCommand = (command) => {
   if (command === 'logout') {
+    closeStatsSocket();
     clearStoredAdminAuth();
     router.replace('/login');
   }
@@ -192,15 +272,16 @@ const handleCommand = (command) => {
 onMounted(() => {
   syncAdminProfile();
   syncMenuBadgeStats();
-  statsTimer = window.setInterval(syncMenuBadgeStats, 30000);
+  connectStatsSocket();
   window.addEventListener('admin-repay-attempt-ack', handleRepayAttemptAck);
 });
 
 onBeforeUnmount(() => {
-  if (statsTimer) {
-    window.clearInterval(statsTimer);
-    statsTimer = null;
+  if (statsReconnectTimer) {
+    window.clearTimeout(statsReconnectTimer);
+    statsReconnectTimer = null;
   }
+  closeStatsSocket();
   window.removeEventListener('admin-repay-attempt-ack', handleRepayAttemptAck);
 });
 </script>

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -10,8 +10,8 @@ class UserEvent(Base):
     __tablename__ = "user_events"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    loan_id = Column(Integer, ForeignKey("loans.id"), nullable=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    loan_id = Column(Integer, nullable=True, index=True)
     actor_type = Column(String(20), nullable=False, default="USER", index=True)
     operator_name = Column(String(50), nullable=True)
     event_type = Column(String(50), nullable=False, index=True)
@@ -19,5 +19,17 @@ class UserEvent(Base):
     detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
-    user = relationship("User", back_populates="events")
-    loan = relationship("Loan", back_populates="events")
+    user = relationship(
+        "User",
+        back_populates="events",
+        primaryjoin="UserEvent.user_id == User.id",
+        foreign_keys=[user_id],
+        lazy="selectin",
+    )
+    loan = relationship(
+        "Loan",
+        back_populates="events",
+        primaryjoin="UserEvent.loan_id == Loan.id",
+        foreign_keys=[loan_id],
+        lazy="selectin",
+    )
