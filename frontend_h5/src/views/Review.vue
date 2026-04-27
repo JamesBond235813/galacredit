@@ -136,13 +136,15 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { getLoanStatus, getProducts } from '../api';
+import { getProducts } from '../api';
+import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 
 const router = useRouter();
 const loading = ref(true);
 const loanData = ref(null);
 const products = ref([]);
-let pollTimer = null;
+let loanSnapshotSubscriber = null;
+let loadedProductsLoanId = null;
 
 const loanStatus = computed(() => loanData.value?.status || 'REVIEWING');
 const creditLimit = computed(() => Number(loanData.value?.credit_limit || 0));
@@ -174,13 +176,6 @@ const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
   maximumFractionDigits: 2
 });
 
-const clearTimer = () => {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-};
-
 const loadProducts = async () => {
   try {
     const list = await getProducts();
@@ -206,30 +201,18 @@ const routeByStatus = (status) => {
   return false;
 };
 
-const loadReviewStatus = async () => {
-  try {
-    const res = await getLoanStatus();
-    loanData.value = res;
-
-    if (routeByStatus(res.status)) {
-      return;
-    }
-
-    if (res.status === 'REVIEWING') {
-      loading.value = true;
-      clearTimer();
-      pollTimer = setTimeout(loadReviewStatus, 2000);
-      return;
-    }
-
-    if (res.status === 'APPROVED') {
-      await loadProducts();
-    }
-
-    loading.value = false;
-  } catch (error) {
-    loading.value = false;
+const applyLoanSnapshot = async (snapshot) => {
+  loanData.value = snapshot || null;
+  const currentStatus = snapshot?.status || 'REVIEWING';
+  if (routeByStatus(currentStatus)) {
+    return;
   }
+
+  if (currentStatus === 'APPROVED' && loadedProductsLoanId !== snapshot?.id) {
+    loadedProductsLoanId = snapshot?.id || null;
+    await loadProducts();
+  }
+  loading.value = currentStatus === 'REVIEWING';
 };
 
 const openProductDetail = (productId) => {
@@ -243,11 +226,17 @@ const openProductDetail = (productId) => {
 };
 
 onMounted(() => {
-  loadReviewStatus();
+  loanSnapshotSubscriber = createLoanSnapshotSubscriber({
+    onSnapshot: applyLoanSnapshot
+  });
+  loanSnapshotSubscriber.start();
 });
 
 onBeforeUnmount(() => {
-  clearTimer();
+  if (loanSnapshotSubscriber) {
+    loanSnapshotSubscriber.stop();
+    loanSnapshotSubscriber = null;
+  }
 });
 </script>
 

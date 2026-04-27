@@ -17,6 +17,23 @@ async def get_current_user(
     db: AsyncSession = Depends(get_async_db),
     token: str = Depends(oauth2_scheme),
 ) -> User:
+    user = await get_user_by_token_async(db, token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+async def get_user_by_token_async(db: AsyncSession, token: str) -> User:
+    """根据 JWT Token 获取 H5 用户。
+
+    :param db: 异步数据库会话
+    :param token: Bearer Token 字符串
+    :return: 用户对象；无效时抛出 401
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

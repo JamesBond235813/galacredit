@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user_async
+from app.api.deps import get_current_user_async, get_user_by_token_async
 from app.core.database import get_async_db
+from app.models.loan import Loan
 from app.models.product import Product
 from app.models.user import User
 from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanResponse, ProductItemResponse
@@ -14,6 +20,7 @@ from app.services.loan_flow import get_latest_loan_async, get_or_create_loan_asy
 from app.services.loan_ledger import sync_loan_repayment_state
 
 router = APIRouter()
+LOAN_STATUS_WS_PUSH_SECONDS = 3
 
 
 async def get_or_create_latest_loan(db: AsyncSession, user_id: int):
@@ -25,13 +32,62 @@ async def get_or_create_latest_loan(db: AsyncSession, user_id: int):
     return latest_loan
 
 
+async def get_latest_loan_snapshot_async(db: AsyncSession, user_id: int) -> Loan:
+    """获取用于返回快照的贷款对象，并预加载账单相关关系。
+
+    :param db: 异步数据库会话
+    :param user_id: 用户ID
+    :return: 预加载分期关系的贷款对象
+    """
+    loan = await get_or_create_latest_loan(db, user_id)
+    # 这里强制预加载 installments，避免在序列化阶段触发异步懒加载导致 MissingGreenlet。
+    snapshot_loan = (
+        await db.execute(
+            select(Loan)
+            .options(selectinload(Loan.installments))
+            .where(Loan.id == loan.id)
+        )
+    ).scalar_one()
+    sync_loan_repayment_state(snapshot_loan)
+    return snapshot_loan
+
+
+async def _get_ws_user_by_token(db: AsyncSession, token: Optional[str]) -> Optional[User]:
+    """通过 WebSocket Token 获取用户。
+
+    :param db: 异步数据库会话
+    :param token: token 字符串
+    :return: 用户对象；token 非法或为空时返回 None
+    """
+    if not token:
+        return None
+    try:
+        return await get_user_by_token_async(db, token)
+    except HTTPException:
+        return None
+
+
+def _extract_ws_token(websocket: WebSocket) -> Optional[str]:
+    """提取 WebSocket 连接中的用户 token。
+
+    :param websocket: WebSocket 连接对象
+    :return: token 字符串
+    """
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return query_token
+    auth_header = websocket.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip() or None
+    return None
+
+
 @router.get("/status", response_model=LoanResponse)
 async def get_loan_status(
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
-    loan = await get_or_create_latest_loan(db, current_user.id)
-    sync_loan_repayment_state(loan)
+    loan = await get_latest_loan_snapshot_async(db, current_user.id)
     return serialize_loan_snapshot(loan, include_ledger=True)
 
 
@@ -209,6 +265,37 @@ async def get_bill(
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
-    loan = await get_or_create_latest_loan(db, current_user.id)
-    sync_loan_repayment_state(loan)
+    loan = await get_latest_loan_snapshot_async(db, current_user.id)
     return serialize_loan_snapshot(loan, include_ledger=True)
+
+
+@router.websocket("/ws/status")
+async def loan_status_ws(websocket: WebSocket, db: AsyncSession = Depends(get_async_db)):
+    """通过 WebSocket 推送用户贷款与账单快照。
+
+    :param websocket: WebSocket 连接
+    :param db: 异步数据库会话
+    :return: None
+    """
+    await websocket.accept()
+    token = _extract_ws_token(websocket)
+    current_user = await _get_ws_user_by_token(db, token)
+    if current_user is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    current_user_id = int(current_user.id)
+
+    try:
+        while True:
+            # WebSocket 长连接会复用同一个 AsyncSession，这里先 rollback 结束上一轮只读事务，
+            # 避免 MySQL 在默认隔离级别下持续读取到旧快照，导致前端看不到最新状态。
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
+            snapshot = await get_latest_loan_snapshot_async(db, current_user_id)
+            await websocket.send_json(
+                jsonable_encoder({"type": "loan_snapshot", "data": serialize_loan_snapshot(snapshot, include_ledger=True)})
+            )
+            await asyncio.sleep(LOAN_STATUS_WS_PUSH_SECONDS)
+    except WebSocketDisconnect:
+        return

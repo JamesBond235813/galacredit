@@ -73,13 +73,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { getLoanStatus } from '../api';
+import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 
 const router = useRouter();
 const loading = ref(true);
 const loanStatus = ref('INIT');
 const creditLimit = ref(0);
-let pollTimer = null;
+let loanSnapshotSubscriber = null;
 
 const limitTitle = computed(() => {
   if (['INIT', 'REJECTED', 'SETTLED'].includes(loanStatus.value)) {
@@ -134,25 +134,10 @@ const actionText = computed(() => {
   return map[loanStatus.value] || '处理中';
 });
 
-const initData = async () => {
-  try {
-    const res = await getLoanStatus();
-    loanStatus.value = res.status;
-    creditLimit.value = res.credit_limit || 0;
-  } catch (error) {
-    loanStatus.value = 'INIT';
-  } finally {
-    loading.value = false;
-    clearPollTimer();
-    pollTimer = setTimeout(initData, 3000);
-  }
-};
-
-const clearPollTimer = () => {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
+const applyLoanSnapshot = (snapshot) => {
+  loanStatus.value = snapshot?.status || 'INIT';
+  creditLimit.value = snapshot?.credit_limit || 0;
+  loading.value = false;
 };
 
 const onActionClick = () => {
@@ -177,11 +162,17 @@ const onActionClick = () => {
 };
 
 onMounted(() => {
-  initData();
+  loanSnapshotSubscriber = createLoanSnapshotSubscriber({
+    onSnapshot: applyLoanSnapshot
+  });
+  loanSnapshotSubscriber.start();
 });
 
 onBeforeUnmount(() => {
-  clearPollTimer();
+  if (loanSnapshotSubscriber) {
+    loanSnapshotSubscriber.stop();
+    loanSnapshotSubscriber = null;
+  }
 });
 </script>
 

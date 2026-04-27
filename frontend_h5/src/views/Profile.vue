@@ -70,12 +70,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
-import { getLoanStatus, getUserInfo } from '../api';
+import { getUserInfo } from '../api';
+import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 
 const router = useRouter();
 const phone = ref('');
 const loanStatus = ref('INIT');
-let pollTimer = null;
+let loanSnapshotSubscriber = null;
 
 const serviceItems = [
   { key: 'withdraw', title: '待下单', icon: 'balance-pay', route: '/withdraw' },
@@ -130,18 +131,11 @@ const formatMaskedPhone = (value) => {
 };
 
 const loadProfileData = async (showSuccessToast = false) => {
-  const [userResult, loanResult] = await Promise.allSettled([getUserInfo(), getLoanStatus()]);
-
-  if (userResult.status === 'fulfilled') {
-    phone.value = userResult.value?.phone || '';
-  } else {
+  try {
+    const userInfo = await getUserInfo();
+    phone.value = userInfo?.phone || '';
+  } catch (error) {
     phone.value = '';
-  }
-
-  if (loanResult.status === 'fulfilled') {
-    loanStatus.value = loanResult.value?.status || 'INIT';
-  } else {
-    loanStatus.value = 'INIT';
   }
 
   if (showSuccessToast) {
@@ -149,23 +143,8 @@ const loadProfileData = async (showSuccessToast = false) => {
   }
 };
 
-const pollLoanStatus = async () => {
-  try {
-    const latest = await getLoanStatus();
-    loanStatus.value = latest?.status || 'INIT';
-  } catch (error) {
-    // ignore polling errors
-  } finally {
-    clearPollTimer();
-    pollTimer = setTimeout(pollLoanStatus, 3000);
-  }
-};
-
-const clearPollTimer = () => {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
+const applyLoanSnapshot = (snapshot) => {
+  loanStatus.value = snapshot?.status || 'INIT';
 };
 
 const goToRoute = (route) => {
@@ -204,11 +183,17 @@ const handleMenuAction = async (key) => {
 
 onMounted(() => {
   loadProfileData();
-  pollLoanStatus();
+  loanSnapshotSubscriber = createLoanSnapshotSubscriber({
+    onSnapshot: applyLoanSnapshot
+  });
+  loanSnapshotSubscriber.start();
 });
 
 onBeforeUnmount(() => {
-  clearPollTimer();
+  if (loanSnapshotSubscriber) {
+    loanSnapshotSubscriber.stop();
+    loanSnapshotSubscriber = null;
+  }
 });
 </script>
 

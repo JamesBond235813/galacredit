@@ -198,6 +198,12 @@ const closeStatsSocket = () => {
   }
 };
 
+const handleStatsSocketAuthFailed = () => {
+  closeStatsSocket();
+  clearStoredAdminAuth();
+  router.replace('/login');
+};
+
 const connectStatsSocket = () => {
   const wsUrl = buildStatsWsUrl();
   if (!wsUrl) {
@@ -228,9 +234,13 @@ const connectStatsSocket = () => {
     socket.close();
   };
 
-  socket.onclose = () => {
+  socket.onclose = (event) => {
     if (statsSocket === socket) {
       statsSocket = null;
+    }
+    if (event?.code === 1008) {
+      handleStatsSocketAuthFailed();
+      return;
     }
     scheduleStatsSocketReconnect();
   };

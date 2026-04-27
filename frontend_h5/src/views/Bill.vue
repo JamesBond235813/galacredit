@@ -159,12 +159,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showDialog, showToast } from 'vant';
-import { getBill, getEcardSecret, registerRepayAttempt } from '../api';
+import { getEcardSecret, registerRepayAttempt } from '../api';
+import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 
 const router = useRouter();
 const loading = ref(true);
 const loanData = ref(null);
-let pollTimer = null;
+let loanSnapshotSubscriber = null;
 
 const loanStatus = computed(() => loanData.value?.status || '');
 const totalAmount = computed(() => loanData.value?.total_repayment_amount || 0);
@@ -262,30 +263,13 @@ const copyEcardSecret = async (field) => {
   }
 };
 
-const clearPollTimer = () => {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
+const applyLoanSnapshot = (snapshot) => {
+  loanData.value = snapshot || null;
+  if (['INIT', 'REVIEWING', 'APPROVED', 'REJECTED'].includes(snapshot?.status || '')) {
+    router.replace('/home');
+    return;
   }
-};
-
-const initData = async () => {
-  try {
-    const res = await getBill();
-    loanData.value = res;
-    clearPollTimer();
-    if (['INIT', 'REVIEWING', 'APPROVED', 'REJECTED'].includes(res.status)) {
-      router.replace('/home');
-      return;
-    }
-    if (['WITHDRAWING', 'DISBURSED', 'OVERDUE'].includes(res.status)) {
-      pollTimer = setTimeout(initData, 3000);
-    }
-  } catch (error) {
-    // handled by interceptor
-  } finally {
-    loading.value = false;
-  }
+  loading.value = false;
 };
 
 const onRepay = async (item = null) => {
@@ -305,11 +289,17 @@ const onRepay = async (item = null) => {
 };
 
 onMounted(() => {
-  initData();
+  loanSnapshotSubscriber = createLoanSnapshotSubscriber({
+    onSnapshot: applyLoanSnapshot
+  });
+  loanSnapshotSubscriber.start();
 });
 
 onBeforeUnmount(() => {
-  clearPollTimer();
+  if (loanSnapshotSubscriber) {
+    loanSnapshotSubscriber.stop();
+    loanSnapshotSubscriber = null;
+  }
 });
 </script>
 

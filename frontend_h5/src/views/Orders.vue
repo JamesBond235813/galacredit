@@ -108,13 +108,14 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
-import { getEcardSecret, getLoanStatus } from '../api';
+import { getEcardSecret } from '../api';
+import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 
 const router = useRouter();
 const loading = ref(true);
 const loan = ref(null);
 const copyingField = ref('');
-let pollTimer = null;
+let loanSnapshotSubscriber = null;
 
 const statusMap = {
   INIT: {
@@ -265,21 +266,9 @@ const formatDateTime = (value) => {
   return new Date(value).toLocaleString('zh-CN');
 };
 
-const loadLoan = async () => {
-  try {
-    loan.value = await getLoanStatus();
-  } finally {
-    loading.value = false;
-    clearPollTimer();
-    pollTimer = setTimeout(loadLoan, 3000);
-  }
-};
-
-const clearPollTimer = () => {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
+const applyLoanSnapshot = (snapshot) => {
+  loan.value = snapshot || null;
+  loading.value = false;
 };
 
 const copyText = async (value) => {
@@ -320,11 +309,17 @@ const handleOrderAction = () => {
 };
 
 onMounted(() => {
-  loadLoan();
+  loanSnapshotSubscriber = createLoanSnapshotSubscriber({
+    onSnapshot: applyLoanSnapshot
+  });
+  loanSnapshotSubscriber.start();
 });
 
 onBeforeUnmount(() => {
-  clearPollTimer();
+  if (loanSnapshotSubscriber) {
+    loanSnapshotSubscriber.stop();
+    loanSnapshotSubscriber = null;
+  }
 });
 </script>
 
