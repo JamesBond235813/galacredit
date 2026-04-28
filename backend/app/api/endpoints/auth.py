@@ -1,16 +1,20 @@
-import random
+from uuid import uuid4
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request
+from jose import JWTError, jwt
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_async_db
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_refresh_token
+from app.models.oauth_client import OAuthClient
+from app.models.oauth_token import OAuthToken
 from app.models.user import User
 from app.schemas.channel import ChannelLandingResponse
-from app.schemas.user import LoginRequest, SendCodeRequest, Token
+from app.schemas.user import LoginRequest, RefreshTokenRequest, SendCodeRequest, Token
+from app.services.sms_auth import SmsAuthManager
 from app.services.audit import log_user_event_async
 from app.services.channel_service import (
     bind_user_source_channel_async,
@@ -21,14 +25,95 @@ from app.services.loan_flow import get_or_create_loan_async
 
 router = APIRouter()
 
-MOCK_CODES = {}
+sms_auth_manager = SmsAuthManager(
+    phone_cooldown_seconds=settings.SMS_PHONE_COOLDOWN_SECONDS,
+    ip_rate_limit_per_minute=settings.SMS_IP_RATE_LIMIT_PER_MINUTE,
+    code_expire_seconds=settings.SMS_CODE_EXPIRE_SECONDS,
+    mock_enabled=settings.SMS_CODE_MOCK_ENABLED,
+    mock_code=settings.SMS_MOCK_CODE,
+)
+
+
+async def _upsert_oauth_client(db: AsyncSession, client_id: str) -> None:
+    """写入或更新客户端信息。
+
+    :param db: 异步数据库会话
+    :param client_id: 客户端标识
+    :return: None
+    """
+    client = (await db.execute(select(OAuthClient).where(OAuthClient.client_id == client_id))).scalar_one_or_none()
+    if client is None:
+        db.add(OAuthClient(client_id=client_id, client_name=client_id, is_active=True))
+        return
+    client.is_active = True
+    client.updated_at = datetime.utcnow()
+
+
+async def _save_token_pair(
+    db: AsyncSession,
+    user: User,
+    client_id: str,
+    access_jti: str,
+    refresh_jti: str,
+    access_token: str,
+    refresh_token: str,
+    access_expires_at: datetime,
+    refresh_expires_at: datetime,
+) -> None:
+    """持久化 token 并吊销同客户端旧 token。
+
+    :param db: 异步数据库会话
+    :param user: 用户对象
+    :param client_id: 客户端标识
+    :param access_jti: access token jti
+    :param refresh_jti: refresh token jti
+    :param access_token: access token 字符串
+    :param refresh_token: refresh token 字符串
+    :param access_expires_at: access token 过期时间
+    :param refresh_expires_at: refresh token 过期时间
+    :return: None
+    """
+    now = datetime.utcnow()
+    await db.execute(
+        update(OAuthToken)
+        .where(
+            OAuthToken.user_id == user.id,
+            OAuthToken.client_id == client_id,
+            OAuthToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    db.add(
+        OAuthToken(
+            user_id=user.id,
+            phone=user.phone,
+            client_id=client_id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_jti=access_jti,
+            refresh_jti=refresh_jti,
+            access_expires_at=access_expires_at,
+            refresh_expires_at=refresh_expires_at,
+        )
+    )
 
 
 @router.post("/send-code")
-async def send_code(req: SendCodeRequest):
-    code = f"{random.randint(1000, 9999)}"
-    MOCK_CODES[req.phone] = code
-    return {"msg": "验证码发送成功", "code": code}
+async def send_code(req: SendCodeRequest, request: Request):
+    """下发短信验证码（支持 mock 模式）。
+
+    :param req: 下发短信请求体
+    :param request: FastAPI 请求对象
+    :return: 下发结果与冷却秒数
+    """
+    if not settings.SMS_CODE_MOCK_ENABLED:
+        raise HTTPException(status_code=503, detail="短信通道暂未配置")
+
+    client_ip = request.client.host if request.client else "unknown"
+    success, remain = await sms_auth_manager.issue_code(phone=req.phone, ip=client_ip)
+    if not success:
+        raise HTTPException(status_code=429, detail=f"发送过于频繁，请{remain}秒后重试")
+    return {"msg": "验证码发送成功", "cooldown_seconds": settings.SMS_PHONE_COOLDOWN_SECONDS}
 
 
 @router.get("/channels/{channel_name}", response_model=ChannelLandingResponse)
@@ -40,11 +125,19 @@ async def get_channel_entry(channel_name: str, db: AsyncSession = Depends(get_as
 
 
 @router.post("/login", response_model=Token)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_async_db)):
-    real_code = MOCK_CODES.get(req.phone)
-    if not real_code or req.code != real_code:
+async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
+    """手机号短信验证码登录。
+
+    :param req: 登录请求体
+    :param request: FastAPI 请求对象
+    :param db: 异步数据库会话
+    :return: access token 与 refresh token
+    """
+    valid = await sms_auth_manager.verify_code(req.phone, req.code)
+    if not valid:
         raise HTTPException(status_code=400, detail="验证码错误或已失效")
 
+    client_id = request.headers.get("client-id", "h5-web").strip() or "h5-web"
     now = datetime.utcnow()
     channel = None
     if req.channel_name:
@@ -98,8 +191,122 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_async_db)):
     )
 
     await db.commit()
-    MOCK_CODES.pop(req.phone, None)
+    await _upsert_oauth_client(db, client_id)
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(subject=user.phone, expires_delta=access_token_expires)
-    return {"access_token": access_token, "token_type": "bearer"}
+    access_token_expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_token_expires_delta = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    access_expires_at = now + access_token_expires_delta
+    refresh_expires_at = now + refresh_token_expires_delta
+    access_jti = uuid4().hex
+    refresh_jti = uuid4().hex
+    access_token = create_access_token(
+        subject=user.phone,
+        expires_delta=access_token_expires_delta,
+        jti=access_jti,
+        client_id=client_id,
+    )
+    refresh_token = create_refresh_token(
+        subject=user.phone,
+        expires_delta=refresh_token_expires_delta,
+        jti=refresh_jti,
+        client_id=client_id,
+    )
+    await _save_token_pair(
+        db=db,
+        user=user,
+        client_id=client_id,
+        access_jti=access_jti,
+        refresh_jti=refresh_jti,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        access_expires_at=access_expires_at,
+        refresh_expires_at=refresh_expires_at,
+    )
+    await db.commit()
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "access_token_expires_at": access_expires_at,
+        "refresh_token_expires_at": refresh_expires_at,
+    }
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get_async_db)):
+    """使用 refresh token 刷新登录态。
+
+    :param req: 刷新请求体
+    :param db: 异步数据库会话
+    :return: 新 access token 与 refresh token
+    """
+    credentials_exception = HTTPException(status_code=401, detail="refresh_token 无效或已过期")
+    try:
+        payload = jwt.decode(req.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        phone = payload.get("sub")
+        refresh_jti = payload.get("jti")
+        token_type = payload.get("typ")
+        client_id = (payload.get("cid") or "h5-web").strip() or "h5-web"
+        if token_type != "refresh" or not phone or not refresh_jti:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    now = datetime.utcnow()
+    token_row = (
+        await db.execute(
+            select(OAuthToken).where(
+                OAuthToken.refresh_jti == refresh_jti,
+                OAuthToken.refresh_token == req.refresh_token,
+                OAuthToken.revoked_at.is_(None),
+                OAuthToken.refresh_expires_at > now,
+            )
+        )
+    ).scalar_one_or_none()
+    if token_row is None:
+        raise credentials_exception
+
+    user = (await db.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+    if user is None:
+        raise credentials_exception
+
+    access_token_expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_token_expires_delta = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    access_expires_at = now + access_token_expires_delta
+    refresh_expires_at = now + refresh_token_expires_delta
+    access_jti = uuid4().hex
+    new_refresh_jti = uuid4().hex
+    access_token = create_access_token(
+        subject=user.phone,
+        expires_delta=access_token_expires_delta,
+        jti=access_jti,
+        client_id=client_id,
+    )
+    new_refresh_token = create_refresh_token(
+        subject=user.phone,
+        expires_delta=refresh_token_expires_delta,
+        jti=new_refresh_jti,
+        client_id=client_id,
+    )
+
+    token_row.revoked_at = now
+    await _upsert_oauth_client(db, client_id)
+    await _save_token_pair(
+        db=db,
+        user=user,
+        client_id=client_id,
+        access_jti=access_jti,
+        refresh_jti=new_refresh_jti,
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        access_expires_at=access_expires_at,
+        refresh_expires_at=refresh_expires_at,
+    )
+    await db.commit()
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer",
+        "access_token_expires_at": access_expires_at,
+        "refresh_token_expires_at": refresh_expires_at,
+    }

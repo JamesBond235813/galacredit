@@ -13,7 +13,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 def create_access_token(
-    subject: Union[str, Any], expires_delta: timedelta = None
+    subject: Union[str, Any], expires_delta: timedelta = None, jti: str = None, client_id: str = None
 ) -> str:
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -21,6 +21,34 @@ def create_access_token(
         expire = datetime.utcnow() + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {"exp": expire, "sub": str(subject), "typ": "access"}
+    if jti:
+        to_encode["jti"] = jti
+    if client_id:
+        to_encode["cid"] = client_id
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+
+
+def create_refresh_token(
+    subject: Union[str, Any], expires_delta: timedelta = None, jti: str = None, client_id: str = None
+) -> str:
+    """创建刷新令牌。
+
+    :param subject: JWT subject，当前使用手机号
+    :param expires_delta: 过期时间增量
+    :param jti: 刷新令牌唯一ID
+    :param client_id: 客户端ID
+    :return: 编码后的 refresh token
+    """
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"exp": expire, "sub": str(subject), "typ": "refresh"}
+    if jti:
+        to_encode["jti"] = jti
+    if client_id:
+        to_encode["cid"] = client_id
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt

@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.database import get_async_db
 from app.models.user import User
 from app.models.admin import Admin
+from app.models.oauth_token import OAuthToken
 
 # H5端使用 Bearer Token 发送在 Authorization header 中
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -42,13 +43,28 @@ async def get_user_by_token_async(db: AsyncSession, token: str) -> User:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         phone: str = payload.get("sub")
-        if phone is None:
+        access_jti: str = payload.get("jti")
+        token_type: str = payload.get("typ")
+        if phone is None or access_jti is None or token_type != "access":
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
     user = (await db.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if user is None:
+        raise credentials_exception
+
+    token_row = (
+        await db.execute(
+            select(OAuthToken).where(
+                OAuthToken.user_id == user.id,
+                OAuthToken.access_jti == access_jti,
+                OAuthToken.access_token == token,
+                OAuthToken.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if token_row is None:
         raise credentials_exception
     return user
 

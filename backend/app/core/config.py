@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "b47c8f6154b2d3550af3b9187a4128ef"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
+    SMS_CODE_MOCK_ENABLED: bool = True
+    SMS_MOCK_CODE: str = "635147"
+    SMS_PHONE_COOLDOWN_SECONDS: int = 60
+    SMS_IP_RATE_LIMIT_PER_MINUTE: int = 10
+    SMS_CODE_EXPIRE_SECONDS: int = 300
 
     # Panorama 风控配置
     RISK_REPORT_CACHE_DAYS: int = 30

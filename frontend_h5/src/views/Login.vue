@@ -20,19 +20,20 @@
               center
               clearable
               type="digit"
-              maxlength="4"
-              placeholder="请输入4位验证码"
+              maxlength="6"
+              placeholder="请输入6位验证码"
               :formatter="normalizeCode"
-              @focus="onCodeFocus"
               class="login-field"
             >
               <template #button>
                 <van-button
                   size="small"
                   type="primary"
+                  native-type="button"
                   class="code-btn"
                   :loading="codeLoading"
-                  @click="requestMockCode"
+                  :disabled="codeLoading || cooldownSeconds > 0"
+                  @click="requestSmsCode"
                 >
                   {{ codeButtonText }}
                 </van-button>
@@ -59,66 +60,81 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
 import { sendCode, login } from '../api';
 import { clearEntryChannel, getEntryChannel } from '../utils/channel';
 import { captureAndUploadLocation } from '../utils/location';
+import {
+  getSmsButtonText,
+  isValidSmsCode,
+  normalizeSmsCode,
+  SMS_COOLDOWN_SECONDS
+} from '../utils/smsLogin';
 
 const router = useRouter();
 const phone = ref('');
 const code = ref('');
-const mockCode = ref('');
 const loading = ref(false);
 const codeLoading = ref(false);
+const cooldownSeconds = ref(0);
+let cooldownTimer = null;
 const entryChannel = ref(getEntryChannel());
 
-const codeButtonText = computed(() => {
-  if (codeLoading.value) {
-    return '获取中...';
-  }
-
-  return mockCode.value || '发送验证码';
-});
+const codeButtonText = computed(() => getSmsButtonText(codeLoading.value, cooldownSeconds.value));
 
 const normalizePhone = (value) => value.replace(/\D/g, '').slice(0, 11);
-const normalizeCode = (value) => value.replace(/\D/g, '').slice(0, 4);
+const normalizeCode = (value) => normalizeSmsCode(value);
 const isValidPhone = (value) => /^\d{11}$/.test(value);
-const isValidCode = (value) => /^\d{4}$/.test(value);
+const isValidCode = (value) => isValidSmsCode(value);
 
 watch(phone, () => {
-  mockCode.value = '';
   code.value = '';
 });
 
-const requestMockCode = async () => {
+const clearCooldownTimer = () => {
+  if (cooldownTimer) {
+    window.clearInterval(cooldownTimer);
+    cooldownTimer = null;
+  }
+};
+
+const startCooldown = (seconds = SMS_COOLDOWN_SECONDS) => {
+  clearCooldownTimer();
+  cooldownSeconds.value = Math.max(Number(seconds) || 0, 0);
+  if (cooldownSeconds.value <= 0) {
+    return;
+  }
+  cooldownTimer = window.setInterval(() => {
+    if (cooldownSeconds.value <= 1) {
+      cooldownSeconds.value = 0;
+      clearCooldownTimer();
+      return;
+    }
+    cooldownSeconds.value -= 1;
+  }, 1000);
+};
+
+const requestSmsCode = async () => {
   if (!isValidPhone(phone.value)) {
     showToast('请输入11位手机号');
     return;
   }
 
-  if (codeLoading.value) {
+  if (codeLoading.value || cooldownSeconds.value > 0) {
     return;
   }
 
   try {
     codeLoading.value = true;
     const res = await sendCode({ phone: phone.value });
-    mockCode.value = res.code;
+    startCooldown(res?.cooldown_seconds || SMS_COOLDOWN_SECONDS);
   } catch (error) {
     // Handled by interceptor
   } finally {
     codeLoading.value = false;
   }
-};
-
-const onCodeFocus = async () => {
-  if (mockCode.value) {
-    return;
-  }
-
-  await requestMockCode();
 };
 
 const onSubmit = async () => {
@@ -128,7 +144,7 @@ const onSubmit = async () => {
   }
 
   if (!isValidCode(code.value)) {
-    showToast('请输入4位验证码');
+    showToast('请输入6位验证码');
     return;
   }
 
@@ -140,6 +156,9 @@ const onSubmit = async () => {
       channel_name: entryChannel.value?.channel_name || undefined
     });
     localStorage.setItem('token', res.access_token);
+    if (res.refresh_token) {
+      localStorage.setItem('refresh_token', res.refresh_token);
+    }
     showToast('登录成功');
     // 通过授权方式获取地理位置；失败不阻断登录流程。
     captureAndUploadLocation().catch(() => {});
@@ -153,6 +172,10 @@ const onSubmit = async () => {
     loading.value = false;
   }
 };
+
+onBeforeUnmount(() => {
+  clearCooldownTimer();
+});
 </script>
 
 <style scoped>

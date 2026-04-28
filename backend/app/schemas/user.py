@@ -61,7 +61,10 @@ class UserResponse(UserBase):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
+    access_token_expires_at: datetime
+    refresh_token_expires_at: datetime
 
 
 class SendCodeRequest(BaseModel):
@@ -70,8 +73,12 @@ class SendCodeRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
-    code: str = Field(..., pattern=r"^\d{4}$")
+    code: str = Field(..., pattern=r"^\d{6}$")
     channel_name: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=20)
 
 
 class EmergencyContactRequest(BaseModel):
