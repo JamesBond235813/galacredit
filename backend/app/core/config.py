@@ -1,11 +1,50 @@
 from pathlib import Path
+import os
+import sys
+from typing import Dict, List, Optional
 
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-ENV_FILE = BASE_DIR / ".env"
+
+
+def resolve_profile(argv: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """解析启动 profile，优先环境变量，其次命令行参数。
+
+    :param argv: 命令行参数列表
+    :param env: 环境变量映射
+    :return: profile 字符串，未指定时返回 None
+    """
+    env_map = env or os.environ
+    profile_from_env = (env_map.get("APP_PROFILE") or "").strip()
+    if profile_from_env:
+        return profile_from_env
+
+    args = argv if argv is not None else sys.argv
+    for arg in args[1:]:
+        if arg.startswith("--profile="):
+            profile = arg.split("=", 1)[1].strip()
+            if profile:
+                return profile
+    return None
+
+
+def resolve_env_file(base_dir: Path, profile: Optional[str]) -> Path:
+    """根据 profile 解析环境文件路径。
+
+    :param base_dir: 后端项目根目录
+    :param profile: profile 名称
+    :return: 环境文件路径
+    """
+    if profile:
+        return base_dir / f".env.{profile}"
+    return base_dir / ".env"
+
+
+ACTIVE_PROFILE = resolve_profile()
+ENV_FILE = resolve_env_file(BASE_DIR, ACTIVE_PROFILE)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -16,6 +55,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Credit Loan Platform API"
     API_V1_STR: str = "/api"
+    APP_PORT: int = 8001
     
     # 数据库配置
     MYSQL_USER: str = "jhl"
