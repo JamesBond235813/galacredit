@@ -128,8 +128,9 @@
 
     <footer class="ocr-footer">
       <div class="agreement-box">
-        <van-checkbox v-model="agreed" icon-size="18px" checked-color="#2f7ef7">
-          我已阅读并同意<span class="agreement-link">《个人信息授权协议》</span>和
+        <van-checkbox v-model="agreed" icon-size="18px" checked-color="#2f7ef7" label-disabled>
+          <span class="agreement-toggle" @click.stop="toggleAgreed">我已阅读并同意</span>
+          <span class="agreement-link" @click.stop="goPersonalAgreement">《个人信息授权协议》</span>和
           <span class="agreement-link">《信用消费服务协议》</span>
         </van-checkbox>
       </div>
@@ -335,6 +336,14 @@ const onSubmit = async () => {
 
 const onConfirmInfo = () => {
   router.push('/face');
+};
+
+const toggleAgreed = () => {
+  agreed.value = !agreed.value;
+};
+
+const goPersonalAgreement = () => {
+  router.push('/personal-info-authorization');
 };
 
 onBeforeUnmount(() => {
@@ -798,6 +807,11 @@ onBeforeUnmount(() => {
 
 .agreement-link {
   color: var(--app-primary-deep);
+  cursor: pointer;
+}
+
+.agreement-toggle {
+  cursor: pointer;
 }
 
 .submit-btn.van-button--disabled {

@@ -1,7 +1,7 @@
 <template>
   <div class="channel-entry-page">
     <div class="channel-entry-card">
-      <img src="../assets/logo.svg" class="entry-logo" alt="小钱包 logo" />
+      <img src="../assets/logo.svg" class="entry-logo" alt="小荷包 logo" />
       <h1>专属邀请通道</h1>
       <p>{{ message }}</p>
       <van-loading size="24px" color="#1a56a6" />

@@ -5,6 +5,10 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 if (!apiBaseUrl) {
   throw new Error('Missing required env: VITE_API_BASE_URL');
 }
+const clientId = import.meta.env.VITE_CLIENT_ID;
+if (!clientId) {
+  throw new Error('Missing required env: VITE_CLIENT_ID');
+}
 
 const request = axios.create({
   baseURL: apiBaseUrl,
@@ -16,6 +20,9 @@ let isRedirectingToLogin = false;
 // 请求拦截器
 request.interceptors.request.use(
   config => {
+    config.headers = config.headers || {};
+    config.headers['client-id'] = clientId;
+
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

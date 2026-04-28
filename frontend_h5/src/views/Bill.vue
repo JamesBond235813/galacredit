@@ -127,7 +127,7 @@
           <van-icon name="passed" />
         </div>
         <h1 class="status-title">账单已结清</h1>
-        <p class="status-desc">感谢您的守信，小钱包期待下次继续为您服务。</p>
+        <p class="status-desc">感谢您的守信，小荷包期待下次继续为您服务。</p>
         <div class="pill-info">信用支付金额：¥{{ formatAmount(totalAmount) }}</div>
         <section v-if="hasIssuedEcard" class="ecard-card settled-ecard-card">
           <h3>已发放京东E卡</h3>

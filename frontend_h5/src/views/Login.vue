@@ -33,9 +33,9 @@
       </section>
 
       <div class="logo-box brand-footer">
-        <img src="../assets/logo.svg" class="brand-logo" alt="小钱包 logo" />
+        <img src="../assets/logo.svg" class="brand-logo" alt="小荷包 logo" />
         <div class="brand-copy">
-          <h1 class="brand-title">小钱包</h1>
+          <h1 class="brand-title">小荷包</h1>
           <p class="brand-slogan">解生活之所急</p>
         </div>
       </div>

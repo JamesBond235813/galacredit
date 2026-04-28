@@ -2,9 +2,9 @@
   <el-container class="layout-container">
     <el-aside width="248px" class="aside-menu">
       <div class="logo">
-        <img :src="brandLogo" class="brand-logo" alt="小钱包 logo" />
+        <img :src="brandLogo" class="brand-logo" alt="小荷包 logo" />
         <div class="logo-copy">
-          <strong>小钱包</strong>
+          <strong>小荷包</strong>
           <span>解生活之所急</span>
         </div>
       </div>

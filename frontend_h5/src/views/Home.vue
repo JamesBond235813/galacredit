@@ -4,7 +4,7 @@
       <header class="home-header">
         <div>
           <p class="home-eyebrow">授信服务</p>
-          <h1 class="home-title">小钱包</h1>
+          <h1 class="home-title">小荷包</h1>
         </div>
       </header>
 

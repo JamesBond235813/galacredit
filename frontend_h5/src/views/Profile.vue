@@ -22,7 +22,7 @@
           <van-icon name="volume-o" class="notice-icon" />
           <span class="notice-text">公告：{{ noticeText }}</span>
         </div>
-        <span class="notice-brand">小钱包</span>
+        <span class="notice-brand">小荷包</span>
       </div>
 
       <div class="services-card page-card">
@@ -116,7 +116,7 @@ const noticeText = computed(() => {
     return '当前账单已逾期，请尽快联系专员处理。';
   }
 
-  return '小钱包最新诈骗防范指南，请勿向私人账户转账。';
+  return '小荷包最新诈骗防范指南，请勿向私人账户转账。';
 });
 
 const formatMaskedPhone = (value) => {

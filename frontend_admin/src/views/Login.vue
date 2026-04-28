@@ -2,9 +2,9 @@
   <div class="login-wrapper">
     <el-card class="login-card">
       <div class="system-logo">
-        <img :src="brandLogo" class="brand-logo" alt="小钱包 logo" />
+        <img :src="brandLogo" class="brand-logo" alt="小荷包 logo" />
         <div>
-          <h2>小钱包管理后台</h2>
+          <h2>小荷包管理后台</h2>
           <p>审批、发卡、付款提醒、催收统一处理</p>
         </div>
       </div>

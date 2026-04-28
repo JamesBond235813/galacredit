@@ -5,11 +5,11 @@
     <div class="about-content">
       <section class="about-card page-card brand-card">
         <div class="brand-header">
-          <img :src="brandLogo" class="brand-logo" alt="小钱包 logo" />
-          <h1 class="brand-title">小钱包</h1>
+          <img :src="brandLogo" class="brand-logo" alt="小荷包 logo" />
+          <h1 class="brand-title">小荷包</h1>
         </div>
         <p class="brand-desc">
-          小钱包为认证用户提供授信申请、信用下单、发卡进度与付款账单查询等服务，页面信息仅用于展示当前业务状态。
+          小荷包为认证用户提供授信申请、信用下单、发卡进度与付款账单查询等服务，页面信息仅用于展示当前业务状态。
         </p>
       </section>
 

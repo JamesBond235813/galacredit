@@ -14,7 +14,7 @@
     <!-- Vant Tabbar -->
     <van-tabbar v-model="active" route active-color="#1A56A6" inactive-color="#C0C4CC">
       <van-tabbar-item replace to="/home" icon="balance-list-o">
-        小钱包
+        小荷包
       </van-tabbar-item>
       <van-tabbar-item replace to="/profile" icon="user-o">
         我的
