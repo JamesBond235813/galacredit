@@ -14,6 +14,7 @@ const About = () => import('../views/About.vue');
 const Support = () => import('../views/Support.vue');
 const ChangePassword = () => import('../views/ChangePassword.vue');
 const Orders = () => import('../views/Orders.vue');
+const UserAgreement = () => import('../views/UserAgreement.vue');
 const ChannelEntry = () => import('../views/ChannelEntry.vue');
 
 const routes = [
@@ -35,7 +36,8 @@ const routes = [
       { path: 'about', component: About, meta: { title: '关于我们', tab: 'profile' } },
       { path: 'support', component: Support, meta: { title: '客服帮助', tab: 'profile' } },
       { path: 'change-password', component: ChangePassword, meta: { title: '修改密码', tab: 'profile' } },
-      { path: 'orders', component: Orders, meta: { title: '我的订单', tab: 'profile' } }
+      { path: 'orders', component: Orders, meta: { title: '我的订单', tab: 'profile' } },
+      { path: 'agreement', component: UserAgreement, meta: { title: '用户协议', tab: 'profile' } }
     ]
   },
   {

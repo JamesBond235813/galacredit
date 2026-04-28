@@ -2,8 +2,13 @@ import axios from 'axios';
 import { ElMessage } from 'element-plus';
 import { clearStoredAdminAuth } from '../constants/adminPages';
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+if (!apiBaseUrl) {
+  throw new Error('Missing required env: VITE_API_BASE_URL');
+}
+
 const request = axios.create({
-  baseURL: '/api',
+  baseURL: apiBaseUrl,
   timeout: 10000
 });
 

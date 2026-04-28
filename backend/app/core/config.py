@@ -64,7 +64,16 @@ class Settings(BaseSettings):
     ESIGN_HTTP_PROXY: str=""
 
     LOG_DIR: str = "logs"
+    LOG_APP_FILE: str = "app.log"
+    LOG_REQUEST_FILE: str = "request.log"
+    LOG_RESPONSE_FILE: str = "response.log"
+    LOG_ERROR_FILE: str = "error.log"
     LOG_FILE_NAME: str = "backend.log"
+    LOG_FORMATTER: str = "[%(asctime)s.%(msecs)03d] [tid: %(tid)s] %(levelname)s in %(module)s: %(message)s"
+    LOG_OUTPUT: str = "txt"
+    LOG_RETENTION_DAYS: int = 90
+    LOG_TZ: str = "Asia/Shanghai"
     LOG_LEVEL: str = "INFO"
+    TID_HEADER_NAME: str = "X-Trace-Id"
 
 settings = Settings()

@@ -178,7 +178,7 @@ const handleMenuAction = async (key) => {
   }
 
   if (key === 'agreement') {
-    showToast('用户协议页面正在完善');
+    router.push('/agreement');
     return;
   }
 

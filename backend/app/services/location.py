@@ -28,7 +28,9 @@ async def reverse_geocode(latitude: float, longitude: float, timeout_seconds: in
                     "Accept": "application/json",
                 },
             )
-            request_logger.info(f'request: {json.dumps(params)} ==>  response :{resp.text}')
+            request_logger.info(
+                f"request: {json.dumps(params)} ==>  response :{getattr(resp, 'text', '')}"
+            )
             resp.raise_for_status()
             payload = resp.json()
     except Exception as e:

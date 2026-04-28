@@ -30,6 +30,10 @@ def _build_app():
             headers={"Content-Disposition": "attachment; filename=test.bin"},
         )
 
+    @app.options("/echo")
+    async def echo_options():
+        return {"ok": True}
+
     return app
 
 
@@ -63,5 +67,18 @@ def test_upload_and_download_content_should_be_masked(caplog):
 
     request_logs = [r.message for r in caplog.records if "request_data" in r.message]
     response_logs = [r.message for r in caplog.records if "response_data" in r.message]
-    assert any("[upload file content]" in m for m in request_logs)
-    assert any("[download file content]" in m for m in response_logs)
+    assert any("[UPLOAD FILE CONTENT]" in m for m in request_logs)
+    assert any("[DOWNLOAD FILE CONTENT]" in m for m in response_logs)
+
+
+def test_options_request_should_not_print_request_or_response_log(caplog):
+    caplog.set_level(logging.INFO)
+    client = TestClient(_build_app())
+
+    response = client.options("/echo")
+    assert response.status_code == 200
+
+    request_logs = [r.message for r in caplog.records if "request_data" in r.message]
+    response_logs = [r.message for r in caplog.records if "response_data" in r.message]
+    assert all("/echo" not in item for item in request_logs)
+    assert all("/echo" not in item for item in response_logs)

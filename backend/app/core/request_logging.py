@@ -1,14 +1,18 @@
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
+from app.core.config import settings
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 
 request_logger = logging.getLogger("app.request")
+response_logger = logging.getLogger("app.response")
+error_logger = logging.getLogger("app.error")
 
 
 def _safe_json_text(data: bytes) -> str:
@@ -39,38 +43,43 @@ def _is_download_response(content_type: str, content_disposition: str) -> bool:
 
 class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        trace_id = request.headers.get("x-trace-id") or new_trace_id()
+        trace_header = settings.TID_HEADER_NAME or "X-Trace-Id"
+        trace_id = request.headers.get(trace_header) or new_trace_id()
         token = set_trace_id(trace_id)
         request.state.trace_id = trace_id
+        started = time.perf_counter()
 
         body = await request.body()
         headers = dict(request.headers)
         content_type = headers.get("content-type", "")
-        request_body = "[upload file content]" if _is_upload_request(content_type) else _safe_json_text(body)
+        request_body = "[UPLOAD FILE CONTENT]" if _is_upload_request(content_type) else _safe_json_text(body)
 
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
         request = Request(request.scope, receive)
         url_with_query = str(request.url)
-        request_logger.info(
-            "request_data method=%s url=%s headers=%s body=%s",
-            request.method,
-            url_with_query,
-            json.dumps(headers, ensure_ascii=False),
-            request_body,
-        )
+        should_log = request.method.upper() != "OPTIONS"
+        if should_log:
+            request_logger.info(
+                "request_data method=%s url=%s headers=%s body=%s",
+                request.method,
+                url_with_query,
+                json.dumps(headers, ensure_ascii=False),
+                request_body,
+                extra={"method": request.method, "url": url_with_query},
+            )
 
         try:
             response = await call_next(request)
-            response.headers["x-trace-id"] = trace_id
+            response.headers[trace_header] = trace_id
 
             response_headers = dict(response.headers)
             response_content_type = response_headers.get("content-type", "")
             content_disposition = response_headers.get("content-disposition", "")
 
             if _is_download_response(response_content_type, content_disposition):
-                response_body = "[download file content]"
+                response_body = "[DOWNLOAD FILE CONTENT]"
             else:
                 response_chunks = [chunk async for chunk in response.body_iterator]
                 response_raw = b"".join(response_chunks)
@@ -83,13 +92,29 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
                     background=response.background,
                 )
 
-            request_logger.info(
-                "response_data method=%s url=%s status=%s body=%s",
+            if should_log:
+                response_logger.info(
+                    "response_data method=%s url=%s status=%s headers=%s body=%s",
+                    request.method,
+                    url_with_query,
+                    response.status_code,
+                    json.dumps(response_headers, ensure_ascii=False),
+                    response_body,
+                    extra={
+                        "method": request.method,
+                        "url": url_with_query,
+                        "status_code": response.status_code,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    },
+                )
+            return response
+        except Exception:
+            error_logger.exception(
+                "request_exception method=%s url=%s",
                 request.method,
                 url_with_query,
-                response.status_code,
-                response_body,
+                extra={"method": request.method, "url": url_with_query},
             )
-            return response
+            raise
         finally:
             reset_trace_id(token)

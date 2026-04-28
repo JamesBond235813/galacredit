@@ -1,8 +1,13 @@
 import axios from 'axios';
 import { showToast } from 'vant';
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+if (!apiBaseUrl) {
+  throw new Error('Missing required env: VITE_API_BASE_URL');
+}
+
 const request = axios.create({
-  baseURL: '/api', // 借助 Vite proxy 转发解决局域网手机访问跨域报错问题
+  baseURL: apiBaseUrl,
   timeout: 60000
 });
 
