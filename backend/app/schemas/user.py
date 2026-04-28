@@ -73,12 +73,18 @@ class SendCodeRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
-    code: str = Field(..., pattern=r"^\d{6}$")
+    password: str = Field(..., min_length=6, max_length=50)
     channel_name: Optional[str] = None
 
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., min_length=20)
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=6, max_length=50)
+    new_password: str = Field(..., min_length=6, max_length=50)
+    confirm_password: str = Field(..., min_length=6, max_length=50)
 
 
 class EmergencyContactRequest(BaseModel):

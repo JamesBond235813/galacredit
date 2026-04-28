@@ -282,7 +282,7 @@ def _apply_amount_to_rows(rows: List[Dict[str, Any]], amount: Any, target: str) 
 
 
 def _sync_row_statuses(rows: List[Dict[str, Any]], now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    current_time = now or datetime.utcnow()
+    current_time = now or datetime.now()
     assigned_current = False
 
     for row in rows:
@@ -335,7 +335,7 @@ def build_virtual_installments(loan: Loan, now: Optional[datetime] = None) -> Tu
 
 
 def sync_installment_records(loan: Loan, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    current_time = now or datetime.utcnow()
+    current_time = now or datetime.now()
     loaded_installments = _get_loaded_relation(loan, "installments") or []
     rows = []
     for item in sorted(loaded_installments, key=lambda current: current.period_no):

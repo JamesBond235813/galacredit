@@ -86,6 +86,7 @@ const serviceItems = [
 
 const menuItems = [
   { key: 'service', title: '专属客服', icon: 'service-o' },
+  { key: 'change-password', title: '修改密码', icon: 'shield-o' },
   { key: 'refresh', title: '点击更新', icon: 'replay' },
   { key: 'about', title: '关于我们', icon: 'info-o' },
   { key: 'agreement', title: '用户协议', icon: 'orders-o' },
@@ -168,6 +169,11 @@ const handleMenuAction = async (key) => {
 
   if (key === 'service') {
     router.push('/support');
+    return;
+  }
+
+  if (key === 'change-password') {
+    router.push('/change-password');
     return;
   }
 

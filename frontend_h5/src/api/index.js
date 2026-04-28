@@ -12,6 +12,7 @@ export const submitOCR = (data) => request.post('/user/ocr', data, {headers: {'C
 export const submitFaceAuth = (data) => request.post('/user/face-auth', data, {headers: {'Content-Type': 'multipart/form-data'}});
 export const submitApplication = (data) => request.post('/user/application', data);
 export const submitUserLocation = (data) => request.post('/user/location', data);
+export const changePassword = (data) => request.post('/user/change-password', data);
 
 // Loan API
 export const getLoanStatus = () => request.get('/loan/status');

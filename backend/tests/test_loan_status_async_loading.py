@@ -46,7 +46,7 @@ class _FakeAsyncSession:
 
 
 def _build_loan_with_installments() -> Loan:
-    now = datetime.utcnow()
+    now = datetime.now()
     loan = Loan(
         id=125,
         user_id=1,

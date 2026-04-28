@@ -9,10 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user_async
 from app.core.config import settings
 from app.core.database import get_async_db
+from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.schemas.channel import ChannelBindRequest, ChannelBindResponse
 from app.schemas.loan import LoanResponse
-from app.schemas.user import ApplicationSubmitRequest, UserLocationUpsertRequest, UserResponse
+from app.schemas.user import (
+    ApplicationSubmitRequest,
+    ChangePasswordRequest,
+    UserLocationUpsertRequest,
+    UserResponse,
+)
 from app.services.audit import log_user_event_async
 from app.services.channel_service import bind_user_source_channel_async, get_channel_by_name_async
 from app.services.esign_identity import ESignIdentityError, esign_identity_client
@@ -31,6 +37,31 @@ router = APIRouter()
 @router.get("/info", response_model=UserResponse)
 async def get_user_info(current_user: User = Depends(get_current_user_async)):
     return current_user
+
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """修改当前登录用户密码。
+
+    :param req: 修改密码请求体
+    :param current_user: 当前登录用户
+    :param db: 异步数据库会话
+    :return: 修改结果
+    """
+    if req.new_password != req.confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+
+    if not current_user.password_hash or not verify_password(req.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="原密码不正确")
+
+    # 修改密码后立即更新哈希，避免明文在内存中长时间停留。
+    current_user.password_hash = get_password_hash(req.new_password)
+    await db.commit()
+    return {"msg": "密码修改成功"}
 
 
 @router.post("/channel-bind", response_model=ChannelBindResponse)
@@ -96,7 +127,7 @@ async def mock_ocr(
         current_user.id_address = "北京市朝阳区建国路 88 号"
         current_user.id_expiry = "2020.01.01-2040.01.01"
 
-    current_user.ocr_submitted_at = datetime.utcnow()
+    current_user.ocr_submitted_at = datetime.now()
 
     loan = await get_or_create_loan_async(db, current_user.id)
     await log_user_event_async(
@@ -175,7 +206,7 @@ async def mock_face_auth(
         score = 0.99
 
     current_user.face_auth_status = "PASSED"
-    current_user.face_auth_at = datetime.utcnow()
+    current_user.face_auth_at = datetime.now()
 
     loan = await get_or_create_loan_async(db, current_user.id)
     await log_user_event_async(
@@ -223,7 +254,7 @@ async def submit_application(
     db_user.emergency_contact2_name = contacts[1].name.strip()
     db_user.emergency_contact2_relation = contacts[1].relation.strip()
     db_user.emergency_contact2_phone = contacts[1].phone.strip()
-    db_user.application_submitted_at = datetime.utcnow()
+    db_user.application_submitted_at = datetime.now()
     db_user.approved_limit = 0
 
     loan.status = "REVIEWING"
@@ -300,7 +331,7 @@ async def upsert_user_location(
     current_user.location_city = location.get("city")
     current_user.location_district = location.get("district")
     current_user.location_street = location.get("street")
-    current_user.location_updated_at = datetime.utcnow()
+    current_user.location_updated_at = datetime.now()
 
     loan = await get_or_create_loan_async(db, current_user.id)
     await log_user_event_async(

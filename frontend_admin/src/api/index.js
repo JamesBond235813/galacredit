@@ -25,6 +25,8 @@ export const deleteAdminUser = (id) => request.delete(`/admin/admin-users/${id}`
 // User API for Admin
 export const getUsers = (params) => request.get('/admin/users', { params });
 export const getUserDetail = (id) => request.get(`/admin/users/${id}`);
+export const createFrontUser = (data) => request.post('/admin/users', data);
+export const resetFrontUserPassword = (id, data) => request.post(`/admin/users/${id}/reset-password`, data);
 export const getRiskReportByUser = (data) => request.post('/admin/risk/report', data);
 
 // Loan API for Admin

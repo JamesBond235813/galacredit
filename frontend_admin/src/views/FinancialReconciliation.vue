@@ -15,7 +15,7 @@
             v-model="filters.keyword"
             placeholder="姓名 / 手机号"
             clearable
-            @keyup.enter="fetchData"
+            @keydown.enter.prevent="handleSearch"
           />
         </el-form-item>
         <el-form-item>
@@ -279,6 +279,11 @@ const fetchData = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const handleSearch = () => {
+  filters.page = 1;
+  fetchData();
 };
 
 const resetFilters = () => {

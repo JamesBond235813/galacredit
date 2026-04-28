@@ -14,7 +14,7 @@ scheduler = AsyncIOScheduler()
 
 async def process_overdue_loans():
     async with AsyncSessionLocal() as db:
-        now = datetime.utcnow()
+        now = datetime.now()
         active_loans = (
             await db.execute(
                 select(Loan)

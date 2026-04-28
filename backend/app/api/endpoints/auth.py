@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_async_db
-from app.core.security import create_access_token, create_refresh_token
+from app.core.security import create_access_token, create_refresh_token, verify_password
 from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.user import User
 from app.schemas.channel import ChannelLandingResponse
 from app.schemas.user import LoginRequest, RefreshTokenRequest, SendCodeRequest, Token
+from app.services.password_login_guard import PasswordLoginGuard
 from app.services.sms_auth import SmsAuthManager
 from app.services.audit import log_user_event_async
 from app.services.channel_service import (
@@ -21,7 +22,6 @@ from app.services.channel_service import (
     get_channel_by_name_async,
     serialize_channel_landing,
 )
-from app.services.loan_flow import get_or_create_loan_async
 
 router = APIRouter()
 
@@ -32,6 +32,40 @@ sms_auth_manager = SmsAuthManager(
     mock_enabled=settings.SMS_CODE_MOCK_ENABLED,
     mock_code=settings.SMS_MOCK_CODE,
 )
+
+password_login_guard = PasswordLoginGuard(
+    max_attempts=settings.PASSWORD_LOGIN_MAX_ATTEMPTS,
+    window_seconds=settings.PASSWORD_LOGIN_WINDOW_SECONDS,
+    freeze_seconds=settings.PASSWORD_LOGIN_FREEZE_SECONDS,
+)
+
+
+def _build_login_frozen_message(remain_minutes: int) -> str:
+    """构建登录冻结文案。
+
+    :param remain_minutes: 剩余冻结分钟
+    :return: 提示文案
+    """
+    return f"由于密码输入错误次数过多，请在{max(int(remain_minutes), 1)}分钟后再输入密码。"
+
+
+def _resolve_client_ip(request: Request) -> str:
+    """解析请求来源IP，优先取代理头。
+
+    :param request: FastAPI 请求对象
+    :return: 客户端IP
+    """
+    forwarded_for = (request.headers.get("x-forwarded-for") or "").strip()
+    if forwarded_for:
+        first_ip = forwarded_for.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+
+    real_ip = (request.headers.get("x-real-ip") or "").strip()
+    if real_ip:
+        return real_ip
+
+    return request.client.host if request.client else "unknown"
 
 
 async def _upsert_oauth_client(db: AsyncSession, client_id: str) -> None:
@@ -46,7 +80,7 @@ async def _upsert_oauth_client(db: AsyncSession, client_id: str) -> None:
         db.add(OAuthClient(client_id=client_id, client_name=client_id, is_active=True))
         return
     client.is_active = True
-    client.updated_at = datetime.utcnow()
+    client.updated_at = datetime.now()
 
 
 async def _save_token_pair(
@@ -73,7 +107,7 @@ async def _save_token_pair(
     :param refresh_expires_at: refresh token 过期时间
     :return: None
     """
-    now = datetime.utcnow()
+    now = datetime.now()
     await db.execute(
         update(OAuthToken)
         .where(
@@ -109,7 +143,7 @@ async def send_code(req: SendCodeRequest, request: Request):
     if not settings.SMS_CODE_MOCK_ENABLED:
         raise HTTPException(status_code=503, detail="短信通道暂未配置")
 
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _resolve_client_ip(request)
     success, remain = await sms_auth_manager.issue_code(phone=req.phone, ip=client_ip)
     if not success:
         raise HTTPException(status_code=429, detail=f"发送过于频繁，请{remain}秒后重试")
@@ -126,19 +160,19 @@ async def get_channel_entry(channel_name: str, db: AsyncSession = Depends(get_as
 
 @router.post("/login", response_model=Token)
 async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
-    """手机号短信验证码登录。
+    """手机号密码登录。
 
     :param req: 登录请求体
     :param request: FastAPI 请求对象
     :param db: 异步数据库会话
     :return: access token 与 refresh token
     """
-    valid = await sms_auth_manager.verify_code(req.phone, req.code)
-    if not valid:
-        raise HTTPException(status_code=400, detail="验证码错误或已失效")
+    frozen_minutes = await password_login_guard.before_verify(req.phone)
+    if frozen_minutes > 0:
+        raise HTTPException(status_code=400, detail=_build_login_frozen_message(frozen_minutes))
 
     client_id = request.headers.get("client-id", "h5-web").strip() or "h5-web"
-    now = datetime.utcnow()
+    now = datetime.now()
     channel = None
     if req.channel_name:
         channel = await get_channel_by_name_async(db, req.channel_name, active_only=True)
@@ -146,35 +180,19 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
             raise HTTPException(status_code=400, detail="渠道链接不存在或已停用")
 
     user = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
-    is_new_user = user is None
+    if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
+        frozen_minutes = await password_login_guard.on_failure(req.phone)
+        if frozen_minutes > 0:
+            raise HTTPException(status_code=400, detail=_build_login_frozen_message(frozen_minutes))
+        raise HTTPException(status_code=400, detail="用户或密码不正确")
 
-    if user is None:
-        user = User(phone=req.phone, face_auth_status="PENDING")
-        db.add(user)
-        await db.flush()
-
-    loan = await get_or_create_loan_async(db, user.id)
-
+    await password_login_guard.on_success(req.phone)
     user.last_login_at = now
     attribution_status = (
-        await bind_user_source_channel_async(db, user=user, channel=channel, loan=loan)
+        await bind_user_source_channel_async(db, user=user, channel=channel, loan=None)
         if channel
         else None
     )
-
-    if is_new_user:
-        await log_user_event_async(
-            db,
-            user=user,
-            loan=loan,
-            actor_type="SYSTEM",
-            event_type="REGISTER",
-            title="新用户注册",
-            detail=(
-                f"手机号 {user.phone} 首次登录，系统自动创建用户及初始订单。"
-                f"{f' 归因渠道：{channel.sales_name}（{channel.channel_name}）。' if channel else ''}"
-            ),
-        )
 
     login_detail = "H5 登录成功。"
     if channel and attribution_status in {"BOUND", "REFRESHED"}:
@@ -183,14 +201,12 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
     await log_user_event_async(
         db,
         user=user,
-        loan=loan,
+        loan=None,
         actor_type="USER",
         event_type="LOGIN",
         title="用户登录",
         detail=login_detail,
     )
-
-    await db.commit()
     await _upsert_oauth_client(db, client_id)
 
     access_token_expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -252,7 +268,7 @@ async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get
     except JWTError:
         raise credentials_exception
 
-    now = datetime.utcnow()
+    now = datetime.now()
     token_row = (
         await db.execute(
             select(OAuthToken).where(

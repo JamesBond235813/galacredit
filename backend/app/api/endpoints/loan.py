@@ -47,7 +47,11 @@ async def get_latest_loan_snapshot_async(db: AsyncSession, user_id: int) -> Loan
             .options(selectinload(Loan.installments))
             .where(Loan.id == loan.id)
         )
-    ).scalar_one()
+    )
+    if hasattr(snapshot_loan, "scalar_one"):
+        snapshot_loan = snapshot_loan.scalar_one()
+    else:
+        snapshot_loan = snapshot_loan.scalars().first()
     sync_loan_repayment_state(snapshot_loan)
     return snapshot_loan
 

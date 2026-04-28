@@ -45,7 +45,7 @@ async def get_user_for_risk_report_async(db: AsyncSession, user_id: int) -> User
 
 
 async def get_cached_risk_report_async(db: AsyncSession, *, name: str, id_card: str) -> Optional[RiskControlReport]:
-    thirty_days_ago = datetime.utcnow() - timedelta(days=settings.RISK_REPORT_CACHE_DAYS)
+    thirty_days_ago = datetime.now() - timedelta(days=settings.RISK_REPORT_CACHE_DAYS)
     stmt = select(RiskControlReport).where(
         RiskControlReport.name == name,
         RiskControlReport.id_card == id_card,
@@ -69,7 +69,7 @@ async def get_or_create_risk_report_async(
         return cached_report
 
     report_payload, source = fetch_risk_report_payload(name=name, id_card=id_card, phone=phone)
-    now = datetime.utcnow()
+    now = datetime.now()
     report = RiskControlReport(
         name=name,
         id_card=id_card,

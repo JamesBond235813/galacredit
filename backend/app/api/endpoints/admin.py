@@ -25,6 +25,9 @@ from app.models.user import User
 from app.models.user_event import UserEvent
 from app.schemas.admin import (
     AdminLogin,
+    AdminTokenResponse,
+    RegisterUserRequest,
+    ResetUserPasswordRequest,
     AdminResponse,
     AdminUserCreateRequest,
     AdminUserItemResponse,
@@ -59,7 +62,7 @@ from app.schemas.loan import (
     PaginatedLoanResponse,
 )
 from app.schemas.risk import AdminRiskReportRequest, RiskReportResponse
-from app.schemas.user import PaginatedUserResponse, Token, UserDetailResponse
+from app.schemas.user import PaginatedUserResponse, UserDetailResponse
 from app.services.audit import log_user_event_async
 from app.services.admin_permissions import (
     ALL_ADMIN_PERMISSION_KEYS,
@@ -159,7 +162,7 @@ ADMIN_STATS_WS_PUSH_SECONDS = 5
 
 
 def get_today_range():
-    now = datetime.utcnow()
+    now = datetime.now()
     today_start = datetime(now.year, now.month, now.day)
     tomorrow = today_start + timedelta(days=1)
     return today_start, tomorrow
@@ -734,7 +737,7 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
     }
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=AdminTokenResponse)
 async def login(req: AdminLogin, db: AsyncSession = Depends(get_async_db)):
     admin = (await db.execute(select(Admin).where(Admin.username == req.username))).scalar_one_or_none()
     if not admin or not verify_password(req.password, admin.password_hash):
@@ -1124,6 +1127,136 @@ async def get_users(
         "size": limit,
         "items": [serialize_user_summary(user) for user in users],
     }
+
+
+async def _register_user(
+    db: AsyncSession,
+    current_admin: Admin,
+    req: RegisterUserRequest,
+):
+    """后台新增前端用户。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :param req: 新增用户请求体
+    :return: 新增结果
+    """
+    ensure_admin_page_permission(current_admin, "users")
+    channel = (
+        await db.execute(
+            select(Channel).where(
+                Channel.id == req.source_channel_id,
+                Channel.status == "ACTIVE",
+            )
+        )
+    ).scalar_one_or_none()
+    if channel is None:
+        raise HTTPException(status_code=400, detail="来源渠道不存在或未启用")
+
+    existed = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
+    if existed is not None:
+        raise HTTPException(status_code=400, detail="手机号已存在")
+
+    now = datetime.now()
+    user = User(
+        phone=req.phone,
+        password_hash=get_password_hash(req.password),
+        face_auth_status="PENDING",
+        source_channel_id=channel.id,
+        channel_bound_at=now,
+        last_channel_visit_at=now,
+    )
+    db.add(user)
+    await db.flush()
+
+    # 审计记录用于追踪管理员新增用户来源，避免后续归因排查困难。
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=None,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_REGISTER_USER",
+        title="后台新增用户",
+        detail=f"后台新增用户，来源渠道：{channel.sales_name}（{channel.channel_name}）。",
+    )
+    await db.commit()
+    return {
+        "msg": "新增用户成功",
+        "user_id": user.id,
+        "phone": user.phone,
+    }
+
+
+@router.post("/users")
+async def register_user(
+    req: RegisterUserRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """后台新增用户接口。
+
+    :param req: 新增用户请求体
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :return: 新增结果
+    """
+    return await _register_user(db, current_admin, req)
+
+
+async def _reset_user_password(
+    db: AsyncSession,
+    current_admin: Admin,
+    user_id: int,
+    req: ResetUserPasswordRequest,
+):
+    """后台重置指定用户密码。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :param user_id: 用户ID
+    :param req: 重置密码请求体
+    :return: 重置结果
+    """
+    ensure_admin_page_permission(current_admin, "users")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    user.password_hash = get_password_hash(req.password)
+    # 后台重置密码后立即解除该手机号冻结，避免用户已改密但仍被历史失败次数阻断。
+    from app.api.endpoints import auth as auth_endpoints
+    await auth_endpoints.password_login_guard.on_success(user.phone)
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=None,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_RESET_PASSWORD",
+        title="后台重置密码",
+        detail="管理员已重置用户登录密码。",
+    )
+    await db.commit()
+    return {"msg": "重置密码成功"}
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: int,
+    req: ResetUserPasswordRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """后台重置用户密码接口。
+
+    :param user_id: 用户ID
+    :param req: 重置密码请求体
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :return: 重置结果
+    """
+    return await _reset_user_password(db, current_admin, user_id, req)
 
 
 async def _get_loan_ledger(db: AsyncSession, current_admin: Admin, loan_id: int):
@@ -1714,7 +1847,7 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.term_days = None
         loan.product_term_days = None
         loan.review_note = (req.review_note or "后台已完成授信审批").strip()
-        loan.approved_at = datetime.utcnow()
+        loan.approved_at = datetime.now()
         loan.due_date = None
         loan.disbursed_at = None
         loan.penalty_amount = 0
@@ -1836,7 +1969,7 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         change_messages.append(f"状态调整为 {new_status}")
 
         if new_status == "APPROVED" and loan.approved_at is None:
-            loan.approved_at = datetime.utcnow()
+            loan.approved_at = datetime.now()
         if new_status == "REJECTED":
             owner.approved_limit = 0
             loan.approved_at = None
@@ -1857,7 +1990,7 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
             loan.ecard_password = None
             loan.ecard_expires_at = None
         if new_status == "DISBURSED" and loan.disbursed_at is None:
-            loan.disbursed_at = datetime.utcnow()
+            loan.disbursed_at = datetime.now()
         if new_status == "SETTLED":
             loan.penalty_amount = payload.get("penalty_amount", loan.penalty_amount)
             loan.repay_attempt_count = 0
@@ -1900,7 +2033,7 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
     if loan.disbursed_at and loan.term_days:
         loan.due_date = calculate_due_date(loan.disbursed_at, loan.term_days)
     elif loan.status == "DISBURSED" and loan.term_days:
-        reference_time = datetime.utcnow()
+        reference_time = datetime.now()
         loan.disbursed_at = reference_time
         loan.due_date = calculate_due_date(reference_time, loan.term_days)
 
@@ -1967,7 +2100,7 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
     if round_money(loan.ecard_face_value or loan.credit_limit) <= 0:
         raise HTTPException(status_code=400, detail="请先确认商品信息")
 
-    now = datetime.utcnow()
+    now = datetime.now()
     ecard_face_value = round_money(loan.ecard_face_value or loan.credit_limit)
     ecard_item = (
         await db.execute(
@@ -2204,7 +2337,7 @@ async def _remind_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
             raise HTTPException(status_code=403, detail="仅可跟进分配给你的还款订单")
 
     loan.reminder_count = (loan.reminder_count or 0) + 1
-    loan.last_reminded_at = datetime.utcnow()
+    loan.last_reminded_at = datetime.now()
     note = (req.note or "已执行当日还款提醒").strip()
 
     await log_user_event_async(
@@ -2255,7 +2388,7 @@ async def _collect_loan(db: AsyncSession, current_admin: Admin, loan_id: int, re
             raise HTTPException(status_code=403, detail="仅可跟进分配给你的催收订单")
 
     loan.collection_count = (loan.collection_count or 0) + 1
-    loan.last_collection_at = datetime.utcnow()
+    loan.last_collection_at = datetime.now()
     loan.collection_note = (req.note or "已执行逾期催收").strip()
 
     await log_user_event_async(
@@ -2388,7 +2521,7 @@ async def _assign_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         previous = loan.collection_admin_id
         loan.collection_admin_id = assignee.id
         if loan.collection_transferred_at is None:
-            loan.collection_transferred_at = datetime.utcnow()
+            loan.collection_transferred_at = datetime.now()
         title = "超管手动改派催收负责人"
         detail = f"催收负责人由 #{previous or '-'} 调整为 #{assignee.id}（{assignee.username}）"
 

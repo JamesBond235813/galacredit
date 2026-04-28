@@ -36,7 +36,7 @@ class SmsAuthManager:
         self.mock_enabled = bool(mock_enabled)
         self.mock_code = mock_code
         self._now_provider = now_provider or time.monotonic
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._phone_cooldown_deadline: Dict[str, float] = {}
         self._phone_codes: Dict[str, _SmsCodeRecord] = {}
         self._ip_buckets: Dict[str, _IpTokenBucket] = {}
@@ -78,6 +78,12 @@ class SmsAuthManager:
             return True
         return False
 
+    async def _guard_lock(self) -> asyncio.Lock:
+        """获取异步锁，延迟初始化以兼容同步测试场景。"""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
     async def issue_code(self, phone: str, ip: str) -> Tuple[bool, int]:
         """申请发送短信验证码。
 
@@ -85,7 +91,8 @@ class SmsAuthManager:
         :param ip: 请求方IP
         :return: (是否成功, 冷却剩余秒数)
         """
-        async with self._lock:
+        lock = await self._guard_lock()
+        async with lock:
             now = self._now()
             self._cleanup(now)
 
@@ -110,7 +117,8 @@ class SmsAuthManager:
         :param code: 用户输入验证码
         :return: 是否校验成功
         """
-        async with self._lock:
+        lock = await self._guard_lock()
+        async with lock:
             now = self._now()
             self._cleanup(now)
             record = self._phone_codes.get(phone)
@@ -126,7 +134,8 @@ class SmsAuthManager:
 
     async def debug_state_size(self) -> Tuple[int, int, int]:
         """返回当前内存状态规模，仅用于单元测试。"""
-        async with self._lock:
+        lock = await self._guard_lock()
+        async with lock:
             now = self._now()
             self._cleanup(now)
             return len(self._phone_cooldown_deadline), len(self._phone_codes), len(self._ip_buckets)

@@ -3,6 +3,8 @@ from typing import Dict, Optional
 
 import httpx
 
+from app.core.request_logging import request_logger
+
 
 async def reverse_geocode(latitude: float, longitude: float, timeout_seconds: int = 8) -> Dict[str, Optional[str]]:
     """
@@ -26,9 +28,11 @@ async def reverse_geocode(latitude: float, longitude: float, timeout_seconds: in
                     "Accept": "application/json",
                 },
             )
+            request_logger.info(f'request: {json.dumps(params)} ==>  response :{resp.text}')
             resp.raise_for_status()
             payload = resp.json()
-    except Exception:
+    except Exception as e:
+        request_logger.error(f'request nominatim failed: {e}')
         return {
             "address": None,
             "province": None,

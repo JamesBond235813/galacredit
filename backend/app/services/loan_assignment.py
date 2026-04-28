@@ -52,7 +52,7 @@ async def assign_review_admin_if_needed_async(
 def is_collection_stage(loan: Loan, now: Optional[datetime] = None) -> bool:
     if not loan or loan.status != "OVERDUE" or not loan.due_date:
         return False
-    now_dt = now or datetime.utcnow()
+    now_dt = now or datetime.now()
     overdue_days = max((now_dt.date() - loan.due_date.date()).days, 0)
     return overdue_days > COLLECTION_TRANSFER_OVERDUE_DAYS
 
@@ -73,7 +73,7 @@ async def assign_collection_admin_if_needed_async(
     if collection_admin_id:
         loan.collection_admin_id = collection_admin_id
         if loan.collection_transferred_at is None:
-            loan.collection_transferred_at = now or datetime.utcnow()
+            loan.collection_transferred_at = now or datetime.now()
     return loan.collection_admin_id
 
 
@@ -81,7 +81,7 @@ async def assign_collection_admins_for_overdue_loans_async(
     db: AsyncSession,
     now: Optional[datetime] = None,
 ) -> int:
-    now_dt = now or datetime.utcnow()
+    now_dt = now or datetime.now()
     loans = (await db.execute(select(Loan).where(Loan.status == "OVERDUE"))).scalars().all()
     changed = 0
     for loan in loans:

@@ -8,6 +8,7 @@
         <el-form-item>
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
+          <el-button plain @click="openCreateDrawer">新增用户</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -48,9 +49,10 @@
             {{ formatDateTime(row.last_login_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDrawer(row)">查看档案</el-button>
+            <el-button link type="warning" @click="openResetDialog(row)">重置密码</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -167,12 +169,69 @@
         </section>
       </div>
     </el-drawer>
+
+    <el-drawer
+      v-model="createDrawerVisible"
+      size="460px"
+      title="新增用户"
+      destroy-on-close
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+    >
+      <el-form label-position="top">
+        <el-form-item label="手机号" required>
+          <el-input v-model="createForm.phone" maxlength="11" placeholder="请输入11位手机号" />
+        </el-form-item>
+        <el-form-item label="密码" required>
+          <el-input v-model="createForm.password" type="password" maxlength="50" show-password placeholder="请输入至少6位密码" />
+        </el-form-item>
+        <el-form-item label="来源渠道" required>
+          <el-select
+            v-model="createForm.sourceChannelId"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="输入业务员或渠道名称搜索"
+            :remote-method="searchChannels"
+            :loading="channelLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in channelOptions"
+              :key="item.id"
+              :label="`${item.sales_name} / ${item.channel_name}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="creating" @click="submitCreateUser">确定新增</el-button>
+        </el-form-item>
+      </el-form>
+    </el-drawer>
+
+    <el-dialog v-model="resetDialogVisible" width="520px" title="重置密码" destroy-on-close>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="用户ID">{{ resetTarget.id }}</el-descriptions-item>
+        <el-descriptions-item label="手机号">{{ resetTarget.phone }}</el-descriptions-item>
+        <el-descriptions-item label="姓名">{{ resetTarget.name || '--' }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="reset-form">
+        <el-input v-model="resetForm.password" type="password" show-password placeholder="请输入新密码（至少6位）" maxlength="50" />
+        <el-input v-model="resetForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" maxlength="50" />
+      </div>
+      <template #footer>
+        <el-button @click="resetDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="resetting" @click="submitResetPassword">确认重置</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
+import { ElMessage } from 'element-plus';
 import { onMounted, reactive, ref } from 'vue';
-import { getUserDetail, getUsers } from '../api';
+import { createFrontUser, getChannels, getUserDetail, getUsers, resetFrontUserPassword } from '../api';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 
 const loading = ref(false);
@@ -180,6 +239,21 @@ const tableData = ref([]);
 const total = ref(0);
 const drawerVisible = ref(false);
 const detail = ref(null);
+
+const createDrawerVisible = ref(false);
+const creating = ref(false);
+const channelLoading = ref(false);
+const channelOptions = ref([]);
+const createForm = reactive({
+  phone: '',
+  password: '',
+  sourceChannelId: null
+});
+
+const resetDialogVisible = ref(false);
+const resetting = ref(false);
+const resetTarget = reactive({ id: null, phone: '', name: '' });
+const resetForm = reactive({ password: '', confirmPassword: '' });
 
 const resolveEcardFaceValue = (row) => Number(row?.ecard_face_value || row?.credit_limit || 0);
 const resolveRightsPrice = (row) => Number(row?.rights_price || row?.fee_amount || 0);
@@ -227,6 +301,89 @@ const openDrawer = async (row) => {
   detail.value = await getUserDetail(row.id);
 };
 
+const searchChannels = async (keyword = '') => {
+  channelLoading.value = true;
+  try {
+    const res = await getChannels({
+      keyword: keyword || undefined,
+      status: 'ACTIVE',
+      skip: 0,
+      limit: 50
+    });
+    channelOptions.value = res.items || [];
+  } finally {
+    channelLoading.value = false;
+  }
+};
+
+const openCreateDrawer = async () => {
+  createForm.phone = '';
+  createForm.password = '';
+  createForm.sourceChannelId = null;
+  channelOptions.value = [];
+  createDrawerVisible.value = true;
+  await searchChannels('');
+};
+
+const submitCreateUser = async () => {
+  if (!/^\d{11}$/.test(createForm.phone)) {
+    ElMessage.warning('请输入11位手机号');
+    return;
+  }
+  if (!createForm.password || createForm.password.length < 6) {
+    ElMessage.warning('请输入至少6位密码');
+    return;
+  }
+  if (!createForm.sourceChannelId) {
+    ElMessage.warning('请选择来源渠道');
+    return;
+  }
+
+  creating.value = true;
+  try {
+    await createFrontUser({
+      phone: createForm.phone,
+      password: createForm.password,
+      source_channel_id: createForm.sourceChannelId
+    });
+    ElMessage.success('新增用户成功');
+    createDrawerVisible.value = false;
+    filters.page = 1;
+    await fetchData();
+  } finally {
+    creating.value = false;
+  }
+};
+
+const openResetDialog = (row) => {
+  resetTarget.id = row.id;
+  resetTarget.phone = row.phone;
+  resetTarget.name = row.name;
+  resetForm.password = '';
+  resetForm.confirmPassword = '';
+  resetDialogVisible.value = true;
+};
+
+const submitResetPassword = async () => {
+  if (!resetForm.password || resetForm.password.length < 6) {
+    ElMessage.warning('请输入至少6位新密码');
+    return;
+  }
+  if (resetForm.password !== resetForm.confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致');
+    return;
+  }
+
+  resetting.value = true;
+  try {
+    await resetFrontUserPassword(resetTarget.id, { password: resetForm.password });
+    ElMessage.success('重置密码成功');
+    resetDialogVisible.value = false;
+  } finally {
+    resetting.value = false;
+  }
+};
+
 onMounted(() => {
   fetchData();
 });
@@ -243,5 +400,11 @@ onMounted(() => {
   margin-top: 18px;
   display: flex;
   justify-content: flex-end;
+}
+
+.reset-form {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
 }
 </style>

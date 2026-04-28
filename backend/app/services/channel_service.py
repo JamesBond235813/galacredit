@@ -54,7 +54,7 @@ async def bind_user_source_channel_async(
     channel: Channel,
     loan: Optional[Loan] = None,
 ):
-    now = datetime.utcnow()
+    now = datetime.now()
 
     if user.source_channel_id is None:
         user.source_channel = channel

@@ -12,6 +12,7 @@ const Withdraw = () => import('../views/Withdraw.vue');
 const Bill = () => import('../views/Bill.vue');
 const About = () => import('../views/About.vue');
 const Support = () => import('../views/Support.vue');
+const ChangePassword = () => import('../views/ChangePassword.vue');
 const Orders = () => import('../views/Orders.vue');
 const ChannelEntry = () => import('../views/ChannelEntry.vue');
 
@@ -33,6 +34,7 @@ const routes = [
       { path: 'bill', component: () => import('../views/Bill.vue'), meta: { title: '付款账单', tab: 'profile' } },
       { path: 'about', component: About, meta: { title: '关于我们', tab: 'profile' } },
       { path: 'support', component: Support, meta: { title: '客服帮助', tab: 'profile' } },
+      { path: 'change-password', component: ChangePassword, meta: { title: '修改密码', tab: 'profile' } },
       { path: 'orders', component: Orders, meta: { title: '我的订单', tab: 'profile' } }
     ]
   },

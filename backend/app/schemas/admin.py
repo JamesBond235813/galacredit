@@ -28,6 +28,11 @@ class AdminLogin(BaseModel):
     password: str
 
 
+class AdminTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+
 class AdminUserCreateRequest(AdminBase):
     password: str = Field(..., min_length=6, max_length=50)
     roles: List[str] = Field(default_factory=list)
@@ -50,3 +55,13 @@ class PaginatedAdminUserResponse(BaseModel):
     page: int
     size: int
     items: List[AdminUserItemResponse]
+
+
+class RegisterUserRequest(BaseModel):
+    phone: str = Field(..., pattern=r"^\d{11}$")
+    password: str = Field(..., min_length=6, max_length=50)
+    source_channel_id: int
+
+
+class ResetUserPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=6, max_length=50)

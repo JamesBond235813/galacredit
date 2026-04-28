@@ -15,7 +15,7 @@
             v-model="filters.phone"
             placeholder="手机号 / 姓名 / 身份证号"
             clearable
-            @keyup.enter="fetchData"
+            @keydown.enter.prevent="handleSearch"
           />
         </el-form-item>
         <el-form-item>
@@ -412,6 +412,11 @@ const fetchData = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const handleSearch = () => {
+  filters.page = 1;
+  fetchData();
 };
 
 const applyDueFilter = (value) => {

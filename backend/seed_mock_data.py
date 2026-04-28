@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal, initialize_database
+from app.core.security import get_password_hash
 from app.models.channel import Channel
 from app.models.loan import Loan
 from app.models.user import User
@@ -426,6 +427,7 @@ async def create_user_record(db, index: int, status_code: str, now: datetime):
     created_at = now - timedelta(days=20 - index % 9, hours=2 + index % 6)
     user = User(
         phone=make_phone(index),
+        password_hash=get_password_hash("123456"),
         name=None,
         face_auth_status="PENDING",
         approved_limit=0,
@@ -477,7 +479,7 @@ async def clear_previous_seed_data(db):
 async def seed_mock_data():
     initialize_database()
     async with AsyncSessionLocal() as db:
-        now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+        now = datetime.now().replace(minute=0, second=0, microsecond=0)
         planned_total = sum(count for _, count in STATUS_PLAN)
         if planned_total != TOTAL_USERS:
             raise ValueError(f"状态规划总数 {planned_total} 与目标总数 {TOTAL_USERS} 不一致")

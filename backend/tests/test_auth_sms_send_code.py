@@ -26,3 +26,27 @@ def test_send_code_should_return_cooldown_and_block_repeat_request(monkeypatch):
     second = client.post("/api/auth/send-code", json={"phone": "13800000000"})
     assert second.status_code == 429
     assert "发送过于频繁" in second.json()["detail"]
+
+
+def test_send_code_should_use_x_forwarded_for_ip(monkeypatch):
+    class _FakeManager:
+        def __init__(self):
+            self.received_ip = None
+
+        async def issue_code(self, phone: str, ip: str):
+            self.received_ip = ip
+            return True, 60
+
+    app = FastAPI()
+    app.include_router(auth.router, prefix="/api/auth")
+    manager = _FakeManager()
+    monkeypatch.setattr(auth, "sms_auth_manager", manager)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/auth/send-code",
+        json={"phone": "13800000000"},
+        headers={"X-Forwarded-For": "1.2.3.4, 10.0.0.1"},
+    )
+    assert resp.status_code == 200
+    assert manager.received_ip == "1.2.3.4"
