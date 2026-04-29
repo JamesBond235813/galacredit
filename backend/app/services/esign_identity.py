@@ -7,7 +7,6 @@ import time
 from typing import Any, Dict, Optional
 
 import httpx
-from httpcore._sync import http_proxy
 
 from app.core.config import settings
 

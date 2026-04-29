@@ -13,7 +13,7 @@ from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.user import User
 from app.schemas.channel import ChannelLandingResponse
-from app.schemas.user import LoginRequest, RefreshTokenRequest, SendCodeRequest, Token
+from app.schemas.user import LoginRequest, LogoutRequest, RefreshTokenRequest, SendCodeRequest, Token
 from app.services.password_login_guard import PasswordLoginGuard
 from app.services.sms_auth import SmsAuthManager
 from app.services.audit import log_user_event_async
@@ -326,3 +326,33 @@ async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get
         "access_token_expires_at": access_expires_at,
         "refresh_token_expires_at": refresh_expires_at,
     }
+
+
+@router.post("/logout")
+async def logout(req: LogoutRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
+    """退出登录并吊销当前 access/refresh token。
+
+    :param req: 登出请求体
+    :param request: FastAPI 请求对象
+    :param db: 异步数据库会话
+    :return: 处理结果
+    """
+    auth_header = (request.headers.get("authorization") or "").strip()
+    if not auth_header.lower().startswith("bearer "):
+        return {"msg": "退出成功"}
+    access_token = auth_header.split(" ", 1)[1].strip()
+    if not access_token:
+        return {"msg": "退出成功"}
+
+    now = datetime.now()
+    await db.execute(
+        update(OAuthToken)
+        .where(
+            OAuthToken.access_token == access_token,
+            OAuthToken.refresh_token == req.refresh_token,
+            OAuthToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    await db.commit()
+    return {"msg": "退出成功"}

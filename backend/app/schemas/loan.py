@@ -229,6 +229,7 @@ class LoanWithUserResponse(LoanResponse):
     user_name: Optional[str] = None
     user_id_card_num: Optional[str] = None
     user_face_auth_status: Optional[str] = None
+    user_real_name_status: Optional[str] = None
     user_source_channel_name: Optional[str] = None
     user_source_channel_sales_name: Optional[str] = None
     application_submitted_at: Optional[datetime] = None
@@ -398,6 +399,12 @@ class PaginatedProductResponse(BaseModel):
 
 class LoanOrderRequest(BaseModel):
     product_id: int = Field(..., ge=1)
+    sms_code: str = Field(..., pattern=r"^\d{6}$")
+
+
+class LoanOrderSmsCodeResponse(BaseModel):
+    msg: str
+    cooldown_seconds: int
 
 
 class EcardPoolItemResponse(BaseModel):

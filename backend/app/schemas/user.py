@@ -45,6 +45,7 @@ class UserResponse(UserBase):
     location_source: Optional[str] = None
     location_updated_at: Optional[datetime] = None
     face_auth_status: Optional[str] = None
+    real_name_status: Optional[str] = None
     face_auth_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
     ocr_submitted_at: Optional[datetime] = None
@@ -78,6 +79,10 @@ class LoginRequest(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=20)
+
+
+class LogoutRequest(BaseModel):
     refresh_token: str = Field(..., min_length=20)
 
 
@@ -154,6 +159,7 @@ class UserListItemResponse(BaseModel):
     name: Optional[str] = None
     id_card_num: Optional[str] = None
     face_auth_status: Optional[str] = None
+    real_name_status: Optional[str] = None
     approved_limit: Optional[int] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None

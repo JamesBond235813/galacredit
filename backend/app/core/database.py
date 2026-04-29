@@ -1,22 +1,65 @@
 import asyncio
+import logging
+import time
 import pymysql
-from sqlalchemy import create_engine, inspect, text, select
+from sqlalchemy import create_engine, event, inspect, text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
 from .config import settings
 from app.services.admin_permissions import serialize_admin_permissions, serialize_admin_roles
 
+sql_logger = logging.getLogger("app.sql")
+
 engine = create_engine(
     settings.SQLALCHEMY_DATABASE_URI,
     pool_pre_ping=True,
     pool_recycle=3600,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
 )
 async_engine = create_async_engine(
     settings.SQLALCHEMY_ASYNC_DATABASE_URI,
     pool_pre_ping=True,
     pool_recycle=3600,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
 )
+
+
+def _bind_sql_logging(db_engine):
+    @event.listens_for(db_engine, "before_cursor_execute")
+    def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        conn.info.setdefault("query_start_time", []).append(time.perf_counter())
+
+    @event.listens_for(db_engine, "after_cursor_execute")
+    def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        start_time = conn.info.get("query_start_time", []).pop(-1) if conn.info.get("query_start_time") else None
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2) if start_time else 0.0
+        sql_logger.debug(
+            "sql_exec duration_ms=%s executemany=%s statement=%s parameters=%s",
+            duration_ms,
+            executemany,
+            statement,
+            parameters,
+            extra={"duration_ms": duration_ms},
+        )
+        if duration_ms >= float(settings.SQL_SLOW_MS):
+            sql_logger.warning(
+                "sql_slow duration_ms=%s threshold_ms=%s executemany=%s statement=%s parameters=%s",
+                duration_ms,
+                settings.SQL_SLOW_MS,
+                executemany,
+                statement,
+                parameters,
+                extra={"duration_ms": duration_ms},
+            )
+
+
+_bind_sql_logging(engine)
+_bind_sql_logging(async_engine.sync_engine)
 
 AsyncSessionLocal = async_sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -31,6 +74,7 @@ SCHEMA_PATCHES = {
         "emergency_contact2_relation": "ALTER TABLE users ADD COLUMN emergency_contact2_relation VARCHAR(20) NULL",
         "emergency_contact2_phone": "ALTER TABLE users ADD COLUMN emergency_contact2_phone VARCHAR(20) NULL",
         "face_auth_status": "ALTER TABLE users ADD COLUMN face_auth_status VARCHAR(20) DEFAULT 'PENDING'",
+        "real_name_status": "ALTER TABLE users ADD COLUMN real_name_status VARCHAR(20) DEFAULT 'UNVERIFIED'",
         "face_auth_at": "ALTER TABLE users ADD COLUMN face_auth_at DATETIME NULL",
         "last_login_at": "ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL",
         "ocr_submitted_at": "ALTER TABLE users ADD COLUMN ocr_submitted_at DATETIME NULL",
@@ -79,6 +123,7 @@ SCHEMA_PATCHES = {
         "ecard_account": "ALTER TABLE loans ADD COLUMN ecard_account VARCHAR(100) NULL",
         "ecard_password": "ALTER TABLE loans ADD COLUMN ecard_password VARCHAR(100) NULL",
         "ecard_expires_at": "ALTER TABLE loans ADD COLUMN ecard_expires_at DATETIME NULL",
+        "order_no": "ALTER TABLE loans ADD COLUMN order_no VARCHAR(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '订单号'",
     },
     "channels": {
         "sales_name": "ALTER TABLE channels ADD COLUMN sales_name VARCHAR(50) NOT NULL DEFAULT '未命名业务员'",
@@ -148,6 +193,18 @@ def sync_legacy_schema():
             for column_name, ddl in columns.items():
                 if column_name not in existing_columns:
                     connection.execute(text(ddl))
+
+        if "users" in existing_tables:
+            connection.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET real_name_status = 'AUTHED'
+                    WHERE face_auth_status = 'PASSED'
+                      AND (real_name_status IS NULL OR real_name_status = 'UNVERIFIED')
+                    """
+                )
+            )
 
 
 async def ensure_default_admins():

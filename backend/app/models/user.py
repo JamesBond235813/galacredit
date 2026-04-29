@@ -30,6 +30,7 @@ class User(Base):
     location_source = Column(String(30), nullable=True)
     location_updated_at = Column(DateTime, nullable=True)
     face_auth_status = Column(String(20), default="PENDING")
+    real_name_status = Column(String(20), default="UNVERIFIED")
     face_auth_at = Column(DateTime, nullable=True)
     last_login_at = Column(DateTime, nullable=True)
     ocr_submitted_at = Column(DateTime, nullable=True)
@@ -64,5 +65,5 @@ class User(Base):
         cascade="all, delete-orphan",
         primaryjoin="User.id == UserEvent.user_id",
         foreign_keys="UserEvent.user_id",
-        lazy="selectin",
+        lazy="noload",
     )

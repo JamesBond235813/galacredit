@@ -1,4 +1,9 @@
 import asyncio
+import logging
+import random
+import string
+import time
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -8,19 +13,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user_async, get_user_by_token_async
+from app.core.config import settings
 from app.core.database import get_async_db
+from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.loan import Loan
 from app.models.product import Product
 from app.models.user import User
-from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanResponse, ProductItemResponse
+from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanOrderSmsCodeResponse, LoanResponse, ProductItemResponse
 from app.services.audit import log_user_event_async
 from app.services.loan_amounts import serialize_loan_snapshot
 from app.services.loan_assignment import assign_review_admin_if_needed_async
-from app.services.loan_flow import get_latest_loan_async, get_or_create_loan_async
+from app.services.loan_flow import create_init_loan_async, get_latest_loan_async, get_or_create_loan_async
 from app.services.loan_ledger import sync_loan_repayment_state
+from app.services.sms_service import sms_service
 
 router = APIRouter()
 LOAN_STATUS_WS_PUSH_SECONDS = 3
+ORDER_SMS_BIZ_TYPE = "ORDER"
+request_logger = logging.getLogger("app.request")
+
+
+def generate_order_no(now: Optional[datetime] = None) -> str:
+    """生成订单号。
+
+    :param now: 可选时间（用于测试）
+    :return: 订单号
+    """
+    current = now or datetime.now()
+    # 订单号规则：毫秒级时间戳 + 4位随机字母数字，保证可读且易追踪。
+    suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return f"{current.strftime('%Y%m%d%H%M%S%f')[:-3]}{suffix}"
 
 
 async def get_or_create_latest_loan(db: AsyncSession, user_id: int):
@@ -135,6 +157,9 @@ async def withdraw(
     loan = await get_or_create_latest_loan(db, current_user.id)
     if loan.status != "APPROVED":
         raise HTTPException(status_code=400, detail="当前状态不可下单")
+    verified = await sms_service.verify_code(phone=db_user.phone, biz_type=ORDER_SMS_BIZ_TYPE, code=req.sms_code)
+    if not verified:
+        raise HTTPException(status_code=400, detail="短信验证码错误或已过期")
 
     product = (
         await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active.is_(True)))
@@ -167,6 +192,7 @@ async def withdraw(
     loan.rights_price = rights_price
     loan.ecard_face_value = ecard_face_value
     loan.product_total_price = payment_amount
+    loan.order_no = generate_order_no()
     loan.status = "WITHDRAWING"
     loan.disbursed_at = None
     loan.due_date = None
@@ -207,13 +233,50 @@ async def withdraw(
     return serialize_loan_snapshot(loan)
 
 
+@router.post("/order-sms-code", response_model=LoanOrderSmsCodeResponse)
+async def send_order_sms_code(
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """下发订单短信验证码。
+
+    :param current_user: 当前登录用户
+    :param db: 异步数据库会话
+    :return: 下发结果
+    """
+    db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
+    success, cooldown_seconds, message = await sms_service.send_code(phone=db_user.phone, biz_type=ORDER_SMS_BIZ_TYPE)
+    if not success:
+        raise HTTPException(status_code=429, detail=message)
+    return {"msg": message, "cooldown_seconds": cooldown_seconds}
+
+
 @router.post("/repay-attempt")
 async def register_repay_attempt(
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
-    db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
-    loan = await get_or_create_latest_loan(db, current_user.id)
+    started = time.perf_counter()
+    checkpoint = started
+    # 这里直接复用鉴权产物，避免重复查询 users 表。
+    db_user = current_user
+    user_query_cost_ms = round((time.perf_counter() - checkpoint) * 1000, 2)
+
+    checkpoint = time.perf_counter()
+    # repay-attempt 仅需读取/更新当前订单基础字段，改为单表分步查询，避免 selectinload 关系预加载。
+    loan = (
+        await db.execute(
+            select(Loan)
+            .where(Loan.user_id == current_user.id)
+            .order_by(Loan.id.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+    if loan is None or loan.status == "SETTLED":
+        loan = await create_init_loan_async(db, current_user.id)
+    loan_query_cost_ms = round((time.perf_counter() - checkpoint) * 1000, 2)
+
+    checkpoint = time.perf_counter()
     sync_loan_repayment_state(loan)
     if loan.status not in {"DISBURSED", "OVERDUE"}:
         raise HTTPException(status_code=400, detail="当前账单状态不可发起还款提醒")
@@ -227,7 +290,23 @@ async def register_repay_attempt(
         title="用户点击立即还款",
         detail=f"累计点击立即还款 {loan.repay_attempt_count} 次。",
     )
+    event_write_cost_ms = round((time.perf_counter() - checkpoint) * 1000, 2)
+
+    checkpoint = time.perf_counter()
     await db.commit()
+    commit_cost_ms = round((time.perf_counter() - checkpoint) * 1000, 2)
+    total_cost_ms = round((time.perf_counter() - started) * 1000, 2)
+    # 分段埋点：用于定位 repay-attempt 慢请求是卡在查询、事件写入还是事务提交。
+    request_logger.info(
+        "repay_attempt_perf user_id=%s loan_id=%s total_ms=%s user_query_ms=%s loan_query_ms=%s event_write_ms=%s commit_ms=%s",
+        current_user.id,
+        getattr(loan, "id", None),
+        total_cost_ms,
+        user_query_cost_ms,
+        loan_query_cost_ms,
+        event_write_cost_ms,
+        commit_cost_ms,
+    )
     return {"msg": "已登记还款尝试", "repay_attempt_count": loan.repay_attempt_count}
 
 
@@ -281,25 +360,30 @@ async def loan_status_ws(websocket: WebSocket, db: AsyncSession = Depends(get_as
     :param db: 异步数据库会话
     :return: None
     """
-    await websocket.accept()
-    token = _extract_ws_token(websocket)
-    current_user = await _get_ws_user_by_token(db, token)
-    if current_user is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-    current_user_id = int(current_user.id)
-
+    trace_id = websocket.headers.get((settings.TID_HEADER_NAME or "X-Trace-Id")) or new_trace_id()
+    tid_token = set_trace_id(trace_id)
     try:
-        while True:
-            # WebSocket 长连接会复用同一个 AsyncSession，这里先 rollback 结束上一轮只读事务，
-            # 避免 MySQL 在默认隔离级别下持续读取到旧快照，导致前端看不到最新状态。
-            rollback = getattr(db, "rollback", None)
-            if rollback is not None:
-                await rollback()
-            snapshot = await get_latest_loan_snapshot_async(db, current_user_id)
-            await websocket.send_json(
-                jsonable_encoder({"type": "loan_snapshot", "data": serialize_loan_snapshot(snapshot, include_ledger=True)})
-            )
-            await asyncio.sleep(LOAN_STATUS_WS_PUSH_SECONDS)
-    except WebSocketDisconnect:
-        return
+        await websocket.accept()
+        token = _extract_ws_token(websocket)
+        current_user = await _get_ws_user_by_token(db, token)
+        if current_user is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        current_user_id = int(current_user.id)
+
+        try:
+            while True:
+                # WebSocket 长连接会复用同一个 AsyncSession，这里先 rollback 结束上一轮只读事务，
+                # 避免 MySQL 在默认隔离级别下持续读取到旧快照，导致前端看不到最新状态。
+                rollback = getattr(db, "rollback", None)
+                if rollback is not None:
+                    await rollback()
+                snapshot = await get_latest_loan_snapshot_async(db, current_user_id)
+                await websocket.send_json(
+                    jsonable_encoder({"type": "loan_snapshot", "data": serialize_loan_snapshot(snapshot, include_ledger=True)})
+                )
+                await asyncio.sleep(LOAN_STATUS_WS_PUSH_SECONDS)
+        except WebSocketDisconnect:
+            return
+    finally:
+        reset_trace_id(tid_token)

@@ -47,6 +47,7 @@ class Loan(Base):
     ecard_account = Column(String(100), nullable=True)
     ecard_password = Column(String(100), nullable=True)
     ecard_expires_at = Column(DateTime, nullable=True)
+    order_no = Column(String(32), nullable=False, default="")
     
     created_at = Column(DateTime, default=datetime.utcnow) # 提现申请时间
     disbursed_at = Column(DateTime, nullable=True) # 放款时间

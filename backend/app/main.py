@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import models  # noqa: F401
 from app.api.router import router
-from app.core.config import resolve_profile, settings
+from app.core.config import ACTIVE_PROFILE, resolve_profile, settings
 from app.core.logging_config import build_uvicorn_log_config, configure_logging
 from app.core.request_logging import RequestResponseLoggingMiddleware
 from app.services.scheduler import start_scheduler
@@ -41,6 +41,12 @@ app.add_middleware(RequestResponseLoggingMiddleware)
 
 app.include_router(router, prefix=settings.API_V1_STR)
 
+
+@app.get("/")
+async def root():
+    return f"hello world xhb. [{ACTIVE_PROFILE or 'default'}]"
+
+
 if __name__ == "__main__":
     import uvicorn
     runtime_profile = resolve_profile(sys.argv, dict(os.environ))
@@ -51,7 +57,7 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=settings.APP_PORT,
-        reload=True,
+        reload=False,
         access_log=False,
         log_config=build_uvicorn_log_config(),
         log_level=settings.LOG_LEVEL.lower(),

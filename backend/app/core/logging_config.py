@@ -125,6 +125,7 @@ def configure_logging() -> None:
                 "app.request": {"handlers": ["console", "request_file"], "level": level, "propagate": False},
                 "app.response": {"handlers": ["console", "response_file"], "level": level, "propagate": False},
                 "app.error": {"handlers": ["console", "error_file"], "level": level, "propagate": False},
+                "app.sql": {"handlers": ["console", "app_file"], "level": level, "propagate": False},
             },
         }
     )

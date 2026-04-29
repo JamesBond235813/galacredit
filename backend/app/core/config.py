@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     MYSQL_HOST: str = "localhost"
     MYSQL_PORT: str = "3306"
     MYSQL_DATABASE: str = "credit_loan_db"
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30
+    SQL_SLOW_MS: int = 200
     
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
@@ -115,5 +119,12 @@ class Settings(BaseSettings):
     LOG_TZ: str = "Asia/Shanghai"
     LOG_LEVEL: str = "INFO"
     TID_HEADER_NAME: str = "X-Trace-Id"
+
+    #阿里云短信
+    ALI_SMS_VC_TEMPLATE_CODE: str = ''
+    ALI_SMS_ACC_KEY: str = ''
+    ALI_SMS_ACC_SECRET: str = ''
+    ALI_SMS_ENDPOINT: str = 'dysmsapi.aliyuncs.com'
+    ALI_SMS_SIGN: str = ''
 
 settings = Settings()

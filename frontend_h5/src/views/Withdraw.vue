@@ -1,4 +1,4 @@
-<template>
+·<template>
   <div class="page-shell detail-page">
     <van-nav-bar left-arrow title="信用下单" @click-left="router.back()" />
 
@@ -75,7 +75,39 @@
         </section>
 
         <div class="order-footer">
+          <div v-if="smsPanelVisible" class="sms-verify-box">
+            <van-field
+              v-model="smsCode"
+              label="短信验证码"
+              placeholder="请输入6位短信验证码"
+              maxlength="6"
+              type="digit"
+            />
+            <div class="sms-verify-actions">
+              <van-button
+                type="primary"
+                size="small"
+                class="primary-action sms-confirm-btn"
+                :disabled="!isSmsCodeValid || submitting"
+                :loading="submitting"
+                @click="handleConfirmOrder"
+              >
+                确认下单
+              </van-button>
+              <van-button
+                plain
+                size="small"
+                class="sms-resend-btn"
+                :disabled="smsResendDisabled"
+                :loading="smsSending"
+                @click="handleResendSmsCode"
+              >
+                {{ resendButtonText }}
+              </van-button>
+            </div>
+          </div>
           <van-button
+            v-if="!smsPanelVisible"
             block
             type="primary"
             class="primary-action order-btn"
@@ -157,7 +189,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { showToast } from 'vant';
-import { getLoanStatus, getProducts, withdraw } from '../api';
+import { getLoanStatus, getProducts, sendOrderSmsCode, withdraw } from '../api';
+import { getOrderSmsResendText, isOrderSmsCodeValid, isOrderSmsResendDisabled } from '../utils/orderSms';
 
 const route = useRoute();
 const router = useRouter();
@@ -167,10 +200,15 @@ const rightsDialogVisible = ref(false);
 const readCountdown = ref(5);
 const hasConfirmedRights = ref(false);
 const submitting = ref(false);
+const smsSending = ref(false);
 const approvedLimit = ref(0);
 const products = ref([]);
 const selectedProductId = ref(null);
+const smsPanelVisible = ref(false);
+const smsCode = ref('');
+const smsCooldown = ref(0);
 let readTimer = null;
+let smsCooldownTimer = null;
 
 const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
   minimumFractionDigits: Number(value || 0) % 1 === 0 ? 0 : 2,
@@ -272,6 +310,51 @@ const resetRightsDialog = () => {
   readCountdown.value = 5;
 };
 
+const clearSmsCooldownTimer = () => {
+  if (smsCooldownTimer) {
+    clearInterval(smsCooldownTimer);
+    smsCooldownTimer = null;
+  }
+};
+
+const startSmsCooldown = (seconds = 60) => {
+  clearSmsCooldownTimer();
+  smsCooldown.value = Number(seconds) > 0 ? Number(seconds) : 60;
+  smsCooldownTimer = setInterval(() => {
+    if (smsCooldown.value <= 1) {
+      smsCooldown.value = 0;
+      clearSmsCooldownTimer();
+      return;
+    }
+    smsCooldown.value -= 1;
+  }, 1000);
+};
+
+const resendButtonText = computed(() => {
+  return getOrderSmsResendText(smsSending.value, smsCooldown.value);
+});
+
+const smsResendDisabled = computed(() => isOrderSmsResendDisabled(smsSending.value, smsCooldown.value));
+const isSmsCodeValid = computed(() => isOrderSmsCodeValid(smsCode.value));
+
+const requestOrderSmsCode = async () => {
+  if (smsSending.value) {
+    return false;
+  }
+  smsSending.value = true;
+  try {
+    const resp = await sendOrderSmsCode();
+    smsPanelVisible.value = true;
+    startSmsCooldown(Number(resp?.cooldown_seconds || 60));
+    showToast(resp?.msg || '验证码发送成功');
+    return true;
+  } catch (error) {
+    return false;
+  } finally {
+    smsSending.value = false;
+  }
+};
+
 const confirmRightsRead = () => {
   if (readCountdown.value > 0) {
     return;
@@ -288,10 +371,26 @@ const handleOrderAction = async () => {
     openRightsDialog();
     return;
   }
+  if (!smsPanelVisible.value) {
+    await requestOrderSmsCode();
+    return;
+  }
+};
 
+const handleResendSmsCode = async () => {
+  if (smsResendDisabled.value) {
+    return;
+  }
+  await requestOrderSmsCode();
+};
+
+const handleConfirmOrder = async () => {
+  if (!selectedProductId.value || submitting.value || !isSmsCodeValid.value) {
+    return;
+  }
   submitting.value = true;
   try {
-    await withdraw({ product_id: selectedProductId.value });
+    await withdraw({ product_id: selectedProductId.value, sms_code: smsCode.value });
     showToast('下单成功');
     router.replace('/bill');
   } catch (error) {
@@ -314,6 +413,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearReadTimer();
+  clearSmsCooldownTimer();
 });
 </script>
 
@@ -556,6 +656,31 @@ onBeforeUnmount(() => {
 
 .order-footer {
   margin-top: 16px;
+}
+
+.sms-verify-box {
+  margin-bottom: 10px;
+  border: 1px solid rgba(214, 226, 244, 0.95);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.sms-verify-actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.sms-confirm-btn,
+.sms-resend-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 8px !important;
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 40px;
 }
 
 .order-btn {

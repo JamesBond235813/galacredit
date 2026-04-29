@@ -236,6 +236,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
                 "user_name": owner.name if owner else None,
                 "user_id_card_num": owner.id_card_num if owner else None,
                 "user_face_auth_status": owner.face_auth_status if owner else None,
+                "user_real_name_status": owner.real_name_status if owner else None,
                 "user_source_channel_name": source_channel.channel_name if source_channel else None,
                 "user_source_channel_sales_name": source_channel.sales_name if source_channel else None,
                 "application_submitted_at": owner.application_submitted_at if owner else None,

@@ -73,12 +73,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { getUserInfo } from '../api';
 import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 
 const router = useRouter();
 const loading = ref(true);
 const loanStatus = ref('INIT');
 const creditLimit = ref(0);
+const realNameStatus = ref('UNVERIFIED');
 let loanSnapshotSubscriber = null;
 
 const limitTitle = computed(() => {
@@ -144,7 +146,11 @@ const onActionClick = () => {
   switch (loanStatus.value) {
     case 'INIT':
     case 'SETTLED':
-      router.push('/ocr');
+      if (realNameStatus.value === 'AUTHED') {
+        router.push('/application-form');
+      } else {
+        router.push('/ocr');
+      }
       break;
     case 'REVIEWING':
       router.push('/review');
@@ -162,6 +168,13 @@ const onActionClick = () => {
 };
 
 onMounted(() => {
+  getUserInfo()
+    .then((user) => {
+      realNameStatus.value = user?.real_name_status || 'UNVERIFIED';
+    })
+    .catch(() => {
+      realNameStatus.value = 'UNVERIFIED';
+    });
   loanSnapshotSubscriber = createLoanSnapshotSubscriber({
     onSnapshot: applyLoanSnapshot
   });

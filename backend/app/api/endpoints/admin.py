@@ -15,6 +15,7 @@ from app.api.deps import get_admin_by_token_async, get_current_admin_async
 from app.core.config import settings
 from app.core.database import get_async_db
 from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.admin import Admin
 from app.models.channel import Channel
 from app.models.ecard_pool import EcardPool
@@ -366,13 +367,13 @@ def serialize_user_summary(user: User):
     }
 
 
-def serialize_user_detail(user: User):
+def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
     latest_loan = max(user.loans, key=lambda item: item.id) if user.loans else None
     if latest_loan:
         latest_loan.relend_count = get_relend_count(user.loans, current_loan_id=latest_loan.id)
         latest_loan.relend_label = get_relend_label(user.loans, current_loan_id=latest_loan.id)
         latest_loan.latest_settled_loan = get_latest_normal_settled_loan(user.loans, current_loan_id=latest_loan.id)
-    events = sorted(user.events, key=lambda item: item.created_at, reverse=True)
+    event_list = sorted(events or [], key=lambda item: item.created_at, reverse=True)
     source_channel = user.source_channel
     return {
         "id": user.id,
@@ -420,7 +421,7 @@ def serialize_user_detail(user: User):
                 "detail": event.detail,
                 "created_at": event.created_at,
             }
-            for event in events
+            for event in event_list
         ],
     }
 
@@ -868,26 +869,31 @@ async def admin_stats_ws(websocket: WebSocket, db: AsyncSession = Depends(get_as
     :param db: 异步数据库会话
     :return: None
     """
-    await websocket.accept()
-    token = _extract_ws_token(websocket)
-    current_admin = await _get_ws_admin_by_token(db, token)
-    if current_admin is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-
+    trace_id = websocket.headers.get((settings.TID_HEADER_NAME or "X-Trace-Id")) or new_trace_id()
+    tid_token = set_trace_id(trace_id)
     try:
-        ensure_any_admin_page_permission(current_admin, ADMIN_STATS_PERMISSION_KEYS)
-    except HTTPException:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        await websocket.accept()
+        token = _extract_ws_token(websocket)
+        current_admin = await _get_ws_admin_by_token(db, token)
+        if current_admin is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
-    try:
-        while True:
-            payload = await get_stats(db=db, current_admin=current_admin)
-            await websocket.send_json({"type": "admin_stats", "data": payload})
-            await asyncio.sleep(ADMIN_STATS_WS_PUSH_SECONDS)
-    except WebSocketDisconnect:
-        return
+        try:
+            ensure_any_admin_page_permission(current_admin, ADMIN_STATS_PERMISSION_KEYS)
+        except HTTPException:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        try:
+            while True:
+                payload = await get_stats(db=db, current_admin=current_admin)
+                await websocket.send_json({"type": "admin_stats", "data": payload})
+                await asyncio.sleep(ADMIN_STATS_WS_PUSH_SECONDS)
+        except WebSocketDisconnect:
+            return
+    finally:
+        reset_trace_id(tid_token)
 
 @router.get("/repayment-stats", response_model=RepaymentStatsResponse)
 async def get_repayment_stats(
@@ -1311,7 +1317,6 @@ async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int)
             select(User)
             .options(
                 joinedload(User.loans),
-                joinedload(User.events),
                 joinedload(User.source_channel),
             )
             .where(User.id == user_id)
@@ -1319,7 +1324,14 @@ async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int)
     ).unique().scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    return serialize_user_detail(user)
+    events = (
+        await db.execute(
+            select(UserEvent)
+            .where(UserEvent.user_id == user.id)
+            .order_by(UserEvent.created_at.desc())
+        )
+    ).scalars().all()
+    return serialize_user_detail(user, events=events)
 
 
 @router.get("/users/{user_id}", response_model=UserDetailResponse)
@@ -2101,6 +2113,8 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
         raise HTTPException(status_code=400, detail="请先确认商品信息")
 
     now = datetime.now()
+    today = now.date()
+    tomorrow_start = datetime(now.year, now.month, now.day) + timedelta(days=1)
     ecard_face_value = round_money(loan.ecard_face_value or loan.credit_limit)
     ecard_item = (
         await db.execute(
@@ -2108,11 +2122,14 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
             .where(
                 EcardPool.status == "AVAILABLE",
                 EcardPool.face_value == ecard_face_value,
-                EcardPool.expires_at >= now,
+                EcardPool.expires_at >= tomorrow_start,
             )
             .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
         )
     ).scalars().first()
+    # 兜底校验：即使数据库比较存在时区/函数差异，也严格禁止“今天到期”的卡发放。
+    if ecard_item and ecard_item.expires_at.date() <= today:
+        ecard_item = None
     if not ecard_item:
         raise HTTPException(status_code=400, detail=f"卡池库存不足：未找到面额 {ecard_face_value:.2f} 元且有效的京东E卡")
 

@@ -206,6 +206,7 @@ async def mock_face_auth(
         score = 0.99
 
     current_user.face_auth_status = "PASSED"
+    current_user.real_name_status = "AUTHED"
     current_user.face_auth_at = datetime.now()
 
     loan = await get_or_create_loan_async(db, current_user.id)
@@ -291,6 +292,7 @@ async def submit_application(
     loan.ecard_account = None
     loan.ecard_password = None
     loan.ecard_expires_at = None
+    loan.order_no = ""
     loan.created_at = db_user.application_submitted_at
     await assign_review_admin_if_needed_async(db, loan)
 

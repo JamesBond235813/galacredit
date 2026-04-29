@@ -37,13 +37,24 @@
 
 <script setup>
 import { useRouter } from 'vue-router';
+import { logout } from '../api';
 import brandLogo from '../assets/logo.svg';
 
 const router = useRouter();
 
-const handleLogout = () => {
-  localStorage.removeItem('token');
-  router.replace('/login');
+const handleLogout = async () => {
+  const refreshToken = localStorage.getItem('refresh_token');
+  try {
+    if (refreshToken) {
+      await logout({ refresh_token: refreshToken });
+    }
+  } catch (error) {
+    // 无论服务端吊销成功与否，前端都执行本地退出，避免用户卡在登录态。
+  } finally {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
+    router.replace('/login');
+  }
 };
 </script>
 

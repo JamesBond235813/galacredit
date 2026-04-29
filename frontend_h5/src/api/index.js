@@ -4,6 +4,7 @@ import request from './request';
 export const sendCode = (data) => request.post('/auth/send-code', data);
 export const login = (data) => request.post('/auth/login', data);
 export const getChannelEntryInfo = (channelName) => request.get(`/auth/channels/${channelName}`);
+export const logout = (data) => request.post('/auth/logout', data);
 
 // User API
 export const getUserInfo = () => request.get('/user/info');
@@ -18,6 +19,7 @@ export const changePassword = (data) => request.post('/user/change-password', da
 export const getLoanStatus = () => request.get('/loan/status');
 export const applyLimit = () => request.post('/loan/apply');
 export const getProducts = () => request.get('/loan/products');
+export const sendOrderSmsCode = () => request.post('/loan/order-sms-code');
 export const withdraw = (data) => request.post('/loan/withdraw', data);
 export const getBill = () => request.get('/loan/bill');
 export const registerRepayAttempt = () => request.post('/loan/repay-attempt');

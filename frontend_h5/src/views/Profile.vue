@@ -13,6 +13,7 @@
         <div class="avatar-inner">
           <van-icon name="user-o" />
         </div>
+        <span v-if="realNameStatus === 'AUTHED'" class="auth-badge">实名认证</span>
       </div>
     </header>
 
@@ -76,6 +77,7 @@ import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 const router = useRouter();
 const phone = ref('');
 const loanStatus = ref('INIT');
+const realNameStatus = ref('UNVERIFIED');
 let loanSnapshotSubscriber = null;
 
 const serviceItems = [
@@ -121,7 +123,7 @@ const noticeText = computed(() => {
 
 const formatMaskedPhone = (value) => {
   if (!value || typeof value !== 'string') {
-    return '188******12';
+    return '';
   }
 
   if (/^\d{11}$/.test(value)) {
@@ -135,8 +137,10 @@ const loadProfileData = async (showSuccessToast = false) => {
   try {
     const userInfo = await getUserInfo();
     phone.value = userInfo?.phone || '';
+    realNameStatus.value = userInfo?.real_name_status || 'UNVERIFIED';
   } catch (error) {
     phone.value = '';
+    realNameStatus.value = 'UNVERIFIED';
   }
 
   if (showSuccessToast) {
@@ -250,6 +254,7 @@ onBeforeUnmount(() => {
 }
 
 .avatar-box {
+  position: relative;
   width: 70px;
   height: 70px;
   padding: 4px;
@@ -269,6 +274,23 @@ onBeforeUnmount(() => {
   justify-content: center;
   color: var(--app-primary-deep);
   font-size: 36px;
+}
+
+.auth-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #38d39f 0%, #10b37a 100%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 8px 14px rgba(16, 179, 122, 0.28);
 }
 
 .notice-panel {

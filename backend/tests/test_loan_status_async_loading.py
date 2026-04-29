@@ -84,17 +84,16 @@ def _build_loan_with_installments() -> Loan:
     return loan
 
 
-def test_get_latest_loan_async_should_eager_load_relations():
+def test_get_latest_loan_async_should_query_by_single_tables():
     loan = _build_loan_with_installments()
     fake_db = _FakeAsyncSession(loan)
 
     asyncio.run(get_latest_loan_async(fake_db, user_id=loan.user_id))
 
-    statement = fake_db.statements[0]
-    option_paths = [str(item.path) for item in statement._with_options]
-    assert any("Loan.installments" in item for item in option_paths)
-    assert any("Loan.review_admin" in item for item in option_paths)
-    assert any("Loan.collection_admin" in item for item in option_paths)
+    # 首次查 loan 主表；后续单表查询 installments（管理员关系按需查询）。
+    assert len(fake_db.statements) >= 2
+    assert "FROM loans" in str(fake_db.statements[0])
+    assert "FROM loan_installments" in str(fake_db.statements[1])
 
 
 def test_loan_status_should_return_success_when_installments_exists():
