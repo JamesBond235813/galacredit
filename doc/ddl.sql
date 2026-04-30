@@ -2,6 +2,8 @@
 # 转储表 admins
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `admins`;
+
 CREATE TABLE `admins` (
                           `id` int NOT NULL AUTO_INCREMENT,
                           `username` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -11,8 +13,7 @@ CREATE TABLE `admins` (
                           `updated_at` datetime DEFAULT NULL,
                           `roles` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
                           PRIMARY KEY (`id`),
-                          UNIQUE KEY `ix_admins_username` (`username`),
-                          KEY `ix_admins_id` (`id`)
+                          UNIQUE KEY `ix_admins_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -20,25 +21,30 @@ CREATE TABLE `admins` (
 # 转储表 channels
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `channels`;
+
 CREATE TABLE `channels` (
                             `id` int NOT NULL AUTO_INCREMENT,
                             `channel_name` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
                             `sales_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+                            `admin_user_id` int DEFAULT '0',
                             `status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
                             `note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-                            `admin_user_id` int DEFAULT 0,
                             `created_at` datetime NOT NULL,
                             PRIMARY KEY (`id`),
                             UNIQUE KEY `ix_channels_channel_name` (`channel_name`),
                             KEY `ix_channels_id` (`id`),
                             KEY `ix_channels_status` (`status`),
-                            KEY `ix_channels_admin_user_id` (`admin_user_id`)
+                            KEY `ix_channels_admin_user_id` (`admin_user_id`),
+                            KEY `idx_admuid_id` (`admin_user_id`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 
 # 转储表 ecard_pool
 # ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `ecard_pool`;
 
 CREATE TABLE `ecard_pool` (
                               `id` int NOT NULL AUTO_INCREMENT,
@@ -65,6 +71,8 @@ CREATE TABLE `ecard_pool` (
 
 # 转储表 loan_installments
 # ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `loan_installments`;
 
 CREATE TABLE `loan_installments` (
                                      `id` int NOT NULL AUTO_INCREMENT,
@@ -99,6 +107,8 @@ CREATE TABLE `loan_installments` (
 # 转储表 loan_transactions
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `loan_transactions`;
+
 CREATE TABLE `loan_transactions` (
                                      `id` int NOT NULL AUTO_INCREMENT,
                                      `loan_id` int NOT NULL,
@@ -125,9 +135,12 @@ CREATE TABLE `loan_transactions` (
 # 转储表 loans
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `loans`;
+
 CREATE TABLE `loans` (
                          `id` int NOT NULL AUTO_INCREMENT,
                          `user_id` int NOT NULL,
+                         `order_no` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '订单号',
                          `status` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `credit_limit` float DEFAULT NULL,
                          `term_days` int DEFAULT NULL,
@@ -167,13 +180,17 @@ CREATE TABLE `loans` (
                          PRIMARY KEY (`id`),
                          KEY `ix_loans_user_id` (`user_id`),
                          KEY `ix_loans_id` (`id`),
-                         KEY `ix_loans_status` (`status`)
+                         KEY `ix_loans_status` (`status`),
+                         KEY `idx_order_no` (`order_no`),
+                         KEY `idx_usr_disburse` (`user_id`,`disbursed_at`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 
 # 转储表 oauth_clients
 # ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `oauth_clients`;
 
 CREATE TABLE `oauth_clients` (
                                  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -193,6 +210,8 @@ CREATE TABLE `oauth_clients` (
 
 # 转储表 oauth_tokens
 # ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `oauth_tokens`;
 
 CREATE TABLE `oauth_tokens` (
                                 `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -222,6 +241,8 @@ CREATE TABLE `oauth_tokens` (
 # 转储表 products
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `products`;
+
 CREATE TABLE `products` (
                             `id` int NOT NULL AUTO_INCREMENT,
                             `name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -245,6 +266,8 @@ CREATE TABLE `products` (
 # 转储表 risk_control_report
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `risk_control_report`;
+
 CREATE TABLE `risk_control_report` (
                                        `id` int NOT NULL AUTO_INCREMENT,
                                        `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -266,6 +289,8 @@ CREATE TABLE `risk_control_report` (
 
 # 转储表 user_events
 # ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `user_events`;
 
 CREATE TABLE `user_events` (
                                `id` int NOT NULL AUTO_INCREMENT,
@@ -291,6 +316,8 @@ CREATE TABLE `user_events` (
 # 转储表 users
 # ------------------------------------------------------------
 
+DROP TABLE IF EXISTS `users`;
+
 CREATE TABLE `users` (
                          `id` int NOT NULL AUTO_INCREMENT,
                          `phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -308,6 +335,7 @@ CREATE TABLE `users` (
                          `emergency_contact2_relation` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `emergency_contact2_phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `face_auth_status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'PENDING',
+                         `real_name_status` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'UNVERIFIED',
                          `face_auth_at` datetime DEFAULT NULL,
                          `last_login_at` datetime DEFAULT NULL,
                          `ocr_submitted_at` datetime DEFAULT NULL,
@@ -328,6 +356,7 @@ CREATE TABLE `users` (
                          PRIMARY KEY (`id`),
                          UNIQUE KEY `ix_users_phone` (`phone`),
                          UNIQUE KEY `id_card_num` (`id_card_num`),
-                         KEY `ix_users_id` (`id`)
+                         KEY `idx_ch_created` (`source_channel_id`,`created_at`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
