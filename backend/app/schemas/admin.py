@@ -60,7 +60,7 @@ class PaginatedAdminUserResponse(BaseModel):
 class RegisterUserRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
     password: str = Field(..., min_length=6, max_length=50)
-    source_channel_id: int
+    source_channel_id: Optional[int] = None
 
 
 class ResetUserPasswordRequest(BaseModel):

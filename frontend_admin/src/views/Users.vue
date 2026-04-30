@@ -185,7 +185,7 @@
         <el-form-item label="密码" required>
           <el-input v-model="createForm.password" type="password" maxlength="50" show-password placeholder="请输入至少6位密码" />
         </el-form-item>
-        <el-form-item label="来源渠道" required>
+        <el-form-item label="来源渠道">
           <el-select
             v-model="createForm.sourceChannelId"
             filterable
@@ -334,18 +334,16 @@ const submitCreateUser = async () => {
     ElMessage.warning('请输入至少6位密码');
     return;
   }
-  if (!createForm.sourceChannelId) {
-    ElMessage.warning('请选择来源渠道');
-    return;
-  }
-
   creating.value = true;
   try {
-    await createFrontUser({
+    const payload = {
       phone: createForm.phone,
-      password: createForm.password,
-      source_channel_id: createForm.sourceChannelId
-    });
+      password: createForm.password
+    };
+    if (createForm.sourceChannelId) {
+      payload.source_channel_id = createForm.sourceChannelId;
+    }
+    await createFrontUser(payload);
     ElMessage.success('新增用户成功');
     createDrawerVisible.value = false;
     filters.page = 1;

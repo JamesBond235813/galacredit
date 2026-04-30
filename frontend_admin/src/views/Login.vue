@@ -40,7 +40,7 @@ const loading = ref(false);
 const loginForm = ref(null);
 
 const form = reactive({
-  username: 'xiaojiang',
+  username: '',
   password: ''
 });
 
