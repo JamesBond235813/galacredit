@@ -5,6 +5,7 @@ export const statusTextMap = {
   REJECTED: '未通过',
   WITHDRAWING: '待发卡',
   DISBURSED: '待付款',
+  FIRST_BORROW: '首借',
   SETTLED: '已结清',
   OVERDUE: '已逾期'
 };
@@ -16,6 +17,7 @@ export const statusTagMap = {
   REJECTED: 'danger',
   WITHDRAWING: 'warning',
   DISBURSED: 'success',
+  FIRST_BORROW: 'success',
   SETTLED: 'info',
   OVERDUE: 'danger'
 };

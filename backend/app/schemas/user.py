@@ -174,6 +174,10 @@ class UserListItemResponse(BaseModel):
     current_interest_amount: Optional[float] = None
     current_guarantee_fee_amount: Optional[float] = None
     current_penalty_amount: Optional[float] = None
+    first_disbursed_at: Optional[datetime] = None
+    first_deal_amount: Optional[float] = None
+    latest_disbursed_at: Optional[datetime] = None
+    latest_deal_amount: Optional[float] = None
     source_channel_name: Optional[str] = None
     source_channel_sales_name: Optional[str] = None
     channel_bound_at: Optional[datetime] = None
@@ -189,4 +193,5 @@ class PaginatedUserResponse(BaseModel):
 
 class UserDetailResponse(UserResponse):
     latest_loan: Optional[UserLoanSnapshotResponse] = None
+    first_deal_loan: Optional[UserLoanSnapshotResponse] = None
     events: List[UserEventResponse] = Field(default_factory=list)

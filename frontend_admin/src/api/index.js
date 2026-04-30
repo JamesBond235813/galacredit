@@ -3,6 +3,7 @@ import request from './request';
 // Admin API
 export const login = (data) => request.post('/admin/login', data);
 export const getAdminInfo = () => request.get('/admin/me');
+export const changeAdminPassword = (data) => request.post('/admin/change-password', data);
 export const getAdminStats = () => request.get('/admin/stats');
 export const getRepaymentStats = () => request.get('/admin/repayment-stats');
 export const getProjectCashInsights = () => request.get('/admin/project-cash-insights');
@@ -18,12 +19,14 @@ export const updateEcardPoolItem = (id, data) => request.patch(`/admin/ecard-poo
 export const uploadEcardPoolExcel = (formData) => request.post('/admin/ecard-pool/batch-upload', formData);
 export const downloadEcardPoolTemplate = () => request.get('/admin/ecard-pool/template', { responseType: 'blob' });
 export const getAdminUsers = (params) => request.get('/admin/admin-users', { params });
+export const getBusinessAdvisors = (params) => request.get('/admin/admin-users/business-advisors', { params });
 export const createAdminUser = (data) => request.post('/admin/admin-users', data);
 export const updateAdminUser = (id, data) => request.patch(`/admin/admin-users/${id}`, data);
 export const deleteAdminUser = (id) => request.delete(`/admin/admin-users/${id}`);
 
 // User API for Admin
 export const getUsers = (params) => request.get('/admin/users', { params });
+export const getUserSourceChannels = (params) => request.get('/admin/users/source-channels', { params });
 export const getUserDetail = (id) => request.get(`/admin/users/${id}`);
 export const createFrontUser = (data) => request.post('/admin/users', data);
 export const resetFrontUserPassword = (id, data) => request.post(`/admin/users/${id}/reset-password`, data);

@@ -14,7 +14,8 @@ class Channel(Base):
     sales_name = Column(String(50), nullable=False)
     status = Column(String(20), default="ACTIVE", index=True, nullable=False)
     note = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    admin_user_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     users = relationship(
         "User",

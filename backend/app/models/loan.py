@@ -49,7 +49,7 @@ class Loan(Base):
     ecard_expires_at = Column(DateTime, nullable=True)
     order_no = Column(String(32), nullable=False, default="")
     
-    created_at = Column(DateTime, default=datetime.utcnow) # 提现申请时间
+    created_at = Column(DateTime, default=datetime.now) # 提现申请时间
     disbursed_at = Column(DateTime, nullable=True) # 放款时间
     
     owner = relationship(

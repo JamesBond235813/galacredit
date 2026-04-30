@@ -14,5 +14,5 @@ class OAuthClient(Base):
     client_secret = Column(String(255), nullable=True)
     grant_types = Column(String(128), nullable=False, default="sms_code,refresh_token")
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)

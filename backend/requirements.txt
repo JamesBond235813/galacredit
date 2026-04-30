@@ -19,6 +19,7 @@ async-timeout==5.0.1
 attrs==26.1.0
 backports.asyncio.runner==1.2.0
 bcrypt==4.3.0
+cachetools==5.5.2
 certifi==2026.4.22
 cffi==2.0.0
 charset-normalizer==3.4.7

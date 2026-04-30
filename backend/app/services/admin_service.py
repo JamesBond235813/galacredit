@@ -34,8 +34,10 @@ from app.schemas.admin import (
     AdminUserItemResponse,
     AdminUserUpdateRequest,
     PaginatedAdminUserResponse,
+    AdminChangePasswordRequest,
 )
 from app.schemas.channel import (
+    BusinessAdvisorItemResponse,
     ChannelCreateRequest,
     ChannelUpdateRequest,
     PaginatedChannelResponse,
@@ -81,6 +83,7 @@ from app.services.channel_service import (
     get_channel_by_name_async,
     normalize_channel_name,
     normalize_channel_status,
+    serialize_channel_landing,
 )
 from app.services.loan_amounts import (
     DEFAULT_FEE_RATE,
@@ -158,6 +161,35 @@ REPAYMENT_STATS_PERMISSION_KEYS = (
 
 ECARD_POOL_STATUSES = {"AVAILABLE", "ASSIGNED", "EXPIRED", "VOID"}
 ADMIN_STATS_WS_PUSH_SECONDS = 5
+
+_ADMIN_STATS_VERSION = 0
+
+
+async def notify_admin_stats_changed():
+    """标记后台统计数据已变化，并唤醒等待中的 WS 推送循环。
+
+    :return: None
+    """
+    global _ADMIN_STATS_VERSION
+    _ADMIN_STATS_VERSION += 1
+
+
+async def wait_admin_stats_changed(last_version: int, timeout_seconds: float):
+    """等待后台统计数据变更；超时则返回当前版本用于兜底推送。
+
+    :param last_version: 上次已推送版本
+    :param timeout_seconds: 超时时间（秒）
+    :return: 最新版本号
+    """
+    if _ADMIN_STATS_VERSION != last_version:
+        return _ADMIN_STATS_VERSION
+
+    deadline = asyncio.get_running_loop().time() + max(float(timeout_seconds or 0), 0)
+    while asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.5)
+        if _ADMIN_STATS_VERSION != last_version:
+            return _ADMIN_STATS_VERSION
+    return _ADMIN_STATS_VERSION
 
 
 
@@ -324,12 +356,15 @@ def serialize_user_summary(user: User):
         latest_loan.relend_label = get_relend_label(user.loans, current_loan_id=latest_loan.id)
         latest_loan.latest_settled_loan = get_latest_normal_settled_loan(user.loans, current_loan_id=latest_loan.id)
     loan_snapshot = serialize_loan_snapshot(latest_loan) if latest_loan else None
+    disbursed_loans = [item for item in (user.loans or []) if getattr(item, "disbursed_at", None)]
+    first_deal_loan = min(disbursed_loans, key=lambda item: item.id) if disbursed_loans else None
+    latest_deal_loan = max(disbursed_loans, key=lambda item: item.id) if disbursed_loans else None
     source_channel = user.source_channel
     return {
         "id": user.id,
-        "phone": user.phone,
+        "phone": mask_secret(user.phone, left=0, right=4),
         "name": user.name,
-        "id_card_num": user.id_card_num,
+        "id_card_num": mask_secret(user.id_card_num, left=6, right=1),
         "face_auth_status": user.face_auth_status,
         "approved_limit": user.approved_limit,
         "created_at": user.created_at,
@@ -345,6 +380,10 @@ def serialize_user_summary(user: User):
         "current_interest_amount": loan_snapshot["interest_amount"] if loan_snapshot else None,
         "current_guarantee_fee_amount": loan_snapshot["guarantee_fee_amount"] if loan_snapshot else None,
         "current_penalty_amount": loan_snapshot["penalty_amount"] if loan_snapshot else None,
+        "first_disbursed_at": getattr(first_deal_loan, "disbursed_at", None),
+        "first_deal_amount": round_money(getattr(first_deal_loan, "product_total_price", 0)) if first_deal_loan else None,
+        "latest_disbursed_at": getattr(latest_deal_loan, "disbursed_at", None),
+        "latest_deal_amount": round_money(getattr(latest_deal_loan, "product_total_price", 0)) if latest_deal_loan else None,
         "source_channel_name": source_channel.channel_name if source_channel else None,
         "source_channel_sales_name": source_channel.sales_name if source_channel else None,
         "channel_bound_at": user.channel_bound_at,
@@ -359,6 +398,15 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
         latest_loan.latest_settled_loan = get_latest_normal_settled_loan(user.loans, current_loan_id=latest_loan.id)
     event_list = sorted(events or [], key=lambda item: item.created_at, reverse=True)
     source_channel = user.source_channel
+    # 首次成交口径：优先第一条非拒绝订单，取不到时回退第一条订单。
+    sorted_loans = sorted(user.loans or [], key=lambda item: (item.created_at or datetime.min, item.id or 0))
+    first_deal_loan = next((item for item in sorted_loans if item.status != "REJECTED"), None)
+    if first_deal_loan is None and sorted_loans:
+        first_deal_loan = sorted_loans[0]
+    if first_deal_loan:
+        first_deal_loan.relend_count = get_relend_count(user.loans, current_loan_id=first_deal_loan.id)
+        first_deal_loan.relend_label = get_relend_label(user.loans, current_loan_id=first_deal_loan.id)
+        first_deal_loan.latest_settled_loan = get_latest_normal_settled_loan(user.loans, current_loan_id=first_deal_loan.id)
     return {
         "id": user.id,
         "phone": user.phone,
@@ -394,6 +442,7 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
         "last_channel_visit_at": user.last_channel_visit_at,
         "created_at": user.created_at,
         "latest_loan": serialize_loan_snapshot(latest_loan, include_ledger=True) if latest_loan else None,
+        "first_deal_loan": serialize_loan_snapshot(first_deal_loan, include_ledger=True) if first_deal_loan else None,
         "events": [
             {
                 "id": event.id,
@@ -409,8 +458,53 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
         ],
     }
 
-def serialize_channel(channel: Channel):
-    return build_channel_metrics(channel)
+def serialize_channel(channel: Channel, advisor: Optional[Admin] = None):
+    payload = build_channel_metrics(channel)
+    payload["admin_user_id"] = channel.admin_user_id
+    payload["admin_user_name"] = advisor.username if advisor else None
+    return payload
+
+
+def _is_business_consultant(admin: Optional[Admin]) -> bool:
+    """判断后台用户是否为业务顾问角色（严格匹配，不包含 ADMIN 兜底）。
+
+    :param admin: 后台用户对象
+    :return: 是否包含 BUSINESS_CONSULTANT 角色
+    """
+    if admin is None:
+        return False
+    return "BUSINESS_CONSULTANT" in parse_admin_roles(getattr(admin, "roles", None))
+
+def _is_only_business_consultant(admin: Optional[Admin]) -> bool:
+    """判断后台用户是否为仅业务顾问角色。
+
+    :param admin: 后台用户对象
+    :return: 是否有且仅有 BUSINESS_CONSULTANT 角色
+    """
+    if admin is None:
+        return False
+    roles = parse_admin_roles(getattr(admin, "roles", None))
+    return len(roles) == 1 and roles[0] == "BUSINESS_CONSULTANT"
+
+def apply_business_consultant_user_summary_status(user_summary: dict, admin: Optional[Admin]) -> dict:
+    """按业务顾问规则调整用户列表状态展示值。
+
+    :param user_summary: 用户列表摘要数据
+    :param admin: 当前登录后台用户
+    :return: 调整后的用户列表摘要数据
+    """
+    if _is_only_business_consultant(admin) and user_summary.get("first_disbursed_at"):
+        payload = dict(user_summary)
+        payload["current_loan_status"] = "FIRST_BORROW"
+        return payload
+    return user_summary
+
+
+async def _resolve_business_advisor_by_id(db: AsyncSession, admin_user_id: int):
+    advisor = (await db.execute(select(Admin).where(Admin.id == admin_user_id))).scalar_one_or_none()
+    if not _is_business_consultant(advisor):
+        raise HTTPException(status_code=400, detail="请选择角色为业务顾问的后台用户")
+    return advisor
 
 def round_money(value: Optional[float]) -> float:
     return round(float(value or 0), 2)
@@ -788,6 +882,8 @@ async def _reset_user_password(
     :return: 重置结果
     """
     ensure_admin_page_permission(current_admin, "users")
+    if _is_business_consultant(current_admin):
+        raise HTTPException(status_code=403, detail="业务顾问无权重置密码")
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -808,6 +904,30 @@ async def _reset_user_password(
     )
     await db.commit()
     return {"msg": "重置密码成功"}
+
+
+async def _change_admin_password(
+    db: AsyncSession,
+    current_admin: Admin,
+    req: AdminChangePasswordRequest,
+):
+    """当前登录后台用户修改自身密码。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :param req: 修改密码请求体
+    :return: 修改结果
+    """
+    if req.new_password != req.confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+    if not verify_password(req.old_password, current_admin.password_hash):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    if req.old_password == req.new_password:
+        raise HTTPException(status_code=400, detail="新密码不能与原密码一致")
+
+    current_admin.password_hash = get_password_hash(req.new_password)
+    await db.commit()
+    return {"msg": "修改密码成功"}
 
 async def _get_loan_ledger(db: AsyncSession, current_admin: Admin, loan_id: int):
     loan = (
@@ -858,6 +978,10 @@ async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int)
     ).unique().scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if _is_business_consultant(current_admin):
+        bound_channel = getattr(user, "source_channel", None)
+        if not bound_channel or int(bound_channel.admin_user_id or 0) != int(current_admin.id):
+            raise HTTPException(status_code=403, detail="无权查看该用户档案")
     events = (
         await db.execute(
             select(UserEvent)
@@ -905,7 +1029,12 @@ async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optiona
     if status and status != "ALL":
         stmt = stmt.where(Channel.status == normalize_channel_status(status))
     matched_channels = (await db.execute(stmt.order_by(Channel.created_at.desc()))).unique().scalars().all()
-    channel_items = [serialize_channel(channel) for channel in matched_channels]
+    advisor_ids = {int(item.admin_user_id) for item in matched_channels if item.admin_user_id}
+    advisor_map = {}
+    if advisor_ids:
+        advisors = (await db.execute(select(Admin).where(Admin.id.in_(advisor_ids)))).scalars().all()
+        advisor_map = {int(item.id): item for item in advisors}
+    channel_items = [serialize_channel(channel, advisor_map.get(int(channel.admin_user_id or 0))) for channel in matched_channels]
     return {
         "total": len(channel_items),
         "page": skip // limit + 1,
@@ -913,6 +1042,27 @@ async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optiona
         "summary": build_channel_summary(channel_items),
         "items": channel_items[skip : skip + limit],
     }
+
+
+async def _get_user_source_channels(db: AsyncSession, current_admin: Admin, keyword: Optional[str], limit: int):
+    """获取“新增用户”可选来源渠道。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :param keyword: 渠道关键词
+    :param limit: 返回数量限制
+    :return: 渠道列表
+    """
+    ensure_admin_page_permission(current_admin, "users")
+    limit = min(max(int(limit or 20), 1), 50)
+    stmt = select(Channel).where(Channel.status == "ACTIVE")
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(Channel.channel_name.like(pattern), Channel.sales_name.like(pattern)))
+    if _is_business_consultant(current_admin):
+        stmt = stmt.where(Channel.admin_user_id == current_admin.id)
+    channels = (await db.execute(stmt.order_by(Channel.id.asc()).limit(limit))).scalars().all()
+    return [serialize_channel_landing(item) for item in channels]
 
 async def _create_channel(db: AsyncSession, current_admin: Admin, req: ChannelCreateRequest):
     ensure_admin_page_permission(current_admin, "channels")
@@ -923,16 +1073,18 @@ async def _create_channel(db: AsyncSession, current_admin: Admin, req: ChannelCr
     exists = (await db.execute(select(Channel).where(Channel.channel_name == channel_name))).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=400, detail="渠道名称已存在")
+    advisor = await _resolve_business_advisor_by_id(db, req.admin_user_id)
     channel = Channel(
         channel_name=channel_name,
         sales_name=sales_name,
         status=normalize_channel_status(req.status),
         note=(req.note or "").strip() or None,
+        admin_user_id=advisor.id,
     )
     db.add(channel)
     await db.commit()
     await db.refresh(channel)
-    return serialize_channel(channel)
+    return serialize_channel(channel, advisor)
 
 async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: int, req: ChannelUpdateRequest):
     ensure_admin_page_permission(current_admin, "channels")
@@ -955,9 +1107,36 @@ async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: in
         channel.status = normalize_channel_status(payload["status"])
     if "note" in payload:
         channel.note = (payload["note"] or "").strip() or None
+    if "admin_user_id" in payload and payload["admin_user_id"] is not None:
+        advisor = await _resolve_business_advisor_by_id(db, int(payload["admin_user_id"]))
+        channel.admin_user_id = advisor.id
     await db.commit()
     await db.refresh(channel)
-    return serialize_channel(channel)
+    advisor = None
+    if channel.admin_user_id:
+        advisor = (await db.execute(select(Admin).where(Admin.id == channel.admin_user_id))).scalar_one_or_none()
+    return serialize_channel(channel, advisor)
+
+
+async def _get_business_advisors(db: AsyncSession, current_admin: Admin, keyword: Optional[str], limit: int):
+    ensure_admin_page_permission(current_admin, "channels")
+    limit = min(max(limit, 1), 50)
+    stmt = select(Admin)
+    if keyword:
+        text = keyword.strip()
+        if text:
+            if text.isdigit():
+                stmt = stmt.where(or_(Admin.id == int(text), Admin.username.like(f"%{text}%")))
+            else:
+                stmt = stmt.where(Admin.username.like(f"%{text}%"))
+    admins = (await db.execute(stmt.order_by(Admin.id.desc()).limit(limit * 3))).scalars().all()
+    items: list[BusinessAdvisorItemResponse] = []
+    for admin in admins:
+        if _is_business_consultant(admin):
+            items.append(BusinessAdvisorItemResponse(id=admin.id, username=admin.username))
+            if len(items) >= limit:
+                break
+    return items
 
 async def _get_products(db: AsyncSession, current_admin: Admin, keyword: Optional[str], is_active: Optional[bool], skip: int, limit: int):
     ensure_admin_page_permission(current_admin, "products")

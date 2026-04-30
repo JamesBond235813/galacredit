@@ -10,5 +10,5 @@ class Admin(Base):
     password_hash = Column(String(255), nullable=False)
     roles = Column(Text, nullable=True)
     permissions = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

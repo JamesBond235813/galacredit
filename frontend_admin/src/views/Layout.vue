@@ -42,6 +42,7 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="change-password">修改密码</el-dropdown-item>
                 <el-dropdown-item command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -56,12 +57,31 @@
           </transition>
         </router-view>
       </el-main>
+
+      <el-dialog v-model="passwordDialogVisible" width="460px" title="修改密码" destroy-on-close>
+        <el-form label-position="top">
+          <el-form-item label="原密码" required>
+            <el-input v-model="passwordForm.oldPassword" type="password" show-password maxlength="50" />
+          </el-form-item>
+          <el-form-item label="新密码" required>
+            <el-input v-model="passwordForm.newPassword" type="password" show-password maxlength="50" />
+          </el-form-item>
+          <el-form-item label="确认新密码" required>
+            <el-input v-model="passwordForm.confirmPassword" type="password" show-password maxlength="50" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="passwordDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="changingPassword" @click="submitChangePassword">确认修改</el-button>
+        </template>
+      </el-dialog>
     </el-container>
   </el-container>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import {
   ArrowDown,
@@ -77,7 +97,7 @@ import {
   WalletFilled,
   WarnTriangleFilled
 } from '@element-plus/icons-vue';
-import { getAdminInfo, getAdminStats } from '../api';
+import { changeAdminPassword, getAdminInfo, getAdminStats } from '../api';
 import brandLogo from '../assets/logo.svg';
 import {
   ADMIN_PAGE_OPTIONS,
@@ -85,6 +105,7 @@ import {
   getFirstAccessibleRoute,
   hasAdminPermission,
   readStoredAdminProfile,
+  getStoredAdminPermissions,
   writeStoredAdminProfile
 } from '../constants/adminPages';
 
@@ -100,6 +121,9 @@ const menuBadgeStats = ref({
 const STATS_WS_RECONNECT_MS = 3000;
 let statsSocket = null;
 let statsReconnectTimer = null;
+const passwordDialogVisible = ref(false);
+const changingPassword = ref(false);
+const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' });
 
 const iconMap = {
   overview: DataAnalysis,
@@ -126,6 +150,15 @@ const visibleMenuItems = computed(() => {
   return ADMIN_PAGE_OPTIONS.filter((item) => hasAdminPermission(adminProfile.value.permissions, item.key));
 });
 
+const canReadStats = () => {
+  const permissions = getStoredAdminPermissions();
+  if (!Array.isArray(permissions) || permissions.length === 0) {
+    return true;
+  }
+  return ['overview', 'applications', 'disbursements', 'repayments', 'collections', 'financials']
+    .some((key) => permissions.includes(key));
+};
+
 const syncAdminProfile = async () => {
   const token = localStorage.getItem('admin_token');
   if (!token) {
@@ -143,7 +176,7 @@ const syncAdminProfile = async () => {
 
 const syncMenuBadgeStats = async () => {
   const token = localStorage.getItem('admin_token');
-  if (!token) {
+  if (!token || !canReadStats()) {
     return;
   }
   try {
@@ -173,8 +206,12 @@ const buildStatsWsUrl = () => {
   if (!token) {
     return null;
   }
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${wsProtocol}://${window.location.host}/api/admin/ws/stats?token=${encodeURIComponent(token)}`;
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  const resolvedApiBase = apiBaseUrl ? new URL(apiBaseUrl, window.location.origin) : new URL('/api', window.location.origin);
+  const wsProtocol = resolvedApiBase.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = new URL('/api/admin/ws/stats', `${wsProtocol}//${resolvedApiBase.host}`);
+  wsUrl.searchParams.set('token', token);
+  return wsUrl.toString();
 };
 
 const scheduleStatsSocketReconnect = () => {
@@ -205,6 +242,9 @@ const handleStatsSocketAuthFailed = () => {
 };
 
 const connectStatsSocket = () => {
+  if (!canReadStats()) {
+    return;
+  }
   const wsUrl = buildStatsWsUrl();
   if (!wsUrl) {
     return;
@@ -272,10 +312,42 @@ const handleRepayAttemptAck = (event) => {
 };
 
 const handleCommand = (command) => {
+  if (command === 'change-password') {
+    passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' };
+    passwordDialogVisible.value = true;
+    return;
+  }
   if (command === 'logout') {
     closeStatsSocket();
     clearStoredAdminAuth();
     router.replace('/login');
+  }
+};
+
+const submitChangePassword = async () => {
+  if (!passwordForm.value.oldPassword || !passwordForm.value.newPassword || !passwordForm.value.confirmPassword) {
+    ElMessage.warning('请完整填写密码信息');
+    return;
+  }
+  if (passwordForm.value.newPassword.length < 6) {
+    ElMessage.warning('新密码至少 6 位');
+    return;
+  }
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致');
+    return;
+  }
+  changingPassword.value = true;
+  try {
+    await changeAdminPassword({
+      old_password: passwordForm.value.oldPassword,
+      new_password: passwordForm.value.newPassword,
+      confirm_password: passwordForm.value.confirmPassword
+    });
+    ElMessage.success('密码修改成功');
+    passwordDialogVisible.value = false;
+  } finally {
+    changingPassword.value = false;
   }
 };
 

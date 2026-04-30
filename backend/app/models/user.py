@@ -42,7 +42,7 @@ class User(Base):
     # 模拟授信额度保存 (在获取到审核后写入)
     approved_limit = Column(Integer, default=0)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     source_channel = relationship(
         "Channel",

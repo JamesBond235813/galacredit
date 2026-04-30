@@ -19,5 +19,5 @@ class OAuthToken(Base):
     access_expires_at = Column(DateTime, nullable=False)
     refresh_expires_at = Column(DateTime, nullable=False)
     revoked_at = Column(DateTime, nullable=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)

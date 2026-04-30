@@ -13,7 +13,7 @@ from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_admin_by_token_async, get_current_admin_async
 from app.core.config import settings
-from app.core.database import get_async_db
+from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.admin import Admin
@@ -34,8 +34,10 @@ from app.schemas.admin import (
     AdminUserItemResponse,
     AdminUserUpdateRequest,
     PaginatedAdminUserResponse,
+    AdminChangePasswordRequest,
 )
 from app.schemas.channel import (
+    BusinessAdvisorItemResponse,
     ChannelCreateRequest,
     ChannelUpdateRequest,
     PaginatedChannelResponse,
@@ -120,8 +122,9 @@ from app.services.risk_report import (
     get_user_for_risk_report_async,
     serialize_risk_report,
 )
+from app.services.loan_ws_notify import notify_loan_snapshot_changed
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, _register_user, _reset_user_password, _get_loan_ledger, _get_user_detail, _get_risk_report, _get_channels, _create_channel, _update_channel, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_risk_report, _get_channels, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
 router = APIRouter()
 
 
@@ -160,7 +163,13 @@ REPAYMENT_STATS_PERMISSION_KEYS = (
 )
 
 ECARD_POOL_STATUSES = {"AVAILABLE", "ASSIGNED", "EXPIRED", "VOID"}
-ADMIN_STATS_WS_PUSH_SECONDS = 5
+ADMIN_STATS_WS_PUSH_SECONDS = 15
+
+
+async def _notify_user_loan_snapshot_if_needed(db: AsyncSession, loan_id: int):
+    loan = (await db.execute(select(Loan.user_id).where(Loan.id == loan_id))).first()
+    if loan and loan[0]:
+        await notify_loan_snapshot_changed(int(loan[0]))
 
 
 
@@ -232,6 +241,15 @@ async def login(req: AdminLogin, db: AsyncSession = Depends(get_async_db)):
 @router.get("/me", response_model=AdminResponse)
 async def get_me(current_admin: Admin = Depends(get_current_admin_async)):
     return serialize_admin_user(current_admin)
+
+
+@router.post("/change-password")
+async def change_password(
+    req: AdminChangePasswordRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _change_admin_password(db, current_admin, req)
 
 
 @router.get("/stats", response_model=AdminStatsResponse)
@@ -343,11 +361,10 @@ async def get_stats(
 
 
 @router.websocket("/ws/stats")
-async def admin_stats_ws(websocket: WebSocket, db: AsyncSession = Depends(get_async_db)):
+async def admin_stats_ws(websocket: WebSocket):
     """通过 WebSocket 推送后台统计数据。
 
     :param websocket: WebSocket 连接
-    :param db: 异步数据库会话
     :return: None
     """
     trace_id = websocket.headers.get((settings.TID_HEADER_NAME or "X-Trace-Id")) or new_trace_id()
@@ -355,10 +372,12 @@ async def admin_stats_ws(websocket: WebSocket, db: AsyncSession = Depends(get_as
     try:
         await websocket.accept()
         token = _extract_ws_token(websocket)
-        current_admin = await _get_ws_admin_by_token(db, token)
+        async with AsyncSessionLocal() as auth_db:
+            current_admin = await _get_ws_admin_by_token(auth_db, token)
         if current_admin is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+        admin_id = int(current_admin.id)
 
         try:
             ensure_any_admin_page_permission(current_admin, ADMIN_STATS_PERMISSION_KEYS)
@@ -367,10 +386,17 @@ async def admin_stats_ws(websocket: WebSocket, db: AsyncSession = Depends(get_as
             return
 
         try:
+            last_version = -1
             while True:
-                payload = await get_stats(db=db, current_admin=current_admin)
+                # 每次推送使用独立短会话，避免长连接复用同一事务快照导致统计读到旧数据。
+                async with AsyncSessionLocal() as loop_db:
+                    loop_admin = (await loop_db.execute(select(Admin).where(Admin.id == admin_id))).scalar_one_or_none()
+                    if loop_admin is None:
+                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                        return
+                    payload = await get_stats(db=loop_db, current_admin=loop_admin)
                 await websocket.send_json({"type": "admin_stats", "data": payload})
-                await asyncio.sleep(ADMIN_STATS_WS_PUSH_SECONDS)
+                last_version = await wait_admin_stats_changed(last_version, ADMIN_STATS_WS_PUSH_SECONDS)
         except WebSocketDisconnect:
             return
     finally:
@@ -602,18 +628,36 @@ async def get_users(
             )
         )
 
+    if _is_business_consultant(current_admin):
+        # 业务顾问只能查看归属到自己负责渠道的客户。
+        stmt = stmt.where(Channel.admin_user_id == current_admin.id)
+
     total_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.scalar(total_stmt)) or 0
     users = (
         await db.execute(stmt.order_by(User.created_at.desc()).offset(skip).limit(limit))
     ).unique().scalars().all()
 
+    items = [
+        apply_business_consultant_user_summary_status(serialize_user_summary(user), current_admin)
+        for user in users
+    ]
     return {
         "total": total,
         "page": skip // limit + 1,
         "size": limit,
-        "items": [serialize_user_summary(user) for user in users],
+        "items": items,
     }
+
+
+@router.get("/users/source-channels")
+async def get_user_source_channels(
+    keyword: Optional[str] = Query(None, description="渠道名称/业务员"),
+    limit: int = Query(50, ge=1, le=50),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_user_source_channels(db, current_admin, keyword, limit)
 
 
 
@@ -631,7 +675,9 @@ async def register_user(
     :param current_admin: 当前登录管理员
     :return: 新增结果
     """
-    return await _register_user(db, current_admin, req)
+    result = await _register_user(db, current_admin, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -651,7 +697,9 @@ async def reset_user_password(
     :param current_admin: 当前登录管理员
     :return: 重置结果
     """
-    return await _reset_user_password(db, current_admin, user_id, req)
+    result = await _reset_user_password(db, current_admin, user_id, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -709,7 +757,9 @@ async def create_channel(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _create_channel(db, current_admin, req)
+    result = await _create_channel(db, current_admin, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -721,7 +771,19 @@ async def update_channel(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _update_channel(db, current_admin, channel_id, req)
+    result = await _update_channel(db, current_admin, channel_id, req)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.get("/admin-users/business-advisors", response_model=list[BusinessAdvisorItemResponse])
+async def get_business_advisors(
+    keyword: Optional[str] = Query(None, description="后台用户ID或用户名关键词"),
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_business_advisors(db, current_admin, keyword, limit)
 
 
 
@@ -746,7 +808,9 @@ async def create_product(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _create_product(db, current_admin, req)
+    result = await _create_product(db, current_admin, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -758,7 +822,9 @@ async def update_product(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _update_product(db, current_admin, product_id, req)
+    result = await _update_product(db, current_admin, product_id, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -788,7 +854,9 @@ async def create_ecard_pool_item(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _create_ecard_pool_item(db, current_admin, req)
+    result = await _create_ecard_pool_item(db, current_admin, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -799,7 +867,9 @@ async def upload_ecard_pool_items(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _upload_ecard_pool_items(db, file,  current_admin)
+    result = await _upload_ecard_pool_items(db, file,  current_admin)
+    await notify_admin_stats_changed()
+    return result
 
 
 @router.get("/ecard-pool/template")
@@ -833,7 +903,9 @@ async def update_ecard_pool_item(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _update_ecard_pool_item(db, current_admin, item_id, req)
+    result = await _update_ecard_pool_item(db, current_admin, item_id, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -845,7 +917,10 @@ async def review_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _review_loan(db, current_admin, loan_id, req)
+    result = await _review_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -857,7 +932,10 @@ async def update_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _update_loan(db, current_admin, loan_id, req)
+    result = await _update_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -869,7 +947,10 @@ async def disburse_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _disburse_loan(db, current_admin, loan_id, req)
+    result = await _disburse_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -880,7 +961,10 @@ async def settle_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _settle_loan(db, current_admin, loan_id)
+    result = await _settle_loan(db, current_admin, loan_id)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -892,7 +976,10 @@ async def finance_reconcile_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _finance_reconcile_loan(db, current_admin, loan_id, req)
+    result = await _finance_reconcile_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -904,7 +991,10 @@ async def remind_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _remind_loan(db, current_admin, loan_id, req)
+    result = await _remind_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -916,7 +1006,10 @@ async def collect_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _collect_loan(db, current_admin, loan_id, req)
+    result = await _collect_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -927,7 +1020,10 @@ async def ack_repay_attempt(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _ack_repay_attempt(db, current_admin, loan_id)
+    result = await _ack_repay_attempt(db, current_admin, loan_id)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -950,7 +1046,10 @@ async def assign_loan(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _assign_loan(db, current_admin, loan_id, req)
+    result = await _assign_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -974,7 +1073,9 @@ async def create_admin_user(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _create_admin_user(db, current_admin, req)
+    result = await _create_admin_user(db, current_admin, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -986,7 +1087,9 @@ async def update_admin_user(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _update_admin_user(db, current_admin, admin_id, req)
+    result = await _update_admin_user(db, current_admin, admin_id, req)
+    await notify_admin_stats_changed()
+    return result
 
 
 
@@ -997,4 +1100,6 @@ async def delete_admin_user(
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
-    return await _delete_admin_user(db, current_admin, admin_id)
+    result = await _delete_admin_user(db, current_admin, admin_id)
+    await notify_admin_stats_changed()
+    return result

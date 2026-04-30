@@ -23,6 +23,7 @@ ADMIN_ROLE_OPTIONS = [
     {"key": "REVIEW", "label": "审核"},
     {"key": "FINANCE", "label": "财务"},
     {"key": "COLLECTION", "label": "催收"},
+    {"key": "BUSINESS_CONSULTANT", "label": "业务顾问"},
 ]
 
 ALL_ADMIN_ROLE_KEYS = [item["key"] for item in ADMIN_ROLE_OPTIONS]
@@ -32,6 +33,7 @@ ADMIN_ROLE_PERMISSION_MAP = {
     "REVIEW": ["users", "applications", "repayments"],
     "FINANCE": ["disbursements", "financials", "products", "ecard-pool"],
     "COLLECTION": ["collections"],
+    "BUSINESS_CONSULTANT": ["users"],
 }
 
 ADMIN_ROLE_LABEL_MAP = {item["key"]: item["label"] for item in ADMIN_ROLE_OPTIONS}
@@ -113,6 +115,9 @@ def resolve_permissions_from_roles(roles: Optional[Iterable[str]]) -> List[str]:
 
 def resolve_admin_permissions(admin) -> List[str]:
     roles = parse_admin_roles(getattr(admin, "roles", None))
+    # 业务顾问账号强制只允许访问用户档案页，避免被显式权限放大。
+    if roles == ["BUSINESS_CONSULTANT"]:
+        return ["users"]
     role_permissions = resolve_permissions_from_roles(roles)
 
     raw_permissions = getattr(admin, "permissions", None)

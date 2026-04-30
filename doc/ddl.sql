@@ -26,11 +26,13 @@ CREATE TABLE `channels` (
                             `sales_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
                             `status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
                             `note` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                            `admin_user_id` int DEFAULT 0,
                             `created_at` datetime NOT NULL,
                             PRIMARY KEY (`id`),
                             UNIQUE KEY `ix_channels_channel_name` (`channel_name`),
                             KEY `ix_channels_id` (`id`),
-                            KEY `ix_channels_status` (`status`)
+                            KEY `ix_channels_status` (`status`),
+                            KEY `ix_channels_admin_user_id` (`admin_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -328,5 +330,4 @@ CREATE TABLE `users` (
                          UNIQUE KEY `id_card_num` (`id_card_num`),
                          KEY `ix_users_id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 

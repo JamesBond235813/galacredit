@@ -22,7 +22,7 @@ class LoanTransaction(Base):
 
     operator_name = Column(String(50), nullable=True)
     note = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
 
     loan = relationship(
         "Loan",

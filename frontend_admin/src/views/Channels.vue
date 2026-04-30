@@ -47,6 +47,7 @@
         <el-table-column label="渠道 / 业务员" min-width="220">
           <template #default="{ row }">
             <div>{{ row.sales_name }}</div>
+            <div class="sub-text">顾问：{{ row.admin_user_name || '--' }}<span v-if="row.admin_user_id">（#{{ row.admin_user_id }}）</span></div>
             <div class="sub-text">/{{ row.channel_name }}</div>
           </template>
         </el-table-column>
@@ -130,6 +131,26 @@
                 <el-radio value="INACTIVE">已停用</el-radio>
               </el-radio-group>
             </el-form-item>
+            <el-form-item label="业务顾问">
+              <el-select
+                v-model="form.admin_user_id"
+                filterable
+                remote
+                reserve-keyword
+                clearable
+                placeholder="输入用户ID或用户名搜索业务顾问"
+                :remote-method="fetchBusinessAdvisorOptions"
+                :loading="advisorOptionsLoading"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in advisorOptions"
+                  :key="item.id"
+                  :label="`${item.username} (#${item.id})`"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item label="备注">
               <el-input
                 v-model="form.note"
@@ -185,7 +206,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { createChannel, getChannels, updateChannel } from '../api';
+import { createChannel, getBusinessAdvisors, getChannels, updateChannel } from '../api';
 import { formatCurrency, formatDateTime } from '../utils/format';
 
 const H5_DOMAIN_STORAGE_KEY = 'h5_entry_domain';
@@ -197,6 +218,8 @@ const tableData = ref([]);
 const total = ref(0);
 const summary = ref({});
 const activeRow = ref(null);
+const advisorOptions = ref([]);
+const advisorOptionsLoading = ref(false);
 const h5Domain = ref(localStorage.getItem(H5_DOMAIN_STORAGE_KEY) || 'https://xxxx.xx');
 
 const filters = reactive({
@@ -212,8 +235,32 @@ const form = reactive({
   sales_name: '',
   channel_name: '',
   status: 'ACTIVE',
-  note: ''
+  note: '',
+  admin_user_id: null
 });
+
+const upsertAdvisorOption = (item) => {
+  if (!item || !item.id) {
+    return;
+  }
+  const existed = advisorOptions.value.some((option) => Number(option.id) === Number(item.id));
+  if (!existed) {
+    advisorOptions.value = [item, ...advisorOptions.value];
+  }
+};
+
+const fetchBusinessAdvisorOptions = async (keyword = '') => {
+  advisorOptionsLoading.value = true;
+  try {
+    const items = await getBusinessAdvisors({
+      keyword: keyword || undefined,
+      limit: 20
+    });
+    advisorOptions.value = Array.isArray(items) ? items : [];
+  } finally {
+    advisorOptionsLoading.value = false;
+  }
+};
 
 const sanitizedDomain = computed(() => {
   const value = (h5Domain.value || '').trim();
@@ -318,6 +365,7 @@ const resetForm = () => {
   form.channel_name = '';
   form.status = 'ACTIVE';
   form.note = '';
+  form.admin_user_id = null;
   activeRow.value = null;
 };
 
@@ -333,6 +381,11 @@ const openEditDrawer = (row) => {
   form.channel_name = row.channel_name;
   form.status = row.status;
   form.note = row.note || '';
+  form.admin_user_id = row.admin_user_id || null;
+  upsertAdvisorOption({
+    id: row.admin_user_id,
+    username: row.admin_user_name
+  });
   activeRow.value = row;
   drawerVisible.value = true;
 };
@@ -350,6 +403,11 @@ const validateForm = () => {
     return false;
   }
 
+  if (!form.admin_user_id) {
+    ElMessage.warning('请选择业务顾问');
+    return false;
+  }
+
   return true;
 };
 
@@ -364,7 +422,8 @@ const submitForm = async () => {
       await updateChannel(form.id, {
         sales_name: form.sales_name.trim(),
         status: form.status,
-        note: form.note
+        note: form.note,
+        admin_user_id: form.admin_user_id
       });
       ElMessage.success('渠道已更新');
     } else {
@@ -372,7 +431,8 @@ const submitForm = async () => {
         sales_name: form.sales_name.trim(),
         channel_name: form.channel_name,
         status: form.status,
-        note: form.note
+        note: form.note,
+        admin_user_id: form.admin_user_id
       });
       ElMessage.success('渠道已创建');
     }
@@ -386,6 +446,7 @@ const submitForm = async () => {
 
 onMounted(() => {
   persistDomain();
+  fetchBusinessAdvisorOptions();
   fetchData();
 });
 </script>

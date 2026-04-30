@@ -31,7 +31,7 @@ class LoanInstallment(Base):
     reduction_amount = Column(Float, default=0.0, nullable=False)
 
     settled_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     loan = relationship(
         "Loan",

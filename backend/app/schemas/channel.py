@@ -18,6 +18,7 @@ class ChannelCreateRequest(BaseModel):
     sales_name: str = Field(..., min_length=1, max_length=50)
     status: Optional[str] = Field("ACTIVE", max_length=20)
     note: Optional[str] = Field(None, max_length=255)
+    admin_user_id: int = Field(..., ge=1)
 
     @field_validator("channel_name")
     @classmethod
@@ -34,6 +35,7 @@ class ChannelUpdateRequest(BaseModel):
     sales_name: Optional[str] = Field(None, min_length=1, max_length=50)
     status: Optional[str] = Field(None, max_length=20)
     note: Optional[str] = Field(None, max_length=255)
+    admin_user_id: Optional[int] = Field(None, ge=1)
 
     @field_validator("status")
     @classmethod
@@ -64,6 +66,8 @@ class ChannelItemResponse(BaseModel):
     sales_name: str
     status: str
     note: Optional[str] = None
+    admin_user_id: Optional[int] = None
+    admin_user_name: Optional[str] = None
     created_at: datetime
     attributed_user_count: int = 0
     submitted_user_count: int = 0
@@ -97,3 +101,8 @@ class PaginatedChannelResponse(BaseModel):
     size: int
     summary: ChannelSummaryResponse
     items: List[ChannelItemResponse]
+
+
+class BusinessAdvisorItemResponse(BaseModel):
+    id: int
+    username: str

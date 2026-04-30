@@ -17,5 +17,5 @@ class EcardPool(Base):
     loan_id = Column(Integer, nullable=True, index=True)
     note = Column(String(255), nullable=True)
     assigned_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)

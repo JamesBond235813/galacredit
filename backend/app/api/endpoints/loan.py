@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user_async, get_user_by_token_async
 from app.core.config import settings
-from app.core.database import get_async_db
+from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.loan import Loan
 from app.models.product import Product
@@ -25,10 +25,12 @@ from app.services.loan_amounts import serialize_loan_snapshot
 from app.services.loan_assignment import assign_review_admin_if_needed_async
 from app.services.loan_flow import create_init_loan_async, get_latest_loan_async, get_or_create_loan_async
 from app.services.loan_ledger import sync_loan_repayment_state
+from app.services.loan_ws_notify import notify_loan_snapshot_changed, wait_loan_snapshot_changed
+from app.services.admin_service import notify_admin_stats_changed
 from app.services.sms_service import sms_service
 
 router = APIRouter()
-LOAN_STATUS_WS_PUSH_SECONDS = 3
+LOAN_STATUS_WS_PUSH_SECONDS = 30
 ORDER_SMS_BIZ_TYPE = "ORDER"
 request_logger = logging.getLogger("app.request")
 
@@ -47,8 +49,8 @@ def generate_order_no(now: Optional[datetime] = None) -> str:
 
 async def get_or_create_latest_loan(db: AsyncSession, user_id: int):
     latest_before = await get_latest_loan_async(db, user_id)
-    latest_loan = await get_or_create_loan_async(db, user_id)
-    if latest_before is None or latest_before.status == "SETTLED":
+    latest_loan = latest_before or await get_or_create_loan_async(db, user_id)
+    if latest_before is None:
         await db.commit()
         await db.refresh(latest_loan)
     return latest_loan
@@ -144,6 +146,8 @@ async def apply_limit(
 
     await db.commit()
     await db.refresh(loan)
+    await notify_loan_snapshot_changed(current_user.id)
+    await notify_admin_stats_changed()
     return serialize_loan_snapshot(loan)
 
 
@@ -230,6 +234,8 @@ async def withdraw(
 
     await db.commit()
     await db.refresh(loan)
+    await notify_loan_snapshot_changed(current_user.id)
+    await notify_admin_stats_changed()
     return serialize_loan_snapshot(loan)
 
 
@@ -294,6 +300,8 @@ async def register_repay_attempt(
 
     checkpoint = time.perf_counter()
     await db.commit()
+    await notify_loan_snapshot_changed(current_user.id)
+    await notify_admin_stats_changed()
     commit_cost_ms = round((time.perf_counter() - checkpoint) * 1000, 2)
     total_cost_ms = round((time.perf_counter() - started) * 1000, 2)
     # 分段埋点：用于定位 repay-attempt 慢请求是卡在查询、事件写入还是事务提交。
@@ -353,11 +361,10 @@ async def get_bill(
 
 
 @router.websocket("/ws/status")
-async def loan_status_ws(websocket: WebSocket, db: AsyncSession = Depends(get_async_db)):
+async def loan_status_ws(websocket: WebSocket):
     """通过 WebSocket 推送用户贷款与账单快照。
 
     :param websocket: WebSocket 连接
-    :param db: 异步数据库会话
     :return: None
     """
     trace_id = websocket.headers.get((settings.TID_HEADER_NAME or "X-Trace-Id")) or new_trace_id()
@@ -365,24 +372,23 @@ async def loan_status_ws(websocket: WebSocket, db: AsyncSession = Depends(get_as
     try:
         await websocket.accept()
         token = _extract_ws_token(websocket)
-        current_user = await _get_ws_user_by_token(db, token)
+        async with AsyncSessionLocal() as auth_db:
+            current_user = await _get_ws_user_by_token(auth_db, token)
         if current_user is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         current_user_id = int(current_user.id)
 
         try:
+            last_version = -1
             while True:
-                # WebSocket 长连接会复用同一个 AsyncSession，这里先 rollback 结束上一轮只读事务，
-                # 避免 MySQL 在默认隔离级别下持续读取到旧快照，导致前端看不到最新状态。
-                rollback = getattr(db, "rollback", None)
-                if rollback is not None:
-                    await rollback()
-                snapshot = await get_latest_loan_snapshot_async(db, current_user_id)
+                # 每次推送使用独立短会话，避免长连接长期占用连接和事务快照不刷新问题。
+                async with AsyncSessionLocal() as loop_db:
+                    snapshot = await get_latest_loan_snapshot_async(loop_db, current_user_id)
                 await websocket.send_json(
                     jsonable_encoder({"type": "loan_snapshot", "data": serialize_loan_snapshot(snapshot, include_ledger=True)})
                 )
-                await asyncio.sleep(LOAN_STATUS_WS_PUSH_SECONDS)
+                last_version = await wait_loan_snapshot_changed(current_user_id, last_version, LOAN_STATUS_WS_PUSH_SECONDS)
         except WebSocketDisconnect:
             return
     finally:

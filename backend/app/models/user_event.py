@@ -17,7 +17,7 @@ class UserEvent(Base):
     event_type = Column(String(50), nullable=False, index=True)
     title = Column(String(100), nullable=False)
     detail = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
 
     user = relationship(
         "User",

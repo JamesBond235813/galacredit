@@ -65,3 +65,9 @@ class RegisterUserRequest(BaseModel):
 
 class ResetUserPasswordRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=50)
+
+
+class AdminChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=6, max_length=50)
+    new_password: str = Field(..., min_length=6, max_length=50)
+    confirm_password: str = Field(..., min_length=6, max_length=50)

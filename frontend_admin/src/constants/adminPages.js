@@ -19,14 +19,16 @@ export const ADMIN_ROLE_OPTIONS = [
   { key: 'ADMIN', label: '管理员', description: '所有页面与操作权限' },
   { key: 'REVIEW', label: '审核', description: '用户档案、申请审批、还款管理' },
   { key: 'FINANCE', label: '财务', description: '待发卡、财务平账、商品管理、卡池管理' },
-  { key: 'COLLECTION', label: '催收', description: '仅催收管理' }
+  { key: 'COLLECTION', label: '催收', description: '仅催收管理' },
+  { key: 'BUSINESS_CONSULTANT', label: '业务顾问', description: '仅用户档案页面' }
 ];
 
 export const ADMIN_ROLE_PERMISSION_MAP = {
   ADMIN: [...ADMIN_PAGE_PERMISSION_KEYS],
   REVIEW: ['users', 'applications', 'repayments'],
   FINANCE: ['disbursements', 'financials', 'products', 'ecard-pool'],
-  COLLECTION: ['collections']
+  COLLECTION: ['collections'],
+  BUSINESS_CONSULTANT: ['users']
 };
 
 export const normalizeAdminRoles = (roles) => {

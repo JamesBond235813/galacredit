@@ -29,6 +29,8 @@ from app.services.loan_flow import (
     get_latest_loan_async,
     get_or_create_loan_async,
 )
+from app.services.loan_ws_notify import notify_loan_snapshot_changed
+from app.services.admin_service import notify_admin_stats_changed
 from app.services.loan_assignment import assign_review_admin_if_needed_async
 
 router = APIRouter()
@@ -309,6 +311,8 @@ async def submit_application(
     )
     await db.commit()
     await db.refresh(loan)
+    await notify_loan_snapshot_changed(current_user.id)
+    await notify_admin_stats_changed()
     return serialize_loan_snapshot(loan)
 
 

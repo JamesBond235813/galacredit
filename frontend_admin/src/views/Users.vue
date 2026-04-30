@@ -44,6 +44,16 @@
             {{ formatDateTime(row.application_submitted_at) }}
           </template>
         </el-table-column>
+        <el-table-column :label="dealColumnConfig.timeLabel" min-width="160">
+          <template #default="{ row }">
+            {{ formatDateTime(row[dealColumnConfig.timeKey]) }}
+          </template>
+        </el-table-column>
+        <el-table-column :label="dealColumnConfig.amountLabel" min-width="140">
+          <template #default="{ row }">
+            {{ formatCurrency(row[dealColumnConfig.amountKey]) }}
+          </template>
+        </el-table-column>
         <el-table-column label="最近登录" min-width="160">
           <template #default="{ row }">
             {{ formatDateTime(row.last_login_at) }}
@@ -52,7 +62,7 @@
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDrawer(row)">查看档案</el-button>
-            <el-button link type="warning" @click="openResetDialog(row)">重置密码</el-button>
+            <el-button v-if="!isBusinessConsultant" link type="warning" @click="openResetDialog(row)">重置密码</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -83,7 +93,7 @@
           </el-descriptions>
         </section>
 
-        <section class="detail-card">
+        <section class="detail-card" v-if="!isBusinessConsultant">
           <h3>渠道归因</h3>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="业务员">{{ detail.source_channel_sales_name || '--' }}</el-descriptions-item>
@@ -93,7 +103,7 @@
           </el-descriptions>
         </section>
 
-        <section class="detail-card">
+        <section class="detail-card" v-if="!isBusinessConsultant">
           <h3>紧急联系人</h3>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="联系人一" :span="2">
@@ -105,7 +115,7 @@
           </el-descriptions>
         </section>
 
-        <section class="detail-card">
+        <section class="detail-card" v-if="!isBusinessConsultant">
           <h3>地理位置（授权）</h3>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="定位时间">{{ formatDateTime(detail.location_updated_at) }}</el-descriptions-item>
@@ -121,7 +131,7 @@
           </el-descriptions>
         </section>
 
-        <section class="detail-card">
+        <section class="detail-card" v-if="!isBusinessConsultant">
           <h3>最新订单概览</h3>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="订单状态">
@@ -143,6 +153,7 @@
             <el-descriptions-item label="信用支付金额">
               {{ detail.latest_loan ? formatCurrency(resolvePaymentAmount(detail.latest_loan)) : '--' }}
             </el-descriptions-item>
+            <el-descriptions-item label="成交时间">{{ formatDateTime(detail.latest_loan?.disbursed_at) }}</el-descriptions-item>
             <el-descriptions-item label="还款日">{{ formatDateTime(detail.latest_loan?.due_date) }}</el-descriptions-item>
             <el-descriptions-item label="违约金">
               {{ detail.latest_loan ? formatCurrency(detail.latest_loan.penalty_amount) : '--' }}
@@ -157,7 +168,7 @@
           </el-descriptions>
         </section>
 
-        <section class="detail-card">
+        <section class="detail-card" v-if="!isBusinessConsultant">
           <h3>用户操作时间线</h3>
           <div class="timeline-list">
             <div v-for="event in detail.events" :key="event.id" class="timeline-item">
@@ -166,6 +177,42 @@
               <div class="timeline-meta">{{ event.operator_name || event.actor_type }} · {{ formatDateTime(event.created_at) }}</div>
             </div>
           </div>
+        </section>
+        <section class="detail-card" v-if="isBusinessConsultant">
+          <h3>成交情况</h3>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="订单状态">
+              <el-tag :type="getStatusTagType(detail.first_deal_loan?.status)">{{ getStatusText(detail.first_deal_loan?.status) }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="授信额度">
+              {{ detail.first_deal_loan ? formatCurrency(detail.first_deal_loan.credit_limit) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="账期">{{ detail.first_deal_loan?.term_days ? `${detail.first_deal_loan.term_days} 天` : '--' }}</el-descriptions-item>
+            <el-descriptions-item label="总费率">
+              {{ detail.first_deal_loan ? `${(Number(detail.first_deal_loan.fee_rate || 0) * 100).toFixed(0)}%` : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="E卡面值">
+              {{ detail.first_deal_loan ? formatCurrency(resolveEcardFaceValue(detail.first_deal_loan)) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="权益金额">
+              {{ detail.first_deal_loan ? formatCurrency(resolveRightsPrice(detail.first_deal_loan)) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="信用支付金额">
+              {{ detail.first_deal_loan ? formatCurrency(resolvePaymentAmount(detail.first_deal_loan)) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="成交时间">{{ formatDateTime(detail.first_deal_loan?.disbursed_at) }}</el-descriptions-item>
+            <el-descriptions-item label="还款日">{{ formatDateTime(detail.first_deal_loan?.due_date) }}</el-descriptions-item>
+            <el-descriptions-item label="违约金">
+              {{ detail.first_deal_loan ? formatCurrency(detail.first_deal_loan.penalty_amount) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="总应还">
+              {{ detail.first_deal_loan ? formatCurrency(detail.first_deal_loan.total_repayment_amount) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="每期应还">
+              {{ detail.first_deal_loan ? formatCurrency(detail.first_deal_loan.installment_amount) : '--' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="审批备注">{{ detail.first_deal_loan?.review_note || '--' }}</el-descriptions-item>
+          </el-descriptions>
         </section>
       </div>
     </el-drawer>
@@ -231,8 +278,10 @@
 <script setup>
 import { ElMessage } from 'element-plus';
 import { onMounted, reactive, ref } from 'vue';
-import { createFrontUser, getChannels, getUserDetail, getUsers, resetFrontUserPassword } from '../api';
+import { createFrontUser, getUserDetail, getUserSourceChannels, getUsers, resetFrontUserPassword } from '../api';
+import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
+import { getDealColumnConfig } from '../utils/usersDealColumns';
 
 const loading = ref(false);
 const tableData = ref([]);
@@ -270,6 +319,10 @@ const filters = reactive({
   size: 10
 });
 
+const adminProfile = readStoredAdminProfile() || {};
+const isBusinessConsultant = Array.isArray(adminProfile.roles) && adminProfile.roles.length === 1 && adminProfile.roles[0] === 'BUSINESS_CONSULTANT';
+const dealColumnConfig = getDealColumnConfig(isBusinessConsultant);
+
 const fetchData = async () => {
   loading.value = true;
   try {
@@ -304,13 +357,11 @@ const openDrawer = async (row) => {
 const searchChannels = async (keyword = '') => {
   channelLoading.value = true;
   try {
-    const res = await getChannels({
+    const res = await getUserSourceChannels({
       keyword: keyword || undefined,
-      status: 'ACTIVE',
-      skip: 0,
       limit: 50
     });
-    channelOptions.value = res.items || [];
+    channelOptions.value = Array.isArray(res) ? res : [];
   } finally {
     channelLoading.value = false;
   }
@@ -323,6 +374,9 @@ const openCreateDrawer = async () => {
   channelOptions.value = [];
   createDrawerVisible.value = true;
   await searchChannels('');
+  if (channelOptions.value.length > 0) {
+    createForm.sourceChannelId = channelOptions.value[0].id;
+  }
 };
 
 const submitCreateUser = async () => {
@@ -354,6 +408,10 @@ const submitCreateUser = async () => {
 };
 
 const openResetDialog = (row) => {
+  if (isBusinessConsultant) {
+    ElMessage.warning('业务顾问无权重置密码');
+    return;
+  }
   resetTarget.id = row.id;
   resetTarget.phone = row.phone;
   resetTarget.name = row.name;

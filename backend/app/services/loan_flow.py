@@ -1,4 +1,5 @@
 from typing import Optional
+import asyncio
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.admin import Admin
 from app.models.loan import Loan
 from app.models.loan_installment import LoanInstallment
+
+_CREATE_LOAN_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _get_create_loan_lock(user_id: int) -> asyncio.Lock:
+    key = int(user_id)
+    lock = _CREATE_LOAN_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CREATE_LOAN_LOCKS[key] = lock
+    return lock
 
 
 def get_prior_settled_loans(loans, current_loan_id: Optional[int] = None):
@@ -93,10 +105,23 @@ async def get_latest_loan_async(db: AsyncSession, user_id: int) -> Optional[Loan
 
 
 async def create_init_loan_async(db: AsyncSession, user_id: int) -> Loan:
-    loan = Loan(user_id=user_id, status="INIT")
-    db.add(loan)
-    await db.flush()
-    return loan
+    lock = _get_create_loan_lock(user_id)
+    async with lock:
+        latest_loan = (
+            await db.execute(
+                select(Loan)
+                .where(Loan.user_id == user_id)
+                .order_by(Loan.id.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if latest_loan is not None and latest_loan.status != "SETTLED":
+            return latest_loan
+
+        loan = Loan(user_id=user_id, status="INIT")
+        db.add(loan)
+        await db.flush()
+        return loan
 
 
 async def get_or_create_loan_async(db: AsyncSession, user_id: int) -> Loan:
