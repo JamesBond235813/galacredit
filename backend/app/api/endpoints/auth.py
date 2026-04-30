@@ -14,6 +14,7 @@ from app.models.oauth_token import OAuthToken
 from app.models.user import User
 from app.schemas.channel import ChannelLandingResponse
 from app.schemas.user import LoginRequest, LogoutRequest, RefreshTokenRequest, SendCodeRequest, Token
+from app.api.req_util import resolve_client_ip
 from app.services.password_login_guard import PasswordLoginGuard
 from app.services.sms_auth import SmsAuthManager
 from app.services.audit import log_user_event_async
@@ -47,25 +48,6 @@ def _build_login_frozen_message(remain_minutes: int) -> str:
     :return: 提示文案
     """
     return f"由于密码输入错误次数过多，请在{max(int(remain_minutes), 1)}分钟后再输入密码。"
-
-
-def _resolve_client_ip(request: Request) -> str:
-    """解析请求来源IP，优先取代理头。
-
-    :param request: FastAPI 请求对象
-    :return: 客户端IP
-    """
-    forwarded_for = (request.headers.get("x-forwarded-for") or "").strip()
-    if forwarded_for:
-        first_ip = forwarded_for.split(",")[0].strip()
-        if first_ip:
-            return first_ip
-
-    real_ip = (request.headers.get("x-real-ip") or "").strip()
-    if real_ip:
-        return real_ip
-
-    return request.client.host if request.client else "unknown"
 
 
 async def _upsert_oauth_client(db: AsyncSession, client_id: str) -> None:
@@ -143,7 +125,7 @@ async def send_code(req: SendCodeRequest, request: Request):
     if not settings.SMS_CODE_MOCK_ENABLED:
         raise HTTPException(status_code=503, detail="短信通道暂未配置")
 
-    client_ip = _resolve_client_ip(request)
+    client_ip = resolve_client_ip(request)
     success, remain = await sms_auth_manager.issue_code(phone=req.phone, ip=client_ip)
     if not success:
         raise HTTPException(status_code=429, detail=f"发送过于频繁，请{remain}秒后重试")

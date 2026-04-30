@@ -2,10 +2,11 @@ import contextlib
 import os
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import models  # noqa: F401
+from app.api.req_util import resolve_client_ip
 from app.api.router import router
 from app.core.config import ACTIVE_PROFILE, resolve_profile, settings
 from app.core.logging_config import build_uvicorn_log_config, configure_logging
@@ -43,8 +44,15 @@ app.include_router(router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
-async def root():
-    return f"hello world xhb. [{ACTIVE_PROFILE or 'default'}]"
+async def root(request: Request):
+    """返回服务存活信息，并附带客户端IP。
+
+    :param request: FastAPI 请求对象
+    :return: 根路径响应字符串
+    """
+    # 统一复用请求IP解析工具，根接口无IP时按需求返回 *。
+    client_ip = resolve_client_ip(request, default_ip="*")
+    return f"hello world xhb. [{ACTIVE_PROFILE or 'default'}][{client_ip}]"
 
 
 if __name__ == "__main__":

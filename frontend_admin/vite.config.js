@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import viteCompression from 'vite-plugin-compression'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -16,7 +17,14 @@ export default defineConfig(({ mode }) => {
     : undefined
 
   return {
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      viteCompression({
+        algorithm: 'gzip',
+        ext: '.gz',
+        threshold: 10240
+      })
+    ],
     server: {
       port: 2002,
       strictPort: true,
