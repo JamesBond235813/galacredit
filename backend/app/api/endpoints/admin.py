@@ -603,6 +603,8 @@ async def get_loans(
 @router.get("/users", response_model=PaginatedUserResponse)
 async def get_users(
     keyword: Optional[str] = Query(None, description="手机号/姓名/身份证"),
+    deal_time_start: Optional[date] = Query(None, description="成交开始日期，仅业务顾问生效"),
+    deal_time_end: Optional[date] = Query(None, description="成交结束日期，仅业务顾问生效"),
     skip: int = 0,
     limit: int = 20,
     db: AsyncSession = Depends(get_async_db),
@@ -631,6 +633,24 @@ async def get_users(
     if _is_business_consultant(current_admin):
         # 业务顾问只能查看归属到自己负责渠道的客户。
         stmt = stmt.where(Channel.admin_user_id == current_admin.id)
+        if deal_time_start or deal_time_end:
+            # 业务顾问成交日期口径：按用户首单成交时间（first_disbursed_at）筛选。
+            first_deal_subquery = (
+                select(
+                    Loan.user_id.label("user_id"),
+                    func.min(Loan.disbursed_at).label("first_disbursed_at"),
+                )
+                .where(Loan.disbursed_at.isnot(None))
+                .group_by(Loan.user_id)
+                .subquery()
+            )
+            stmt = stmt.join(first_deal_subquery, first_deal_subquery.c.user_id == User.id)
+            if deal_time_start:
+                start_at = datetime.combine(deal_time_start, datetime.min.time())
+                stmt = stmt.where(first_deal_subquery.c.first_disbursed_at >= start_at)
+            if deal_time_end:
+                end_exclusive = datetime.combine(deal_time_end + timedelta(days=1), datetime.min.time())
+                stmt = stmt.where(first_deal_subquery.c.first_disbursed_at < end_exclusive)
 
     total_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.scalar(total_stmt)) or 0

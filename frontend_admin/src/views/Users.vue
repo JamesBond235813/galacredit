@@ -5,6 +5,17 @@
         <el-form-item label="搜索">
           <el-input v-model="filters.keyword" placeholder="手机号 / 姓名 / 身份证号" clearable @keyup.enter="fetchData" />
         </el-form-item>
+        <el-form-item v-if="isBusinessConsultant" label="成交日期">
+          <el-date-picker
+            v-model="filters.dealDateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            clearable
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -282,6 +293,7 @@ import { createFrontUser, getUserDetail, getUserSourceChannels, getUsers, resetF
 import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 import { getDealColumnConfig } from '../utils/usersDealColumns';
+import { buildUsersQueryParams } from '../utils/usersFilters';
 
 const loading = ref(false);
 const tableData = ref([]);
@@ -316,7 +328,8 @@ const resolvePaymentAmount = (row) => Number(
 const filters = reactive({
   keyword: '',
   page: 1,
-  size: 10
+  size: 10,
+  dealDateRange: []
 });
 
 const adminProfile = readStoredAdminProfile() || {};
@@ -326,11 +339,7 @@ const dealColumnConfig = getDealColumnConfig(isBusinessConsultant);
 const fetchData = async () => {
   loading.value = true;
   try {
-    const res = await getUsers({
-      keyword: filters.keyword || undefined,
-      skip: (filters.page - 1) * filters.size,
-      limit: filters.size
-    });
+    const res = await getUsers(buildUsersQueryParams(filters, isBusinessConsultant));
     tableData.value = res.items || [];
     total.value = res.total || 0;
   } finally {
@@ -340,6 +349,7 @@ const fetchData = async () => {
 
 const resetFilters = () => {
   filters.keyword = '';
+  filters.dealDateRange = [];
   filters.page = 1;
   fetchData();
 };
