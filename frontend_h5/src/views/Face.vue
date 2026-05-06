@@ -95,36 +95,38 @@
     />
     <canvas ref="canvasRef" class="hidden-input"></canvas>
 
-    <transition name="sheet-fade">
-      <div v-if="cameraModalVisible" class="camera-mask" @click="closeLiveCamera"></div>
-    </transition>
-    <transition name="sheet-up">
-      <div v-if="cameraModalVisible" class="camera-sheet">
-        <div class="camera-sheet-head">
-          <span>{{ activeFacingMode === 'user' ? '前置相机' : '后置相机' }}</span>
-          <button type="button" class="camera-close" @click="closeLiveCamera">关闭</button>
+    <teleport to="body">
+      <transition name="sheet-fade">
+        <div v-if="cameraModalVisible" class="camera-mask" @click="closeLiveCamera"></div>
+      </transition>
+      <transition name="sheet-up">
+        <div v-if="cameraModalVisible" class="camera-sheet">
+          <div class="camera-sheet-head">
+            <span>{{ activeFacingMode === 'user' ? '前置相机' : '后置相机' }}</span>
+            <button type="button" class="camera-close" @click="closeLiveCamera">关闭</button>
+          </div>
+          <video ref="videoRef" class="camera-preview" autoplay playsinline muted></video>
+          <div class="camera-actions">
+            <button type="button" class="camera-switch" @click="openLiveCamera(activeFacingMode === 'user' ? 'environment' : 'user')">
+              切换摄像头
+            </button>
+            <button type="button" class="camera-capture" @click="captureFromVideo">拍照并识别</button>
+          </div>
         </div>
-        <video ref="videoRef" class="camera-preview" autoplay playsinline muted></video>
-        <div class="camera-actions">
-          <button type="button" class="camera-switch" @click="openLiveCamera(activeFacingMode === 'user' ? 'environment' : 'user')">
-            切换摄像头
-          </button>
-          <button type="button" class="camera-capture" @click="captureFromVideo">拍照并识别</button>
-        </div>
-      </div>
-    </transition>
+      </transition>
 
-    <transition name="sheet-fade">
-      <div v-if="pickerVisible" class="picker-mask" @click="closePicker"></div>
-    </transition>
-    <transition name="sheet-up">
-      <div v-if="pickerVisible" class="picker-sheet">
-        <button type="button" class="picker-option" @click="chooseSource('front-camera')">前置拍照</button>
-        <button type="button" class="picker-option" @click="chooseSource('back-camera')">后置拍照</button>
-        <button type="button" class="picker-option" @click="chooseSource('album')">从相册选择</button>
-        <button type="button" class="picker-cancel" @click="closePicker">取消</button>
-      </div>
-    </transition>
+      <transition name="sheet-fade">
+        <div v-if="pickerVisible" class="picker-mask" @click="closePicker"></div>
+      </transition>
+      <transition name="sheet-up">
+        <div v-if="pickerVisible" class="picker-sheet">
+          <button type="button" class="picker-option" @click="chooseSource('front-camera')">前置拍照</button>
+          <button type="button" class="picker-option" @click="chooseSource('back-camera')">后置拍照</button>
+          <button type="button" class="picker-option" @click="chooseSource('album')">从相册选择</button>
+          <button type="button" class="picker-cancel" @click="closePicker">取消</button>
+        </div>
+      </transition>
+    </teleport>
   </div>
 </template>
 
