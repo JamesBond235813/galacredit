@@ -105,7 +105,7 @@ class SliderCaptchaManager:
             "</linearGradient></defs>"
             f'<rect x="0" y="0" width="{width}" height="{self.height}" rx="14" fill="url(#g)" />'
             + "".join(bg_shapes)
-            + f'<rect x="{expected_x}" y="{expected_y}" width="{self.block_size}" height="{self.block_size}" rx="8" fill="#ffffff" fill-opacity="0.88" stroke="#99b9ea" stroke-width="2" />'
+            + f'<rect x="{expected_x}" y="{expected_y}" width="{self.block_size}" height="{self.block_size}" rx="8" fill="#bdd4f6" fill-opacity="0.98" />'
             + "</svg>"
         )
 
