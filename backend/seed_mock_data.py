@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -74,6 +75,15 @@ def choose_name(index: int) -> str:
 def set_event_time(event, when: datetime):
     event.created_at = when
     return event
+
+
+def make_seed_invite_code(channel_name: str) -> str:
+    """生成稳定的模拟邀请码。
+
+    :param channel_name: 渠道名称
+    :return: 16 位小写邀请码
+    """
+    return hashlib.md5(channel_name.encode("utf-8")).hexdigest()[:16]
 
 
 async def add_event(db, *, user, loan, when: datetime, event_type: str, title: str, detail, actor_type="USER", operator_name=None):
@@ -461,7 +471,13 @@ async def ensure_seed_channels(db):
     for channel_name, sales_name in CHANNEL_POOL:
         channel = (await db.execute(select(Channel).where(Channel.channel_name == channel_name))).scalar_one_or_none()
         if channel is None:
-            channel = Channel(channel_name=channel_name, sales_name=sales_name, status="ACTIVE", note="模拟渠道数据")
+            channel = Channel(
+                channel_name=channel_name,
+                invite_code=make_seed_invite_code(channel_name),
+                sales_name=sales_name,
+                status="ACTIVE",
+                note="模拟渠道数据",
+            )
             db.add(channel)
             await db.flush()
         channels.append(channel)

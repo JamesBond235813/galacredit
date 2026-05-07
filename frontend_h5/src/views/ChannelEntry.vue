@@ -12,37 +12,19 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { bindUserChannel, getChannelEntryInfo } from '../api';
-import { clearEntryChannel, saveEntryChannel } from '../utils/channel';
+import { saveEntryInviteCode, isValidInviteCode } from '../utils/channel';
 
 const route = useRoute();
 const router = useRouter();
 const message = ref('正在识别专属链接，请稍候...');
 
 onMounted(async () => {
-  const channelName = String(route.params.channelName || '').trim();
-  if (!channelName) {
-    clearEntryChannel();
-    router.replace('/login');
-    return;
+  const inviteCode = String(route.params.inviteCode || '').trim().toLowerCase();
+  if (isValidInviteCode(inviteCode)) {
+    saveEntryInviteCode(inviteCode);
+    message.value = '已识别专属邀请码，正在跳转登录...';
   }
-
-  try {
-    const channel = await getChannelEntryInfo(channelName);
-    saveEntryChannel(channel);
-    message.value = `已进入 ${channel.sales_name} 的专属服务通道`;
-
-    if (localStorage.getItem('token')) {
-      await bindUserChannel({ channel_name: channel.channel_name });
-      router.replace('/home');
-      return;
-    }
-
-    router.replace('/login');
-  } catch (error) {
-    clearEntryChannel();
-    router.replace('/login');
-  }
+  router.replace('/login');
 });
 </script>
 

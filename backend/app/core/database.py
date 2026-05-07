@@ -129,6 +129,7 @@ SCHEMA_PATCHES = {
         "sales_name": "ALTER TABLE channels ADD COLUMN sales_name VARCHAR(50) NOT NULL DEFAULT '未命名业务员'",
         "status": "ALTER TABLE channels ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'",
         "note": "ALTER TABLE channels ADD COLUMN note VARCHAR(255) NULL",
+        "invite_code": "ALTER TABLE channels ADD COLUMN invite_code VARCHAR(32) NOT NULL DEFAULT '' COMMENT '渠道邀请码'",
     },
     "user_events": {
         "operator_name": "ALTER TABLE user_events ADD COLUMN operator_name VARCHAR(50) NULL",
@@ -193,6 +194,21 @@ def sync_legacy_schema():
             for column_name, ddl in columns.items():
                 if column_name not in existing_columns:
                     connection.execute(text(ddl))
+
+        if "channels" in existing_tables:
+            # 兼容历史数据：先为旧渠道补齐唯一邀请码，再补唯一索引，避免默认值冲突导致建索引失败
+            connection.execute(
+                text(
+                    """
+                    UPDATE channels
+                    SET invite_code = CONCAT('ch', LPAD(CAST(id AS CHAR), 14, '0'))
+                    WHERE invite_code IS NULL OR invite_code = ''
+                    """
+                )
+            )
+            channel_indexes = {idx["name"] for idx in inspector.get_indexes("channels")}
+            if "ux_channels_invite_code" not in channel_indexes:
+                connection.execute(text("ALTER TABLE channels ADD UNIQUE INDEX ux_channels_invite_code (invite_code)"))
 
         if "users" in existing_tables:
             connection.execute(

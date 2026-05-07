@@ -47,6 +47,21 @@ async def get_channel_by_name_async(
     return (await db.execute(query)).scalar_one_or_none()
 
 
+async def get_channel_by_invite_code_async(
+    db: AsyncSession,
+    invite_code: str,
+    *,
+    active_only: bool = False,
+) -> Optional[Channel]:
+    code = (invite_code or "").strip().lower()
+    if not re.fullmatch(r"^[a-z0-9]{16}$", code):
+        return None
+    query = select(Channel).where(Channel.invite_code == code)
+    if active_only:
+        query = query.where(Channel.status == "ACTIVE")
+    return (await db.execute(query)).scalar_one_or_none()
+
+
 async def bind_user_source_channel_async(
     db: AsyncSession,
     *,

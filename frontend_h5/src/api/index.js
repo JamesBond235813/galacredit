@@ -2,8 +2,10 @@ import request from './request';
 
 // Auth API
 export const sendCode = (data) => request.post('/auth/send-code', data);
+export const createSliderCaptcha = (data) => request.post('/auth/slider-captcha/create', data);
+export const verifySliderCaptcha = (data) => request.post('/auth/slider-captcha/verify', data);
 export const login = (data) => request.post('/auth/login', data);
-export const getChannelEntryInfo = (channelName) => request.get(`/auth/channels/${channelName}`);
+export const smsLogin = (data) => request.post('/auth/sms-login', data);
 export const logout = (data) => request.post('/auth/logout', data);
 
 // User API

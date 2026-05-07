@@ -13,13 +13,27 @@ from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.user import User
 from app.schemas.channel import ChannelLandingResponse
-from app.schemas.user import LoginRequest, LogoutRequest, RefreshTokenRequest, SendCodeRequest, Token
+from app.schemas.user import (
+    LoginRequest,
+    LogoutRequest,
+    RefreshTokenRequest,
+    SendCodeRequest,
+    SliderCaptchaCreateRequest,
+    SliderCaptchaCreateResponse,
+    SliderCaptchaVerifyRequest,
+    SliderCaptchaVerifyResponse,
+    SmsLoginRequest,
+    Token,
+)
 from app.api.req_util import resolve_client_ip
 from app.services.password_login_guard import PasswordLoginGuard
 from app.services.sms_auth import SmsAuthManager
+from app.services.sms_service import sms_service
+from app.services.slider_captcha import SliderCaptchaManager
 from app.services.audit import log_user_event_async
 from app.services.channel_service import (
     bind_user_source_channel_async,
+    get_channel_by_invite_code_async,
     get_channel_by_name_async,
     serialize_channel_landing,
 )
@@ -38,6 +52,17 @@ password_login_guard = PasswordLoginGuard(
     max_attempts=settings.PASSWORD_LOGIN_MAX_ATTEMPTS,
     window_seconds=settings.PASSWORD_LOGIN_WINDOW_SECONDS,
     freeze_seconds=settings.PASSWORD_LOGIN_FREEZE_SECONDS,
+)
+
+slider_captcha_manager = SliderCaptchaManager(
+    tolerance_px=settings.CAPTCHA_SLIDER_TOLERANCE_PX,
+    min_elapsed_ms=settings.CAPTCHA_SLIDER_MIN_ELAPSED_MS,
+    challenge_expire_seconds=settings.CAPTCHA_SLIDER_CHALLENGE_EXPIRE_SECONDS,
+    ticket_expire_seconds=settings.CAPTCHA_SLIDER_TICKET_EXPIRE_SECONDS,
+    min_width=settings.CAPTCHA_SLIDER_MIN_WIDTH,
+    max_width=settings.CAPTCHA_SLIDER_MAX_WIDTH,
+    height=settings.CAPTCHA_SLIDER_HEIGHT,
+    block_size=settings.CAPTCHA_SLIDER_BLOCK_SIZE,
 )
 
 
@@ -122,14 +147,39 @@ async def send_code(req: SendCodeRequest, request: Request):
     :param request: FastAPI 请求对象
     :return: 下发结果与冷却秒数
     """
-    if not settings.SMS_CODE_MOCK_ENABLED:
-        raise HTTPException(status_code=503, detail="短信通道暂未配置")
+    captcha_ok = await slider_captcha_manager.consume_ticket(req.phone, req.captcha_ticket)
+    if not captcha_ok:
+        raise HTTPException(status_code=400, detail="图形验证码校验失败或已过期")
 
     client_ip = resolve_client_ip(request)
     success, remain = await sms_auth_manager.issue_code(phone=req.phone, ip=client_ip)
     if not success:
         raise HTTPException(status_code=429, detail=f"发送过于频繁，请{remain}秒后重试")
-    return {"msg": "验证码发送成功", "cooldown_seconds": settings.SMS_PHONE_COOLDOWN_SECONDS}
+
+    sms_ok, cooldown_seconds, message = await sms_service.send_code(phone=req.phone, biz_type="LOGIN")
+    if not sms_ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"msg": "验证码发送成功", "cooldown_seconds": cooldown_seconds}
+
+
+@router.post("/slider-captcha/create", response_model=SliderCaptchaCreateResponse)
+async def create_slider_captcha(req: SliderCaptchaCreateRequest):
+    payload = await slider_captcha_manager.create_challenge(width=req.width)
+    return payload
+
+
+@router.post("/slider-captcha/verify", response_model=SliderCaptchaVerifyResponse)
+async def verify_slider_captcha(req: SliderCaptchaVerifyRequest):
+    try:
+        ticket = await slider_captcha_manager.verify_challenge(
+            phone=req.phone,
+            captcha_id=req.captcha_id,
+            offset_x=req.offset_x,
+            elapsed_ms=req.elapsed_ms,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return {"captcha_ticket": ticket, "expires_seconds": settings.CAPTCHA_SLIDER_TICKET_EXPIRE_SECONDS}
 
 
 @router.get("/channels/{channel_name}", response_model=ChannelLandingResponse)
@@ -191,6 +241,59 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
     )
     await _upsert_oauth_client(db, client_id)
 
+    token_payload = await _issue_user_token_pair(db=db, user=user, client_id=client_id, now=now)
+    await db.commit()
+    return token_payload
+
+
+@router.post("/sms-login", response_model=Token)
+async def sms_login(req: SmsLoginRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
+    client_id = request.headers.get("client-id", "h5-web").strip() or "h5-web"
+    now = datetime.now()
+    verified = await sms_service.verify_code(phone=req.phone, biz_type="LOGIN", code=req.sms_code)
+    if not verified:
+        raise HTTPException(status_code=400, detail="短信验证码错误或已过期")
+
+    user = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
+    channel = None
+    if user is None and req.invite_code:
+        channel = await get_channel_by_invite_code_async(db, req.invite_code, active_only=True)
+
+    if user is None:
+        user = User(phone=req.phone, last_login_at=now)
+        db.add(user)
+        await db.flush()
+        if channel:
+            await bind_user_source_channel_async(db, user=user, channel=channel, loan=None)
+        detail = "短信验证码登录成功（新注册用户）。"
+    else:
+        user.last_login_at = now
+        detail = "短信验证码登录成功。"
+
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=None,
+        actor_type="USER",
+        event_type="LOGIN",
+        title="用户登录",
+        detail=detail,
+    )
+    await _upsert_oauth_client(db, client_id)
+    token_payload = await _issue_user_token_pair(db=db, user=user, client_id=client_id, now=now)
+    await db.commit()
+    return token_payload
+
+
+async def _issue_user_token_pair(db: AsyncSession, user: User, client_id: str, now: datetime) -> dict:
+    """签发并持久化用户 token 对。
+
+    :param db: 异步数据库会话
+    :param user: 用户对象
+    :param client_id: 客户端标识
+    :param now: 当前时间
+    :return: token 响应体
+    """
     access_token_expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_token_expires_delta = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     access_expires_at = now + access_token_expires_delta
@@ -220,7 +323,6 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
         access_expires_at=access_expires_at,
         refresh_expires_at=refresh_expires_at,
     )
-    await db.commit()
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,

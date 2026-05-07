@@ -15,6 +15,7 @@ class ChannelLandingResponse(BaseModel):
 
 class ChannelCreateRequest(BaseModel):
     channel_name: str = Field(..., min_length=2, max_length=32)
+    invite_code: Optional[str] = Field(None, min_length=16, max_length=32)
     sales_name: str = Field(..., min_length=1, max_length=50)
     status: Optional[str] = Field("ACTIVE", max_length=20)
     note: Optional[str] = Field(None, max_length=255)
@@ -24,6 +25,18 @@ class ChannelCreateRequest(BaseModel):
     @classmethod
     def validate_channel_name(cls, value: str):
         return normalize_channel_name(value)
+
+    @field_validator("invite_code")
+    @classmethod
+    def validate_invite_code(cls, value: Optional[str]):
+        if value is None:
+            return value
+        normalized = (value or "").strip().lower()
+        if len(normalized) < 16 or len(normalized) > 32:
+            raise ValueError("渠道邀请码长度必须为 16-32 位")
+        if not normalized.isalnum():
+            raise ValueError("渠道邀请码仅支持小写字母和数字")
+        return normalized
 
     @field_validator("status")
     @classmethod
@@ -63,6 +76,7 @@ class ChannelBindResponse(BaseModel):
 class ChannelItemResponse(BaseModel):
     id: int
     channel_name: str
+    invite_code: str
     sales_name: str
     status: str
     note: Optional[str] = None
@@ -99,6 +113,7 @@ class PaginatedChannelResponse(BaseModel):
     total: int
     page: int
     size: int
+    channel_link_prefix: str
     summary: ChannelSummaryResponse
     items: List[ChannelItemResponse]
 

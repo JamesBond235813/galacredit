@@ -1,23 +1,24 @@
 const CHANNEL_STORAGE_KEY = 'entry_channel';
+const INVITE_CODE_PATTERN = /^[a-z0-9]{16}$/;
 
-export const saveEntryChannel = (channel) => {
-  if (!channel?.channel_name) {
+export const isValidInviteCode = (value) => INVITE_CODE_PATTERN.test(String(value || '').trim());
+
+export const saveEntryInviteCode = (inviteCode) => {
+  const code = String(inviteCode || '').trim().toLowerCase();
+  if (!isValidInviteCode(code)) {
     return;
   }
-
-  localStorage.setItem(CHANNEL_STORAGE_KEY, JSON.stringify({
-    channel_name: channel.channel_name,
-    sales_name: channel.sales_name || '',
-    status: channel.status || 'ACTIVE'
-  }));
+  localStorage.setItem(CHANNEL_STORAGE_KEY, JSON.stringify({ invite_code: code }));
 };
 
-export const getEntryChannel = () => {
+export const getEntryInviteCode = () => {
   try {
     const raw = localStorage.getItem(CHANNEL_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const payload = raw ? JSON.parse(raw) : null;
+    const code = String(payload?.invite_code || '').trim().toLowerCase();
+    return isValidInviteCode(code) ? code : '';
   } catch (error) {
-    return null;
+    return '';
   }
 };
 

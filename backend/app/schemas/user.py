@@ -70,12 +70,47 @@ class Token(BaseModel):
 
 class SendCodeRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
+    captcha_ticket: str = Field(..., min_length=10, max_length=128)
 
 
 class LoginRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
     password: str = Field(..., min_length=6, max_length=50)
     channel_name: Optional[str] = None
+
+
+class SmsLoginRequest(BaseModel):
+    phone: str = Field(..., pattern=r"^\d{11}$")
+    sms_code: str = Field(..., pattern=r"^\d{6}$")
+    invite_code: Optional[str] = Field(None, pattern=r"^[a-z0-9]{16}$")
+
+
+class SliderCaptchaCreateRequest(BaseModel):
+    phone: str = Field(..., pattern=r"^\d{11}$")
+    width: int = Field(..., ge=1, le=2000)
+
+
+class SliderCaptchaCreateResponse(BaseModel):
+    captcha_id: str
+    width: int
+    height: int
+    block_size: int
+    block_y: int
+    background_image: str
+    slider_image: str
+    min_elapsed_ms: int
+
+
+class SliderCaptchaVerifyRequest(BaseModel):
+    phone: str = Field(..., pattern=r"^\d{11}$")
+    captcha_id: str = Field(..., min_length=8, max_length=128)
+    offset_x: float = Field(...)
+    elapsed_ms: int = Field(..., ge=0, le=60000)
+
+
+class SliderCaptchaVerifyResponse(BaseModel):
+    captcha_ticket: str
+    expires_seconds: int
 
 
 class RefreshTokenRequest(BaseModel):

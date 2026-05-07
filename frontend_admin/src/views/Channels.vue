@@ -25,21 +25,13 @@
             <el-option label="已停用" value="INACTIVE" />
           </el-select>
         </el-form-item>
-        <el-form-item label="H5域名">
-          <el-input
-            v-model="h5Domain"
-            placeholder="https://xxxx.xx"
-            class="domain-input"
-            @change="persistDomain"
-          />
-        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
           <el-button plain @click="openCreateDrawer">新增渠道</el-button>
         </el-form-item>
       </el-form>
-      <div class="filter-tip">专属链接格式：{{ sanitizedDomain }}/channel_name。用户首次通过有效链接登录后，将按首个渠道归因统计业绩。</div>
+      <div class="filter-tip">专属链接格式：{{ sanitizedDomain }}/invite_code。用户首次通过有效链接登录后，将按首个渠道归因统计业绩。</div>
     </el-card>
 
     <el-card class="panel-card">
@@ -48,13 +40,13 @@
           <template #default="{ row }">
             <div>{{ row.sales_name }}</div>
             <div class="sub-text">顾问：{{ row.admin_user_name || '--' }}<span v-if="row.admin_user_id">（#{{ row.admin_user_id }}）</span></div>
-            <div class="sub-text">/{{ row.channel_name }}</div>
+            <div class="sub-text">/{{ row.invite_code }}</div>
           </template>
         </el-table-column>
         <el-table-column label="专属链接" min-width="260">
           <template #default="{ row }">
-            <div class="link-cell">{{ buildChannelLink(row.channel_name) }}</div>
-            <el-button link type="primary" @click="copyChannelLink(row.channel_name)">复制链接</el-button>
+            <div class="link-cell">{{ getRowChannelLink(row) }}</div>
+            <el-button link type="primary" @click="copyChannelLink(getRowChannelLink(row))">复制链接</el-button>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
@@ -125,6 +117,9 @@
                 @blur="normalizeFormChannelName"
               />
             </el-form-item>
+            <el-form-item v-if="form.mode === 'edit'" label="邀请码">
+              <el-input v-model="form.invite_code" disabled />
+            </el-form-item>
             <el-form-item label="渠道状态">
               <el-radio-group v-model="form.status">
                 <el-radio value="ACTIVE">启用中</el-radio>
@@ -166,9 +161,9 @@
 
         <section class="detail-card">
           <h3>专属链接预览</h3>
-          <div class="preview-link-box">{{ buildChannelLink(form.channel_name || 'channel_name') }}</div>
+          <div class="preview-link-box">{{ buildChannelLink(form.invite_code || 'invite_code') }}</div>
           <div class="drawer-footer">
-            <el-button @click="copyChannelLink(form.channel_name || 'channel_name')">复制链接</el-button>
+            <el-button @click="copyChannelLink(form.invite_code || 'invite_code')">复制链接</el-button>
           </div>
         </section>
 
@@ -207,9 +202,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { createChannel, getBusinessAdvisors, getChannels, updateChannel } from '../api';
+import { generateChannelInviteCode } from '../utils/channel';
 import { formatCurrency, formatDateTime } from '../utils/format';
-
-const H5_DOMAIN_STORAGE_KEY = 'h5_entry_domain';
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -220,7 +214,7 @@ const summary = ref({});
 const activeRow = ref(null);
 const advisorOptions = ref([]);
 const advisorOptionsLoading = ref(false);
-const h5Domain = ref(localStorage.getItem(H5_DOMAIN_STORAGE_KEY) || 'https://xxxx.xx');
+const h5Domain = ref('https://xxx.xx');
 
 const filters = reactive({
   keyword: '',
@@ -234,6 +228,7 @@ const form = reactive({
   id: null,
   sales_name: '',
   channel_name: '',
+  invite_code: '',
   status: 'ACTIVE',
   note: '',
   admin_user_id: null
@@ -264,7 +259,7 @@ const fetchBusinessAdvisorOptions = async (keyword = '') => {
 
 const sanitizedDomain = computed(() => {
   const value = (h5Domain.value || '').trim();
-  return value.replace(/\/+$/, '') || 'https://xxxx.xx';
+  return value.replace(/\/+$/, '') || 'https://xxx.xx';
 });
 
 const drawerTitle = computed(() => (form.mode === 'edit' ? '编辑渠道' : '新增渠道'));
@@ -304,7 +299,8 @@ const metricCards = computed(() => [
 
 const formatRateValue = (value) => `${Number(value || 0).toFixed(2)}%`;
 
-const buildChannelLink = (channelName) => `${sanitizedDomain.value}/${String(channelName || '').replace(/^\/+/, '')}`;
+const buildChannelLink = (inviteCode) => `${sanitizedDomain.value}/${String(inviteCode || '').replace(/^\/+/, '')}`;
+const getRowChannelLink = (row) => buildChannelLink(row?.invite_code);
 
 const normalizeFormChannelName = () => {
   form.channel_name = String(form.channel_name || '')
@@ -314,13 +310,7 @@ const normalizeFormChannelName = () => {
     .replace(/[^a-z0-9_-]/g, '');
 };
 
-const persistDomain = () => {
-  h5Domain.value = sanitizedDomain.value;
-  localStorage.setItem(H5_DOMAIN_STORAGE_KEY, sanitizedDomain.value);
-};
-
-const copyChannelLink = async (channelName) => {
-  const link = buildChannelLink(channelName);
+const copyChannelLink = async (link) => {
   try {
     await navigator.clipboard.writeText(link);
     ElMessage.success('专属链接已复制');
@@ -341,6 +331,7 @@ const fetchData = async () => {
     tableData.value = res.items || [];
     total.value = res.total || 0;
     summary.value = res.summary || {};
+    h5Domain.value = String(res.channel_link_prefix || 'https://xxx.xx');
   } finally {
     loading.value = false;
   }
@@ -363,6 +354,7 @@ const resetForm = () => {
   form.id = null;
   form.sales_name = '';
   form.channel_name = '';
+  form.invite_code = '';
   form.status = 'ACTIVE';
   form.note = '';
   form.admin_user_id = null;
@@ -371,6 +363,7 @@ const resetForm = () => {
 
 const openCreateDrawer = () => {
   resetForm();
+  form.invite_code = generateChannelInviteCode(16);
   drawerVisible.value = true;
 };
 
@@ -379,6 +372,7 @@ const openEditDrawer = (row) => {
   form.id = row.id;
   form.sales_name = row.sales_name;
   form.channel_name = row.channel_name;
+  form.invite_code = row.invite_code || '';
   form.status = row.status;
   form.note = row.note || '';
   form.admin_user_id = row.admin_user_id || null;
@@ -430,6 +424,7 @@ const submitForm = async () => {
       await createChannel({
         sales_name: form.sales_name.trim(),
         channel_name: form.channel_name,
+        invite_code: form.invite_code,
         status: form.status,
         note: form.note,
         admin_user_id: form.admin_user_id
@@ -445,7 +440,6 @@ const submitForm = async () => {
 };
 
 onMounted(() => {
-  persistDomain();
   fetchBusinessAdvisorOptions();
   fetchData();
 });
@@ -456,10 +450,6 @@ onMounted(() => {
   margin-top: 4px;
   color: #7f8da2;
   font-size: 12px;
-}
-
-.domain-input {
-  width: 260px;
 }
 
 .filter-tip {

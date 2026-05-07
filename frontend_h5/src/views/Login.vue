@@ -1,6 +1,6 @@
 <template>
   <div class="login-container">
-    <div class="login-stage">
+    <div class="login-stage" ref="loginStageRef">
       <section class="login-main">
         <van-form @submit="onSubmit" class="login-form">
           <van-cell-group inset class="login-fields">
@@ -15,14 +15,27 @@
               class="login-field"
             />
             <van-field
-              v-model="password"
-              name="password"
-              type="password"
-              maxlength="50"
-              placeholder="请输入登录密码"
+              v-model="smsCode"
+              name="smsCode"
+              type="digit"
+              maxlength="6"
+              placeholder="请输入短信验证码"
               clearable
               class="login-field"
-            />
+            >
+              <template #button>
+                <van-button
+                  size="small"
+                  type="primary"
+                  plain
+                  class="sms-send-btn"
+                  :disabled="smsSending || cooldownSeconds > 0"
+                  @click.prevent="openCaptchaDialog"
+                >
+                  {{ smsButtonText }}
+                </van-button>
+              </template>
+            </van-field>
           </van-cell-group>
           <div class="submit-wrap">
             <van-button round block type="primary" native-type="submit" :loading="loading" class="submit-btn">
@@ -40,23 +53,202 @@
         </div>
       </div>
     </div>
+
+    <van-popup v-model:show="captchaVisible" round position="bottom" :style="{ padding: '16px', minHeight: '260px' }">
+      <div class="captcha-box" ref="captchaContainerRef">
+        <div class="captcha-title">请完成滑块验证</div>
+        <div class="captcha-bg-wrap" v-if="captcha.backgroundImage" :style="{ width: `${captcha.width}px`, height: `${captcha.height}px` }">
+          <img class="captcha-bg" :src="captcha.backgroundImage" alt="captcha-background" />
+          <img
+            ref="sliderPieceRef"
+            class="captcha-slider-piece"
+            :src="captcha.sliderImage"
+            alt="captcha-slider"
+            :style="{ left: `${sliderOffsetX}px`, top: `${captcha.blockY}px`, width: `${captcha.blockSize}px`, height: `${captcha.blockSize}px` }"
+            @mousedown.prevent="onSliderDragStart"
+            @touchstart.prevent="onSliderDragStart"
+          />
+        </div>
+        <div class="captcha-actions">
+          <van-button size="small" @click="refreshCaptcha">刷新</van-button>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
-import { login } from '../api';
-import { clearEntryChannel, getEntryChannel } from '../utils/channel';
-import { captureAndUploadLocation } from '../utils/location';
-import { isValidPassword, isValidPhone, normalizePhone } from '../utils/passwordAuth';
+import { createSliderCaptcha, sendCode, smsLogin, verifySliderCaptcha } from '../api';
+import { clearEntryChannel, getEntryInviteCode } from '../utils/channel';
+import { isValidPhone, normalizePhone } from '../utils/passwordAuth';
+import { getSmsButtonText, isValidSmsCode, normalizeSmsCode } from '../utils/smsLogin';
 
 const router = useRouter();
 const phone = ref('');
-const password = ref('');
+const smsCode = ref('');
 const loading = ref(false);
-const entryChannel = ref(getEntryChannel());
+const entryInviteCode = ref(getEntryInviteCode());
+const smsSending = ref(false);
+const cooldownSeconds = ref(0);
+const captchaVisible = ref(false);
+const captchaVerifying = ref(false);
+const captchaContainerRef = ref(null);
+const loginStageRef = ref(null);
+const sliderPieceRef = ref(null);
+const sliderOffsetX = ref(0);
+const sliderMoveStartedAt = ref(0);
+const sliderMoveElapsedMs = ref(0);
+const captcha = ref({
+  captchaId: '',
+  width: 0,
+  height: 160,
+  blockSize: 44,
+  blockY: 0,
+  backgroundImage: '',
+  sliderImage: ''
+});
+let cooldownTimer = null;
+const dragging = ref(false);
+const dragStartClientX = ref(0);
+const dragStartOffsetX = ref(0);
+
+const smsButtonText = computed(() => getSmsButtonText(smsSending.value, cooldownSeconds.value));
+
+const startCooldown = (seconds) => {
+  if (cooldownTimer) {
+    window.clearInterval(cooldownTimer);
+  }
+  cooldownSeconds.value = Number(seconds || 0);
+  cooldownTimer = window.setInterval(() => {
+    cooldownSeconds.value = Math.max(cooldownSeconds.value - 1, 0);
+    if (cooldownSeconds.value <= 0 && cooldownTimer) {
+      window.clearInterval(cooldownTimer);
+      cooldownTimer = null;
+    }
+  }, 1000);
+};
+
+const getCaptchaRequestWidth = () => {
+  const containerWidth = Number(loginStageRef.value?.clientWidth || document.documentElement.clientWidth || 360);
+  const target = Math.floor(containerWidth);
+  return Math.min(Math.max(target, 280), 420);
+};
+
+const refreshCaptcha = async () => {
+  if (!isValidPhone(phone.value)) {
+    showToast('请输入11位手机号');
+    return;
+  }
+  const payload = await createSliderCaptcha({ phone: phone.value, width: getCaptchaRequestWidth() });
+  captcha.value = {
+    captchaId: payload.captcha_id,
+    width: payload.width,
+    height: payload.height,
+    blockSize: payload.block_size,
+    blockY: payload.block_y,
+    backgroundImage: payload.background_image,
+    sliderImage: payload.slider_image
+  };
+  sliderOffsetX.value = 0;
+  sliderMoveStartedAt.value = 0;
+  sliderMoveElapsedMs.value = 0;
+};
+
+const openCaptchaDialog = async () => {
+  if (!isValidPhone(phone.value)) {
+    showToast('请输入11位手机号');
+    return;
+  }
+  captchaVisible.value = true;
+  await refreshCaptcha();
+};
+
+const onSliderInput = () => {
+  const now = Date.now();
+  if (!sliderMoveStartedAt.value) {
+    sliderMoveStartedAt.value = now;
+  }
+  sliderMoveElapsedMs.value = now - sliderMoveStartedAt.value;
+};
+
+const verifyCaptchaAndSendSms = async () => {
+  captchaVerifying.value = true;
+  try {
+    const verifyRes = await verifySliderCaptcha({
+      phone: phone.value,
+      captcha_id: captcha.value.captchaId,
+      offset_x: sliderOffsetX.value,
+      elapsed_ms: sliderMoveElapsedMs.value
+    });
+    smsSending.value = true;
+    const smsRes = await sendCode({
+      phone: phone.value,
+      captcha_ticket: verifyRes.captcha_ticket
+    });
+    startCooldown(smsRes.cooldown_seconds || 60);
+    showToast('验证码已发送');
+    captchaVisible.value = false;
+  } catch (error) {
+    sliderOffsetX.value = 0;
+    sliderMoveStartedAt.value = 0;
+    sliderMoveElapsedMs.value = 0;
+    const detail = String(error?.response?.data?.detail || '');
+    if (detail.includes('过期')) {
+      await refreshCaptcha();
+    }
+  } finally {
+    smsSending.value = false;
+    captchaVerifying.value = false;
+  }
+};
+
+const onSliderRelease = async () => {
+  if (!captchaVisible.value || captchaVerifying.value) {
+    return;
+  }
+  await verifyCaptchaAndSendSms();
+};
+
+const onDragMove = (event) => {
+  if (!dragging.value) {
+    return;
+  }
+  const clientX = Number(event.touches?.[0]?.clientX ?? event.clientX ?? 0);
+  const delta = clientX - dragStartClientX.value;
+  const maxOffset = Math.max(captcha.value.width - captcha.value.blockSize, 0);
+  sliderOffsetX.value = Math.min(Math.max(dragStartOffsetX.value + delta, 0), maxOffset);
+  onSliderInput();
+};
+
+const onDragEnd = async () => {
+  if (!dragging.value) {
+    return;
+  }
+  dragging.value = false;
+  window.removeEventListener('mousemove', onDragMove);
+  window.removeEventListener('mouseup', onDragEnd);
+  window.removeEventListener('touchmove', onDragMove);
+  window.removeEventListener('touchend', onDragEnd);
+  await onSliderRelease();
+};
+
+const onSliderDragStart = (event) => {
+  if (captchaVerifying.value) {
+    return;
+  }
+  const clientX = Number(event.touches?.[0]?.clientX ?? event.clientX ?? 0);
+  dragging.value = true;
+  dragStartClientX.value = clientX;
+  dragStartOffsetX.value = sliderOffsetX.value;
+  onSliderInput();
+  window.addEventListener('mousemove', onDragMove);
+  window.addEventListener('mouseup', onDragEnd);
+  window.addEventListener('touchmove', onDragMove, { passive: false });
+  window.addEventListener('touchend', onDragEnd);
+};
 
 const onSubmit = async () => {
   if (!isValidPhone(phone.value)) {
@@ -64,22 +256,24 @@ const onSubmit = async () => {
     return;
   }
 
-  if (!isValidPassword(password.value)) {
-    showToast('请输入至少6位密码');
+  smsCode.value = normalizeSmsCode(String(smsCode.value || ''));
+  if (!isValidSmsCode(smsCode.value)) {
+    showToast('请输入6位短信验证码');
     return;
   }
 
   loading.value = true;
   try {
-    const res = await login({
+    const res = await smsLogin({
       phone: phone.value,
-      password: password.value,
-      channel_name: entryChannel.value?.channel_name || undefined
+      sms_code: smsCode.value,
+      invite_code: entryInviteCode.value || undefined
     });
     localStorage.setItem('token', res.access_token);
     if (res.refresh_token) {
       localStorage.setItem('refresh_token', res.refresh_token);
     }
+    clearEntryChannel();
     showToast('登录成功');
     // 通过授权方式获取地理位置；失败不阻断登录流程。
     // captureAndUploadLocation().catch(() => {});
@@ -87,12 +281,23 @@ const onSubmit = async () => {
   } catch (error) {
     if (error.response?.data?.detail === '渠道链接不存在或已停用') {
       clearEntryChannel();
-      entryChannel.value = null;
+      entryInviteCode.value = '';
     }
   } finally {
     loading.value = false;
   }
 };
+
+onBeforeUnmount(() => {
+  if (cooldownTimer) {
+    window.clearInterval(cooldownTimer);
+    cooldownTimer = null;
+  }
+  window.removeEventListener('mousemove', onDragMove);
+  window.removeEventListener('mouseup', onDragEnd);
+  window.removeEventListener('touchmove', onDragMove);
+  window.removeEventListener('touchend', onDragEnd);
+});
 </script>
 
 <style scoped>
@@ -136,6 +341,42 @@ const onSubmit = async () => {
 
 .submit-wrap {
   margin: 26px 0 0;
+}
+
+.captcha-box {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.captcha-title {
+  font-size: 15px;
+  color: #20324d;
+  margin-bottom: 10px;
+}
+
+.captcha-bg-wrap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.captcha-bg {
+  display: block;
+  width: 100%;
+}
+
+.captcha-slider-piece {
+  position: absolute;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.captcha-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
 }
 
 .logo-box {
@@ -234,5 +475,12 @@ const onSubmit = async () => {
 :deep(.login-field .van-field__control::placeholder) {
   color: #7289a5;
   font-size: 16px;
+}
+
+:deep(.sms-send-btn.van-button) {
+  border-radius: 10px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 </style>

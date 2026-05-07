@@ -2,6 +2,8 @@ import asyncio
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Optional
+import string
+import secrets
 
 import xlrd
 from fastapi import Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
@@ -460,9 +462,37 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
 
 def serialize_channel(channel: Channel, advisor: Optional[Admin] = None):
     payload = build_channel_metrics(channel)
+    payload["invite_code"] = channel.invite_code
     payload["admin_user_id"] = channel.admin_user_id
     payload["admin_user_name"] = advisor.username if advisor else None
     return payload
+
+def _generate_channel_invite_code(length: int = 16) -> str:
+    """生成渠道邀请码。
+
+    :param length: 邀请码长度
+    :return: 邀请码
+    """
+    alphabet = string.ascii_lowercase + string.digits
+    while True:
+        invite_code = "".join(secrets.choice(alphabet) for _ in range(length))
+        if any(char.isalpha() for char in invite_code) and any(char.isdigit() for char in invite_code):
+            return invite_code
+
+
+async def _generate_unique_channel_invite_code(db: AsyncSession, length: int = 16) -> str:
+    """生成数据库内唯一的渠道邀请码。
+
+    :param db: 异步数据库会话
+    :param length: 邀请码长度
+    :return: 唯一邀请码
+    """
+    for _ in range(10):
+        invite_code = _generate_channel_invite_code(length)
+        exists = (await db.execute(select(Channel).where(Channel.invite_code == invite_code))).scalar_one_or_none()
+        if not exists:
+            return invite_code
+    raise HTTPException(status_code=500, detail="生成渠道邀请码失败，请稍后重试")
 
 
 def _is_business_consultant(admin: Optional[Admin]) -> bool:
@@ -1039,6 +1069,7 @@ async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optiona
         "total": len(channel_items),
         "page": skip // limit + 1,
         "size": limit,
+        "channel_link_prefix": settings.CHANNEL_LINK_PREFIX,
         "summary": build_channel_summary(channel_items),
         "items": channel_items[skip : skip + limit],
     }
@@ -1073,9 +1104,17 @@ async def _create_channel(db: AsyncSession, current_admin: Admin, req: ChannelCr
     exists = (await db.execute(select(Channel).where(Channel.channel_name == channel_name))).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=400, detail="渠道名称已存在")
+    invite_code = (req.invite_code or "").strip().lower()
+    if not invite_code:
+        invite_code = await _generate_unique_channel_invite_code(db, 16)
+    else:
+        invite_code_exists = (await db.execute(select(Channel).where(Channel.invite_code == invite_code))).scalar_one_or_none()
+        if invite_code_exists:
+            raise HTTPException(status_code=400, detail="渠道邀请码已存在")
     advisor = await _resolve_business_advisor_by_id(db, req.admin_user_id)
     channel = Channel(
         channel_name=channel_name,
+        invite_code=invite_code,
         sales_name=sales_name,
         status=normalize_channel_status(req.status),
         note=(req.note or "").strip() or None,
@@ -1110,6 +1149,9 @@ async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: in
     if "admin_user_id" in payload and payload["admin_user_id"] is not None:
         advisor = await _resolve_business_advisor_by_id(db, int(payload["admin_user_id"]))
         channel.admin_user_id = advisor.id
+    if not (channel.invite_code or "").strip():
+        # 兼容历史空邀请码数据：编辑保存时自动补齐，避免专属链接不可用
+        channel.invite_code = await _generate_unique_channel_invite_code(db, 16)
     await db.commit()
     await db.refresh(channel)
     advisor = None

@@ -11,6 +11,7 @@ class Channel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     channel_name = Column(String(32), unique=True, index=True, nullable=False)
+    invite_code = Column(String(32), unique=True, index=True, nullable=False, default="", comment="渠道邀请码")
     sales_name = Column(String(50), nullable=False)
     status = Column(String(20), default="ACTIVE", index=True, nullable=False)
     note = Column(String(255), nullable=True)
