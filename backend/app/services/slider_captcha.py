@@ -11,6 +11,7 @@ from typing import Dict, Optional, Tuple
 class _ChallengeRecord:
     expected_x: int
     created_at: float
+    fail_count: int
 
 
 @dataclass
@@ -28,6 +29,7 @@ class SliderCaptchaManager:
         tolerance_px: int,
         min_elapsed_ms: int,
         challenge_expire_seconds: int,
+        challenge_max_fails: int,
         ticket_expire_seconds: int,
         min_width: int,
         max_width: int,
@@ -38,6 +40,7 @@ class SliderCaptchaManager:
         self.tolerance_px = max(int(tolerance_px), 1)
         self.min_elapsed_ms = max(int(min_elapsed_ms), 300)
         self.challenge_expire_seconds = max(int(challenge_expire_seconds), 30)
+        self.challenge_max_fails = max(int(challenge_max_fails), 1)
         self.ticket_expire_seconds = max(int(ticket_expire_seconds), 30)
         self.min_width = max(int(min_width), 200)
         self.max_width = max(int(max_width), self.min_width)
@@ -134,7 +137,7 @@ class SliderCaptchaManager:
             expected_x = random.randint(expected_x_min, max(expected_x_min, expected_x_max))
             expected_y = (self.height - self.block_size) // 2
             captcha_id = uuid.uuid4().hex
-            self._challenges[captcha_id] = _ChallengeRecord(expected_x=expected_x, created_at=now)
+            self._challenges[captcha_id] = _ChallengeRecord(expected_x=expected_x, created_at=now, fail_count=0)
             bg_svg, slider_svg = self._build_svg_pair(effective_width, expected_x, expected_y)
             return {
                 "captcha_id": captcha_id,
@@ -152,16 +155,25 @@ class SliderCaptchaManager:
         async with lock:
             now = self._now()
             self._cleanup(now)
-            record = self._challenges.pop(captcha_id, None)
+            record = self._challenges.get(captcha_id)
             if record is None:
                 raise ValueError("图形验证码已过期，请刷新重试")
             if int(elapsed_ms) < self.min_elapsed_ms:
+                record.fail_count += 1
+                if record.fail_count >= self.challenge_max_fails:
+                    self._challenges.pop(captcha_id, None)
+                    raise ValueError("图形验证码已失效，请刷新重试")
                 raise ValueError("滑动过快，请重新验证")
             if abs(float(offset_x) - float(record.expected_x)) > float(self.tolerance_px):
+                record.fail_count += 1
+                if record.fail_count >= self.challenge_max_fails:
+                    self._challenges.pop(captcha_id, None)
+                    raise ValueError("图形验证码已失效，请刷新重试")
                 raise ValueError("滑块位置不正确，请重试")
 
             ticket = uuid.uuid4().hex
             self._tickets[ticket] = _TicketRecord(phone=phone, expires_at=now + self.ticket_expire_seconds)
+            self._challenges.pop(captcha_id, None)
             return ticket
 
     async def consume_ticket(self, phone: str, ticket: str) -> bool:

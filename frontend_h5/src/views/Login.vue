@@ -1,5 +1,5 @@
 <template>
-  <div class="login-container">
+  <div class="login-container" ref="loginContainerRef">
     <div class="login-stage" ref="loginStageRef">
       <section class="login-main">
         <van-form @submit="onSubmit" class="login-form">
@@ -54,8 +54,9 @@
       </div>
     </div>
 
-    <van-popup v-model:show="captchaVisible" round position="bottom" :style="{ padding: '16px', minHeight: '260px' }">
-      <div class="captcha-box" ref="captchaContainerRef">
+    <div v-if="captchaVisible" class="captcha-layer" @click.self="captchaVisible = false">
+      <div class="captcha-popup">
+        <div class="captcha-box" ref="captchaContainerRef">
         <div class="captcha-title">请完成滑块验证</div>
         <div class="captcha-bg-wrap" v-if="captcha.backgroundImage" :style="{ width: `${captcha.width}px`, height: `${captcha.height}px` }">
           <img class="captcha-bg" :src="captcha.backgroundImage" alt="captcha-background" />
@@ -70,10 +71,11 @@
           />
         </div>
         <div class="captcha-actions">
-          <van-button size="small" @click="refreshCaptcha">刷新</van-button>
+          <button type="button" class="captcha-refresh-link" @click="refreshCaptcha">刷新</button>
         </div>
       </div>
-    </van-popup>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -96,6 +98,7 @@ const cooldownSeconds = ref(0);
 const captchaVisible = ref(false);
 const captchaVerifying = ref(false);
 const captchaContainerRef = ref(null);
+const loginContainerRef = ref(null);
 const loginStageRef = ref(null);
 const sliderPieceRef = ref(null);
 const sliderOffsetX = ref(0);
@@ -196,7 +199,7 @@ const verifyCaptchaAndSendSms = async () => {
     sliderMoveStartedAt.value = 0;
     sliderMoveElapsedMs.value = 0;
     const detail = String(error?.response?.data?.detail || '');
-    if (detail.includes('过期')) {
+    if (detail.includes('过期') || detail.includes('失效')) {
       await refreshCaptcha();
     }
   } finally {
@@ -305,6 +308,7 @@ onBeforeUnmount(() => {
   min-height: 100vh;
   display: flex;
   justify-content: center;
+  position: relative;
   background: var(--app-gradient);
   padding: 18px 20px 28px;
 }
@@ -345,14 +349,35 @@ onBeforeUnmount(() => {
 
 .captcha-box {
   width: 100%;
-  max-width: 460px;
+  max-width: 420px;
   margin: 0 auto;
+}
+
+.captcha-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(8, 18, 34, 0.2);
+  padding: 0;
+}
+
+.captcha-popup {
+  width: 100%;
+  max-width: none;
+  background: rgba(236, 244, 255, 0.98);
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  box-shadow: 0 12px 28px rgba(21, 42, 78, 0.18);
 }
 
 .captcha-title {
   font-size: 15px;
-  color: #20324d;
+  color: var(--app-primary);
   margin-bottom: 10px;
+  font-weight: 600;
 }
 
 .captcha-bg-wrap {
@@ -375,8 +400,18 @@ onBeforeUnmount(() => {
 
 .captcha-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-top: 10px;
+}
+
+.captcha-refresh-link {
+  border: none;
+  background: transparent;
+  color: var(--app-primary);
+  font-size: 13px;
+  padding: 0;
+  line-height: 1.4;
+  cursor: pointer;
 }
 
 .logo-box {

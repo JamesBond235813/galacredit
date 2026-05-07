@@ -58,6 +58,7 @@ slider_captcha_manager = SliderCaptchaManager(
     tolerance_px=settings.CAPTCHA_SLIDER_TOLERANCE_PX,
     min_elapsed_ms=settings.CAPTCHA_SLIDER_MIN_ELAPSED_MS,
     challenge_expire_seconds=settings.CAPTCHA_SLIDER_CHALLENGE_EXPIRE_SECONDS,
+    challenge_max_fails=settings.CAPTCHA_SLIDER_CHALLENGE_MAX_FAILS,
     ticket_expire_seconds=settings.CAPTCHA_SLIDER_TICKET_EXPIRE_SECONDS,
     min_width=settings.CAPTCHA_SLIDER_MIN_WIDTH,
     max_width=settings.CAPTCHA_SLIDER_MAX_WIDTH,

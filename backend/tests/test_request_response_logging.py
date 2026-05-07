@@ -34,6 +34,14 @@ def _build_app():
     async def echo_options():
         return {"ok": True}
 
+    @app.post("/api/auth/slider-captcha/create")
+    async def slider_create():
+        return {
+            "captcha_id": "abc",
+            "background_image": "data:image/svg+xml;base64,xxx",
+            "slider_image": "data:image/svg+xml;base64,yyy",
+        }
+
     return app
 
 
@@ -82,3 +90,16 @@ def test_options_request_should_not_print_request_or_response_log(caplog):
     response_logs = [r.message for r in caplog.records if "response_data" in r.message]
     assert all("/echo" not in item for item in request_logs)
     assert all("/echo" not in item for item in response_logs)
+
+
+def test_slider_captcha_response_should_not_print_response_log(caplog):
+    caplog.set_level(logging.INFO)
+    client = TestClient(_build_app())
+
+    response = client.post("/api/auth/slider-captcha/create")
+    assert response.status_code == 200
+
+    request_logs = [r.message for r in caplog.records if "request_data" in r.message]
+    response_logs = [r.message for r in caplog.records if "response_data" in r.message]
+    assert any("/api/auth/slider-captcha/create" in item for item in request_logs)
+    assert all("/api/auth/slider-captcha/create" not in item for item in response_logs)

@@ -40,6 +40,10 @@ def _is_download_response(content_type: str, content_disposition: str) -> bool:
         or "application/vnd.openxmlformats-officedocument" in lower_type
     )
 
+def _should_skip_response_body_log(path: str) -> bool:
+    normalized = (path or "").strip()
+    return normalized.startswith("/api/auth/slider-captcha/")
+
 
 class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -77,8 +81,11 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
             response_headers = dict(response.headers)
             response_content_type = response_headers.get("content-type", "")
             content_disposition = response_headers.get("content-disposition", "")
+            skip_response_log = _should_skip_response_body_log(request.url.path)
 
-            if _is_download_response(response_content_type, content_disposition):
+            if skip_response_log:
+                response_body = "[SKIPPED]"
+            elif _is_download_response(response_content_type, content_disposition):
                 response_body = "[DOWNLOAD FILE CONTENT]"
             else:
                 response_chunks = [chunk async for chunk in response.body_iterator]
@@ -92,7 +99,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
                     background=response.background,
                 )
 
-            if should_log:
+            if should_log and not skip_response_log:
                 response_logger.info(
                     "response_data method=%s url=%s status=%s headers=%s body=%s",
                     request.method,
