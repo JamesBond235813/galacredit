@@ -68,7 +68,7 @@ async def get_or_create_risk_report_async(
     if cached_report:
         return cached_report
 
-    report_payload, source = fetch_risk_report_payload(name=name, id_card=id_card, phone=phone)
+    report_payload, source = await fetch_risk_report_payload(name=name, id_card=id_card, phone=phone)
     now = datetime.now()
     report = RiskControlReport(
         name=name,
@@ -85,9 +85,9 @@ async def get_or_create_risk_report_async(
     return report
 
 
-def fetch_risk_report_payload(*, name: str, id_card: str, phone: str) -> tuple[Dict[str, Any], str]:
+async def fetch_risk_report_payload(*, name: str, id_card: str, phone: str) -> tuple[Dict[str, Any], str]:
     if settings.RISK_PANORAMA_ENABLED and _has_panorama_credentials():
-        return asyncio.run(fetch_panorama_report_async(name=name, id_card=id_card, phone=phone)), RISK_SOURCE_PANORAMA
+        return await fetch_panorama_report_async(name=name, id_card=id_card, phone=phone), RISK_SOURCE_PANORAMA
     return build_mock_risk_report(), RISK_SOURCE_MOCK
 
 
