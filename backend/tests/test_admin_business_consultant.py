@@ -83,7 +83,7 @@ async def test_resolve_business_advisor_by_id_should_reject_admin_only_role():
     assert "业务顾问" in str(exc_info.value.detail)
 
 
-def test_business_consultant_role_should_map_to_users_page_only():
+def test_business_consultant_role_should_map_to_users_and_exclusive_links_pages():
     permissions = resolve_permissions_from_roles(["BUSINESS_CONSULTANT"])
 
-    assert permissions == ["users"]
+    assert permissions == ["users", "exclusive-links"]

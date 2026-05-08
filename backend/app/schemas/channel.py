@@ -118,6 +118,11 @@ class PaginatedChannelResponse(BaseModel):
     items: List[ChannelItemResponse]
 
 
+class ExclusiveLinksResponse(BaseModel):
+    channel_link_prefix: str
+    items: List[ChannelItemResponse]
+
+
 class BusinessAdvisorItemResponse(BaseModel):
     id: int
     username: str

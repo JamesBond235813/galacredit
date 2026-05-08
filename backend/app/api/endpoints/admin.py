@@ -39,6 +39,7 @@ from app.schemas.admin import (
 from app.schemas.channel import (
     BusinessAdvisorItemResponse,
     ChannelCreateRequest,
+    ExclusiveLinksResponse,
     ChannelUpdateRequest,
     PaginatedChannelResponse,
 )
@@ -124,7 +125,7 @@ from app.services.risk_report import (
 )
 from app.services.loan_ws_notify import notify_loan_snapshot_changed
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_risk_report, _get_channels, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_risk_report, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
 router = APIRouter()
 
 
@@ -767,6 +768,14 @@ async def get_channels(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     return await _get_channels(db, current_admin, keyword, status, skip, limit)
+
+
+@router.get("/exclusive-links", response_model=ExclusiveLinksResponse)
+async def get_exclusive_links(
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_exclusive_links(db, current_admin)
 
 
 

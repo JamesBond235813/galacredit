@@ -9,7 +9,7 @@ import xlrd
 from fastapi import Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -1072,6 +1072,32 @@ async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optiona
         "channel_link_prefix": settings.CHANNEL_LINK_PREFIX,
         "summary": build_channel_summary(channel_items),
         "items": channel_items[skip : skip + limit],
+    }
+
+
+async def _get_exclusive_links(db: AsyncSession, current_admin: Admin):
+    """获取当前业务顾问可见的专属链接列表。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :return: 专属链接列表（最多 50 条，启用中优先）
+    """
+    ensure_admin_page_permission(current_admin, "exclusive-links")
+    stmt = (
+        select(Channel)
+        .options(joinedload(Channel.users).joinedload(User.loans))
+        .where(Channel.admin_user_id == current_admin.id)
+        .order_by(
+            case((Channel.status == "ACTIVE", 0), else_=1),
+            Channel.created_at.desc(),
+        )
+        .limit(50)
+    )
+    channels = (await db.execute(stmt)).unique().scalars().all()
+    channel_items = [serialize_channel(channel, current_admin) for channel in channels]
+    return {
+        "channel_link_prefix": settings.CHANNEL_LINK_PREFIX,
+        "items": channel_items,
     }
 
 

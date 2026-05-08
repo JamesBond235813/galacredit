@@ -8,6 +8,7 @@ export const getAdminStats = () => request.get('/admin/stats');
 export const getRepaymentStats = () => request.get('/admin/repayment-stats');
 export const getProjectCashInsights = () => request.get('/admin/project-cash-insights');
 export const getChannels = (params) => request.get('/admin/channels', { params });
+export const getExclusiveLinks = () => request.get('/admin/exclusive-links');
 export const createChannel = (data) => request.post('/admin/channels', data);
 export const updateChannel = (id, data) => request.patch(`/admin/channels/${id}`, data);
 export const getProducts = (params) => request.get('/admin/products', { params });

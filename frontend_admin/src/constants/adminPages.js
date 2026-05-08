@@ -9,6 +9,7 @@ export const ADMIN_PAGE_OPTIONS = [
   { key: 'products', label: '商品管理', route: '/products', iconKey: 'products' },
   { key: 'ecard-pool', label: '卡池管理', route: '/ecard-pool', iconKey: 'ecardPool' },
   { key: 'channels', label: '渠道管理', route: '/channels', iconKey: 'channels' },
+  { key: 'exclusive-links', label: '专属链接', route: '/exclusive-links', iconKey: 'channels' },
   { key: 'admin-users', label: '后台用户', route: '/admin-users', iconKey: 'adminUsers' }
 ];
 
@@ -20,7 +21,7 @@ export const ADMIN_ROLE_OPTIONS = [
   { key: 'REVIEW', label: '审核', description: '用户档案、申请审批、还款管理' },
   { key: 'FINANCE', label: '财务', description: '待发卡、财务平账、商品管理、卡池管理' },
   { key: 'COLLECTION', label: '催收', description: '仅催收管理' },
-  { key: 'BUSINESS_CONSULTANT', label: '业务顾问', description: '仅用户档案页面' }
+  { key: 'BUSINESS_CONSULTANT', label: '业务顾问', description: '用户档案、专属链接页面' }
 ];
 
 export const ADMIN_ROLE_PERMISSION_MAP = {
@@ -28,7 +29,7 @@ export const ADMIN_ROLE_PERMISSION_MAP = {
   REVIEW: ['users', 'applications', 'repayments'],
   FINANCE: ['disbursements', 'financials', 'products', 'ecard-pool'],
   COLLECTION: ['collections'],
-  BUSINESS_CONSULTANT: ['users']
+  BUSINESS_CONSULTANT: ['users', 'exclusive-links']
 };
 
 export const normalizeAdminRoles = (roles) => {

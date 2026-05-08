@@ -19,7 +19,6 @@
         <el-form-item>
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
-          <el-button plain @click="openCreateDrawer">新增用户</el-button>
         </el-form-item>
       </el-form>
     </el-card>

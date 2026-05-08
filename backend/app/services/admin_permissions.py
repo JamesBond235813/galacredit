@@ -13,6 +13,7 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "products", "label": "商品管理", "route": "/products"},
     {"key": "ecard-pool", "label": "卡池管理", "route": "/ecard-pool"},
     {"key": "channels", "label": "渠道管理", "route": "/channels"},
+    {"key": "exclusive-links", "label": "专属链接", "route": "/exclusive-links"},
     {"key": "admin-users", "label": "后台用户", "route": "/admin-users"},
 ]
 
@@ -33,7 +34,7 @@ ADMIN_ROLE_PERMISSION_MAP = {
     "REVIEW": ["users", "applications", "repayments"],
     "FINANCE": ["disbursements", "financials", "products", "ecard-pool"],
     "COLLECTION": ["collections"],
-    "BUSINESS_CONSULTANT": ["users"],
+    "BUSINESS_CONSULTANT": ["users", "exclusive-links"],
 }
 
 ADMIN_ROLE_LABEL_MAP = {item["key"]: item["label"] for item in ADMIN_ROLE_OPTIONS}
@@ -117,7 +118,7 @@ def resolve_admin_permissions(admin) -> List[str]:
     roles = parse_admin_roles(getattr(admin, "roles", None))
     # 业务顾问账号强制只允许访问用户档案页，避免被显式权限放大。
     if roles == ["BUSINESS_CONSULTANT"]:
-        return ["users"]
+        return ["users", "exclusive-links"]
     role_permissions = resolve_permissions_from_roles(roles)
 
     raw_permissions = getattr(admin, "permissions", None)

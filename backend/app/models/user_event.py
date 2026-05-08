@@ -17,6 +17,18 @@ class UserEvent(Base):
     event_type = Column(String(50), nullable=False, index=True)
     title = Column(String(100), nullable=False)
     detail = Column(Text, nullable=True)
+    ip = Column(String(32), nullable=False, default="")
+    ip_country = Column(String(32), nullable=False, default="")
+    ip_province = Column(String(32), nullable=False, default="")
+    ip_city = Column(String(32), nullable=False, default="")
+    ip_district = Column(String(32), nullable=False, default="")
+    ip_detail = Column(String(32), nullable=False, default="")
+    lon_lat = Column(String(32), nullable=False, default="")
+    lon_lat_country = Column(String(32), nullable=False, default="")
+    lon_lat_province = Column(String(32), nullable=False, default="")
+    lon_lat_city = Column(String(32), nullable=False, default="")
+    lon_lat_district = Column(String(32), nullable=False, default="")
+    lon_lat_detail = Column(String(255), nullable=False, default="")
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     user = relationship(

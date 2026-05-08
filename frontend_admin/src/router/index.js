@@ -10,6 +10,7 @@ const Overview = () => import('../views/Overview.vue');
 const Applications = () => import('../views/Applications.vue');
 const Users = () => import('../views/Users.vue');
 const Channels = () => import('../views/Channels.vue');
+const ExclusiveLinks = () => import('../views/ExclusiveLinks.vue');
 const Disbursements = () => import('../views/Disbursements.vue');
 const Repayments = () => import('../views/Repayments.vue');
 const Collections = () => import('../views/Collections.vue');
@@ -113,6 +114,15 @@ const routes = [
           title: '渠道管理',
           description: '管理业务员专属链接并查看申请、放款、逾期等渠道业绩统计',
           permission: 'channels'
+        }
+      },
+      {
+        path: 'exclusive-links',
+        component: ExclusiveLinks,
+        meta: {
+          title: '专属链接',
+          description: '查看归属于当前业务顾问的渠道专属链接列表',
+          permission: 'exclusive-links'
         }
       },
       {
