@@ -10,6 +10,7 @@ class AdminRiskReportRequest(BaseModel):
 
 class RiskReportResponse(BaseModel):
     id: int
+    user_id: Optional[int] = None
     name: str
     id_card: str
     phone: str

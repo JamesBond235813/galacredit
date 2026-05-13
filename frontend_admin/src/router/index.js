@@ -15,6 +15,8 @@ const Disbursements = () => import('../views/Disbursements.vue');
 const Repayments = () => import('../views/Repayments.vue');
 const Collections = () => import('../views/Collections.vue');
 const FinancialReconciliation = () => import('../views/FinancialReconciliation.vue');
+const Blacklist = () => import('../views/Blacklist.vue');
+const OverdueConfig = () => import('../views/OverdueConfig.vue');
 const Products = () => import('../views/Products.vue');
 const EcardPool = () => import('../views/EcardPool.vue');
 const AdminUsers = () => import('../views/AdminUsers.vue');
@@ -87,6 +89,24 @@ const routes = [
           title: '财务平账',
           description: '对未结清账单登记收款、减免金额，并自动完成平账结清',
           permission: 'financials'
+        }
+      },
+      {
+        path: 'blacklist',
+        component: Blacklist,
+        meta: {
+          title: '黑名单',
+          description: '展示与上传黑名单，支持手机号和身份证号明文或MD5',
+          permission: 'blacklist'
+        }
+      },
+      {
+        path: 'overdue-config',
+        component: OverdueConfig,
+        meta: {
+          title: '逾期配置',
+          description: '配置逾期费用标准，按生效日向后应用，不改变历史记录',
+          permission: 'overdue-config'
         }
       },
       {

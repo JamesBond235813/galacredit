@@ -6,11 +6,18 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
-from alibabacloud_credentials.client import Client as CredentialClient
-from alibabacloud_dysmsapi20170525 import models as dysmsapi_20170525_models
-from alibabacloud_dysmsapi20170525.client import Client as Dysmsapi20170525Client
-from alibabacloud_tea_openapi import models as open_api_models
-from alibabacloud_tea_util import models as util_models
+try:
+    from alibabacloud_credentials.client import Client as CredentialClient
+    from alibabacloud_dysmsapi20170525 import models as dysmsapi_20170525_models
+    from alibabacloud_dysmsapi20170525.client import Client as Dysmsapi20170525Client
+    from alibabacloud_tea_openapi import models as open_api_models
+    from alibabacloud_tea_util import models as util_models
+except ImportError:
+    CredentialClient = None
+    dysmsapi_20170525_models = None
+    Dysmsapi20170525Client = None
+    open_api_models = None
+    util_models = None
 
 from app.core.config import settings
 
@@ -32,6 +39,8 @@ class AliSms:
 
         :return: 阿里云短信客户端
         """
+        if not all([CredentialClient, Dysmsapi20170525Client, open_api_models, util_models]):
+            raise RuntimeError("阿里云短信SDK未安装")
         credential = CredentialClient()
         config = open_api_models.Config(
             access_key_id=settings.ALI_SMS_ACC_KEY,

@@ -18,7 +18,15 @@ class UserUpdate(BaseModel):
     id_card_num: Optional[str] = None
     id_address: Optional[str] = None
     id_expiry: Optional[str] = None
+    id_card_front_image_url: Optional[str] = None
+    id_card_back_image_url: Optional[str] = None
+    face_image_url: Optional[str] = None
     approved_limit: Optional[int] = None
+    available_credit_limit: float = 0
+    overdue_credit_locked: bool = False
+    blacklist_hit: bool = False
+    blacklist_reason: Optional[str] = None
+    blacklist_checked_at: Optional[datetime] = None
 
 
 class UserResponse(UserBase):
@@ -27,7 +35,12 @@ class UserResponse(UserBase):
     id_card_num: Optional[str] = None
     id_address: Optional[str] = None
     id_expiry: Optional[str] = None
+    id_card_front_image_url: Optional[str] = None
+    id_card_back_image_url: Optional[str] = None
+    face_image_url: Optional[str] = None
     approved_limit: Optional[int] = None
+    available_credit_limit: float = 0
+    overdue_credit_locked: bool = False
     emergency_contact1_name: Optional[str] = None
     emergency_contact1_relation: Optional[str] = None
     emergency_contact1_phone: Optional[str] = None
@@ -44,6 +57,9 @@ class UserResponse(UserBase):
     location_street: Optional[str] = None
     location_source: Optional[str] = None
     location_updated_at: Optional[datetime] = None
+    location_risk_blocked: bool = False
+    location_risk_reason: Optional[str] = None
+    location_risk_at: Optional[datetime] = None
     face_auth_status: Optional[str] = None
     real_name_status: Optional[str] = None
     face_auth_at: Optional[datetime] = None
@@ -54,6 +70,13 @@ class UserResponse(UserBase):
     source_channel_sales_name: Optional[str] = None
     channel_bound_at: Optional[datetime] = None
     last_channel_visit_at: Optional[datetime] = None
+    phone_reclaimed: bool = False
+    previous_user_id: Optional[int] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: Optional[str] = None
+    access_token_expires_at: Optional[datetime] = None
+    refresh_token_expires_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
@@ -77,12 +100,18 @@ class LoginRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
     password: str = Field(..., min_length=6, max_length=50)
     channel_name: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy: Optional[float] = None
 
 
 class SmsLoginRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
     sms_code: str = Field(..., pattern=r"^\d{6}$")
     invite_code: Optional[str] = Field(None, pattern=r"^[a-z0-9]{16}$")
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy: Optional[float] = None
 
 
 class SliderCaptchaCreateRequest(BaseModel):
@@ -152,6 +181,17 @@ class UserEventResponse(BaseModel):
     event_type: str
     title: str
     detail: Optional[str] = None
+    ip: str = ""
+    ip_country: str = ""
+    ip_province: str = ""
+    ip_city: str = ""
+    ip_district: str = ""
+    ip_detail: str = ""
+    lon_lat: str = ""
+    lon_lat_province: str = ""
+    lon_lat_city: str = ""
+    lon_lat_district: str = ""
+    lon_lat_detail: str = ""
     created_at: datetime
 
 
@@ -178,6 +218,21 @@ class UserLoanSnapshotResponse(BaseModel):
     collection_count: int
     last_collection_at: Optional[datetime] = None
     collection_note: Optional[str] = None
+    risk_report_checked_at: Optional[datetime] = None
+    risk_report_checked_by: Optional[str] = None
+    approval_discount_amount: float = 0
+    order_discount_amount: float = 0
+    card_reissue_closed: bool = False
+    extension_count: int = 0
+    extension_type: Optional[str] = None
+    extension_note: Optional[str] = None
+    overdue_hidden: bool = False
+    available_credit_limit: float = 0
+    overdue_credit_locked: bool = False
+    extension_source_loan_id: Optional[int] = None
+    extension_used_at: Optional[datetime] = None
+    is_extension_fee_order: bool = False
+    fee_extension_ready: bool = False
     relend_count: int = 0
     relend_label: str = "初借"
     latest_settled_loan: Optional[LoanHistoryResponse] = None
@@ -193,9 +248,17 @@ class UserListItemResponse(BaseModel):
     phone: str
     name: Optional[str] = None
     id_card_num: Optional[str] = None
+    id_card_front_image_url: Optional[str] = None
+    id_card_back_image_url: Optional[str] = None
+    face_image_url: Optional[str] = None
     face_auth_status: Optional[str] = None
     real_name_status: Optional[str] = None
     approved_limit: Optional[int] = None
+    available_credit_limit: float = 0
+    overdue_credit_locked: bool = False
+    blacklist_hit: bool = False
+    blacklist_reason: Optional[str] = None
+    blacklist_checked_at: Optional[datetime] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None
     application_submitted_at: Optional[datetime] = None
@@ -209,6 +272,7 @@ class UserListItemResponse(BaseModel):
     current_interest_amount: Optional[float] = None
     current_guarantee_fee_amount: Optional[float] = None
     current_penalty_amount: Optional[float] = None
+    current_blacklist_hit: bool = False
     first_disbursed_at: Optional[datetime] = None
     first_deal_amount: Optional[float] = None
     latest_disbursed_at: Optional[datetime] = None

@@ -13,6 +13,15 @@
       </div>
 
       <template v-else>
+        <section v-if="blacklistHit || loanStatus === 'CARD_REJECTED'" class="home-hero page-card blocked-card">
+          <div class="status-icon">
+            <van-icon name="warning-o" />
+          </div>
+          <h1>{{ blacklistHit ? '对不起，您当前无可用信用额度' : '抱歉 您当前无法使用信用购物额度' }}</h1>
+          <p>如需帮助，请联系在线客服处理。</p>
+        </section>
+
+        <template v-else>
         <section class="home-hero page-card">
           <div class="hero-tags">
             <span class="hero-tag"><van-icon name="gift-o" /> 京东E卡</span>
@@ -63,8 +72,34 @@
                 <van-icon name="orders-o" />
               </span>
             </button>
+
+            <button v-if="loanStatus === 'REVIEWING'" type="button" class="service-card" @click="router.push('/ocr')">
+              <span class="service-copy">
+                <span class="service-name">更新实名信息</span>
+                <span class="service-desc">手机号本人可重新实名</span>
+              </span>
+              <span class="service-icon service-icon-soft">
+                <van-icon name="idcard" />
+              </span>
+            </button>
+
+            <button
+              v-if="['DISBURSED', 'OVERDUE'].includes(loanStatus) && currentLoanId"
+              type="button"
+              class="service-card"
+              @click="router.push({ path: '/withdraw', query: { extension_source_loan_id: String(currentLoanId) } })"
+            >
+              <span class="service-copy">
+                <span class="service-name">展期权益包</span>
+                <span class="service-desc">使用可用额度下单纯权益商品</span>
+              </span>
+              <span class="service-icon service-icon-soft">
+                <van-icon name="coupon-o" />
+              </span>
+            </button>
           </div>
         </section>
+        </template>
       </template>
     </div>
   </div>
@@ -80,7 +115,9 @@ const router = useRouter();
 const loading = ref(true);
 const loanStatus = ref('INIT');
 const creditLimit = ref(0);
+const currentLoanId = ref(null);
 const realNameStatus = ref('UNVERIFIED');
+const blacklistHit = ref(false);
 let loanSnapshotSubscriber = null;
 
 const limitTitle = computed(() => {
@@ -131,14 +168,16 @@ const actionText = computed(() => {
     WITHDRAWING: '待发卡进度',
     DISBURSED: '我的账单',
     SETTLED: '立即申请',
-    OVERDUE: '处理逾期账单'
+    OVERDUE: '处理逾期账单',
+    CARD_REJECTED: '暂不可用'
   };
   return map[loanStatus.value] || '处理中';
 });
 
 const applyLoanSnapshot = (snapshot) => {
   loanStatus.value = snapshot?.status || 'INIT';
-  creditLimit.value = snapshot?.credit_limit || 0;
+  currentLoanId.value = snapshot?.id || null;
+  creditLimit.value = snapshot?.available_credit_limit ?? snapshot?.credit_limit ?? 0;
   loading.value = false;
 };
 
@@ -146,17 +185,13 @@ const onActionClick = () => {
   switch (loanStatus.value) {
     case 'INIT':
     case 'SETTLED':
-      if (realNameStatus.value === 'AUTHED') {
-        router.push('/application-form');
-      } else {
-        router.push('/ocr');
-      }
+      router.push('/ocr');
       break;
     case 'REVIEWING':
       router.push('/review');
       break;
     case 'REJECTED':
-      router.push('/application-form');
+      router.push('/ocr');
       break;
     case 'APPROVED':
       router.push('/withdraw');
@@ -171,6 +206,7 @@ onMounted(() => {
   getUserInfo()
     .then((user) => {
       realNameStatus.value = user?.real_name_status || 'UNVERIFIED';
+      blacklistHit.value = Boolean(user?.blacklist_hit);
     })
     .catch(() => {
       realNameStatus.value = 'UNVERIFIED';
@@ -230,6 +266,26 @@ onBeforeUnmount(() => {
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.22), transparent 34%),
     linear-gradient(135deg, rgba(44, 95, 183, 0.94) 0%, rgba(47, 126, 247, 0.92) 58%, rgba(48, 215, 169, 0.84) 100%);
   color: #ffffff;
+}
+
+.blocked-card {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.blocked-card h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.blocked-card p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .hero-tags {
@@ -337,6 +393,11 @@ onBeforeUnmount(() => {
 .service-icon-warm {
   background: rgba(255, 155, 61, 0.12);
   color: var(--app-warning);
+}
+
+.service-icon-soft {
+  background: rgba(48, 215, 169, 0.14);
+  color: #0c9f7b;
 }
 
 .service-name {

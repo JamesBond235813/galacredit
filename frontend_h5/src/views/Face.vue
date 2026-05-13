@@ -388,7 +388,8 @@ const nextStep = () => {
 };
 
 onMounted(() => {
-  continueIfAlreadyPassed(true);
+  success.value = false;
+  redirecting.value = false;
 });
 
 onBeforeUnmount(() => {

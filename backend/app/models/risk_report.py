@@ -9,6 +9,7 @@ class RiskControlReport(Base):
     __tablename__ = "risk_control_report"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
     name = Column(String(255), nullable=True, index=True)
     id_card = Column(String(255), nullable=True, index=True)
     phone = Column(String(255), nullable=True, index=True)

@@ -77,10 +77,6 @@
               <p>{{ rightsContent }}</p>
             </div>
             <div class="rights-service-item">
-              <span>服务商</span>
-              <p>广东省韶关市丹霞山旅行社</p>
-            </div>
-            <div class="rights-service-item">
               <span>联系电话</span>
               <p><a href="tel:13800138000">13800138000</a></p>
             </div>

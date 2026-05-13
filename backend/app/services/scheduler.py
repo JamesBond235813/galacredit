@@ -6,8 +6,10 @@ from app.core.database import AsyncSessionLocal
 from app.models.loan import Loan
 from app.models.user import User
 from app.services.audit import log_user_event_async
+from app.services.blacklist_service import blacklist_user
 from app.services.loan_assignment import assign_collection_admins_for_overdue_loans_async
 from app.services.loan_ledger import ensure_installment_records_async, sync_loan_repayment_state
+from app.services.overdue_fee_config import resolve_daily_penalty_amount
 
 scheduler = AsyncIOScheduler()
 LOAN_SCAN_PAGE_SIZE = 200
@@ -56,6 +58,17 @@ async def process_overdue_loans():
 
                 loan_owner = owners_by_id.get(int(loan.user_id)) if getattr(loan, "user_id", None) else None
                 if previous_status != "OVERDUE" and loan.status == "OVERDUE" and loan_owner:
+                    await blacklist_user(
+                        db,
+                        loan_owner,
+                        source="OVERDUE",
+                        reason="订单逾期自动进入黑名单",
+                        created_by="SYSTEM",
+                    )
+                    loan.approved_credit_limit = 0
+                    loan_owner.approved_limit = 0
+                    loan_owner.available_credit_limit = 0
+                    loan_owner.overdue_credit_locked = True
                     await log_user_event_async(
                         db,
                         user=loan_owner,
@@ -68,7 +81,8 @@ async def process_overdue_loans():
 
                 if loan.status == "OVERDUE" and overdue_base_date:
                     days_overdue = max((now.date() - overdue_base_date.date()).days, 1)
-                    loan.penalty_amount = float(days_overdue * 10)
+                    daily_penalty_amount = await resolve_daily_penalty_amount(db, overdue_base_date.date())
+                    loan.penalty_amount = float(days_overdue * daily_penalty_amount)
 
             last_loan_id = active_loans[-1].id
 

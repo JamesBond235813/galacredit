@@ -14,15 +14,80 @@ request_logger = logging.getLogger("app.request")
 response_logger = logging.getLogger("app.response")
 error_logger = logging.getLogger("app.error")
 
+_SENSITIVE_KEYS = {
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "token",
+    "password",
+    "code",
+    "sms_code",
+    "captcha_ticket",
+    "id_card_num",
+    "idcard",
+    "id_card",
+    "card_no",
+    "card_secret",
+    "secret",
+    "app_secret",
+    "face_image",
+    "front_image",
+    "back_image",
+}
+_HEADER_ALLOWLIST = {
+    "host",
+    "user-agent",
+    "content-type",
+    "content-length",
+    "x-forwarded-for",
+    "x-real-ip",
+    "x-trace-id",
+    "client-id",
+}
+
+
+def _mask_value(value: Any) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= 4:
+        return "***"
+    return f"{text[:2]}***{text[-2:]}"
+
+
+def _redact_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        redacted = {}
+        for key, value in payload.items():
+            lower_key = str(key).lower()
+            if any(sensitive in lower_key for sensitive in _SENSITIVE_KEYS):
+                redacted[key] = _mask_value(value)
+            else:
+                redacted[key] = _redact_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [_redact_payload(item) for item in payload]
+    return payload
+
+
+def _safe_headers(headers: dict) -> dict:
+    safe = {}
+    for key, value in headers.items():
+        lower_key = key.lower()
+        if lower_key in _HEADER_ALLOWLIST:
+            safe[key] = value
+        elif any(sensitive in lower_key for sensitive in _SENSITIVE_KEYS):
+            safe[key] = "***"
+    return safe
+
 
 def _safe_json_text(data: bytes) -> str:
     if not data:
         return ""
     try:
         parsed: Any = json.loads(data.decode("utf-8"))
+        parsed = _redact_payload(parsed)
         return json.dumps(parsed, ensure_ascii=False)
     except Exception:
-        return data.decode("utf-8", errors="replace")
+        return "[NON_JSON_BODY]"
 
 
 def _is_upload_request(content_type: str) -> bool:
@@ -54,9 +119,14 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
         started = time.perf_counter()
 
         body = await request.body()
-        headers = dict(request.headers)
+        headers = _safe_headers(dict(request.headers))
         content_type = headers.get("content-type", "")
-        request_body = "[UPLOAD FILE CONTENT]" if _is_upload_request(content_type) else _safe_json_text(body)
+        if not settings.LOG_REQUEST_BODY_ENABLED:
+            request_body = "[DISABLED]"
+        elif _is_upload_request(content_type):
+            request_body = "[UPLOAD FILE CONTENT]"
+        else:
+            request_body = _safe_json_text(body)
 
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
@@ -78,12 +148,15 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             response.headers[trace_header] = trace_id
 
-            response_headers = dict(response.headers)
+            raw_response_headers = dict(response.headers)
+            response_headers = _safe_headers(raw_response_headers)
             response_content_type = response_headers.get("content-type", "")
             content_disposition = response_headers.get("content-disposition", "")
             skip_response_log = _should_skip_response_body_log(request.url.path)
 
-            if skip_response_log:
+            if not settings.LOG_RESPONSE_BODY_ENABLED:
+                response_body = "[DISABLED]"
+            elif skip_response_log:
                 response_body = "[SKIPPED]"
             elif _is_download_response(response_content_type, content_disposition):
                 response_body = "[DOWNLOAD FILE CONTENT]"
@@ -94,7 +167,7 @@ class RequestResponseLoggingMiddleware(BaseHTTPMiddleware):
                 response = StarletteResponse(
                     content=response_raw,
                     status_code=response.status_code,
-                    headers=response_headers,
+                    headers=raw_response_headers,
                     media_type=response.media_type,
                     background=response.background,
                 )

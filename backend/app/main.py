@@ -4,22 +4,30 @@ import sys
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app import models  # noqa: F401
 from app.api.req_util import resolve_client_ip
 from app.api.router import router
+from app.core.access_audit import AccessAuditMiddleware
+from app.core.database import Base, engine, ensure_database_exists, run_async_database_bootstrap, sync_legacy_schema
 from app.core.config import ACTIVE_PROFILE, resolve_profile, settings
 from app.core.logging_config import build_uvicorn_log_config, configure_logging
 from app.core.request_logging import RequestResponseLoggingMiddleware
 from app.services.scheduler import start_scheduler
+from app.services.upload_storage import UPLOAD_ROOT
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    await run_async_database_bootstrap()
     start_scheduler()
     yield
 
 configure_logging()
+ensure_database_exists()
+Base.metadata.create_all(bind=engine)
+sync_legacy_schema()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -39,8 +47,11 @@ app.add_middleware(
 )
 
 app.add_middleware(RequestResponseLoggingMiddleware)
+app.add_middleware(AccessAuditMiddleware)
 
 app.include_router(router, prefix=settings.API_V1_STR)
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
 
 
 @app.get("/")

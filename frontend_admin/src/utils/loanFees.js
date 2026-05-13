@@ -1,6 +1,4 @@
 export const MONTHLY_INTEREST_RATE = 0.02;
-export const LOAN_PERIOD_DAYS = 7;
-
 export const roundAmount = (value) => Math.round(Number(value || 0) * 100) / 100;
 
 export const calculateTotalFeeAmount = (creditLimit, feeRate) =>
@@ -20,12 +18,12 @@ export const calculateInterestAmount = (creditLimit, termDays) => {
 export const calculateGuaranteeFeeAmount = (totalFeeAmount, creditLimit, termDays) =>
   roundAmount(Math.max(Number(totalFeeAmount || 0) - calculateInterestAmount(creditLimit, termDays), 0));
 
-export const calculateInstallmentPeriods = (termDays, periodDays = LOAN_PERIOD_DAYS) => {
+export const calculateInstallmentPeriods = (termDays) => {
   const days = Number(termDays || 0);
-  if (!days || days < periodDays || days % periodDays !== 0) {
+  if (!days) {
     return 0;
   }
-  return days / periodDays;
+  return 1;
 };
 
 export const buildLoanFeePreview = ({ creditLimit, feeRatePercentage, termDays }) => {

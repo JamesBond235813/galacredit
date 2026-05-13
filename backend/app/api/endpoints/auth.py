@@ -31,6 +31,8 @@ from app.services.sms_auth import SmsAuthManager
 from app.services.sms_service import sms_service
 from app.services.slider_captcha import SliderCaptchaManager
 from app.services.audit import log_user_event_async
+from app.services.blacklist_service import refresh_user_blacklist_status
+from app.services.login_location_risk import apply_login_location
 from app.services.channel_service import (
     bind_user_source_channel_async,
     get_channel_by_invite_code_async,
@@ -220,7 +222,21 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
         raise HTTPException(status_code=400, detail="用户或密码不正确")
 
     await password_login_guard.on_success(req.phone)
+    if req.latitude is not None and req.longitude is not None:
+        try:
+            await apply_login_location(
+                db,
+                user,
+                latitude=req.latitude,
+                longitude=req.longitude,
+                accuracy=req.accuracy,
+                fallback_ip=resolve_client_ip(request, default_ip=""),
+            )
+        except ValueError as exc:
+            await db.commit()
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
     user.last_login_at = now
+    await refresh_user_blacklist_status(db, user)
     attribution_status = (
         await bind_user_source_channel_async(db, user=user, channel=channel, loan=None)
         if channel
@@ -268,8 +284,22 @@ async def sms_login(req: SmsLoginRequest, request: Request, db: AsyncSession = D
             await bind_user_source_channel_async(db, user=user, channel=channel, loan=None)
         detail = "短信验证码登录成功（新注册用户）。"
     else:
-        user.last_login_at = now
         detail = "短信验证码登录成功。"
+    if req.latitude is not None and req.longitude is not None:
+        try:
+            await apply_login_location(
+                db,
+                user,
+                latitude=req.latitude,
+                longitude=req.longitude,
+                accuracy=req.accuracy,
+                fallback_ip=resolve_client_ip(request, default_ip=""),
+            )
+        except ValueError as exc:
+            await db.commit()
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    user.last_login_at = now
+    await refresh_user_blacklist_status(db, user)
 
     await log_user_event_async(
         db,

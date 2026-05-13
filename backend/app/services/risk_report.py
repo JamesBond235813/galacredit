@@ -24,6 +24,7 @@ RISK_SOURCE_MOCK = "MOCK"
 def serialize_risk_report(report: RiskControlReport) -> Dict[str, Any]:
     return {
         "id": report.id,
+        "user_id": report.user_id,
         "name": report.name,
         "id_card": report.id_card,
         "phone": report.phone,
@@ -45,11 +46,12 @@ async def get_user_for_risk_report_async(db: AsyncSession, user_id: int) -> User
 
 
 async def get_cached_risk_report_async(db: AsyncSession, *, name: str, id_card: str) -> Optional[RiskControlReport]:
-    thirty_days_ago = datetime.now() - timedelta(days=settings.RISK_REPORT_CACHE_DAYS)
+    cache_days = min(int(getattr(settings, "RISK_REPORT_CACHE_DAYS", 14) or 14), 14)
+    cache_start = datetime.now() - timedelta(days=cache_days)
     stmt = select(RiskControlReport).where(
         RiskControlReport.name == name,
         RiskControlReport.id_card == id_card,
-        RiskControlReport.query_time >= thirty_days_ago,
+        RiskControlReport.query_time >= cache_start,
     )
     if settings.RISK_PANORAMA_ENABLED and _has_panorama_credentials():
         stmt = stmt.where(RiskControlReport.source == RISK_SOURCE_PANORAMA)
@@ -63,6 +65,7 @@ async def get_or_create_risk_report_async(
     name: str,
     id_card: str,
     phone: str,
+    user_id: Optional[int] = None,
 ) -> RiskControlReport:
     cached_report = await get_cached_risk_report_async(db, name=name, id_card=id_card)
     if cached_report:
@@ -71,6 +74,7 @@ async def get_or_create_risk_report_async(
     report_payload, source = await fetch_risk_report_payload(name=name, id_card=id_card, phone=phone)
     now = datetime.now()
     report = RiskControlReport(
+        user_id=user_id,
         name=name,
         id_card=id_card,
         phone=phone,

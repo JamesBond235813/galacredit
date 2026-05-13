@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -34,6 +34,20 @@ class Loan(Base):
     review_admin_id = Column(Integer, nullable=True, index=True)
     collection_admin_id = Column(Integer, nullable=True, index=True)
     collection_transferred_at = Column(DateTime, nullable=True)
+    risk_report_checked_at = Column(DateTime, nullable=True)
+    risk_report_checked_by = Column(String(50), nullable=True)
+    approval_discount_amount = Column(Float, default=0.0)
+    order_discount_amount = Column(Float, default=0.0)
+    card_reissue_closed = Column(Boolean, default=False, nullable=False)
+    extension_count = Column(Integer, default=0)
+    extension_type = Column(String(30), nullable=True)
+    extension_note = Column(String(255), nullable=True)
+    overdue_hidden = Column(Boolean, default=False, nullable=False)
+    extension_source_loan_id = Column(Integer, nullable=True, index=True)
+    extension_used_at = Column(DateTime, nullable=True)
+    is_extension_fee_order = Column(Boolean, default=False, nullable=False)
+    identity_ocr_submitted_at = Column(DateTime, nullable=True)
+    identity_face_auth_at = Column(DateTime, nullable=True)
 
     product_id = Column(Integer, nullable=True, index=True)
     product_name = Column(String(120), nullable=True)

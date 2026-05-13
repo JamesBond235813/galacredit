@@ -1,10 +1,8 @@
 import asyncio
-import base64
-import random
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 
 @dataclass
@@ -88,65 +86,24 @@ class SliderCaptchaManager:
     def _clamp_width(self, width: int) -> int:
         return min(max(int(width), self.min_width), self.max_width)
 
-    def _build_svg_pair(self, width: int, expected_x: int, expected_y: int) -> Tuple[str, str]:
-        bg_shapes = []
-        for _ in range(16):
-            x = random.randint(0, max(width - 12, 1))
-            y = random.randint(0, max(self.height - 12, 1))
-            w = random.randint(8, 22)
-            h = random.randint(8, 22)
-            fill = random.choice(["#d2e6ff", "#c3dcff", "#b8d3ff", "#e7f0ff"])
-            bg_shapes.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="4" fill="{fill}" fill-opacity="0.55" />')
-
-        bg_svg = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{self.height}" viewBox="0 0 {width} {self.height}">'
-            '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
-            '<stop offset="0%" stop-color="#edf4ff" /><stop offset="100%" stop-color="#c5dcff" />'
-            "</linearGradient></defs>"
-            f'<rect x="0" y="0" width="{width}" height="{self.height}" rx="14" fill="url(#g)" />'
-            + "".join(bg_shapes)
-            + f'<rect x="{expected_x}" y="{expected_y}" width="{self.block_size}" height="{self.block_size}" rx="8" fill="#bdd4f6" fill-opacity="0.98" />'
-            + "</svg>"
-        )
-
-        slider_svg = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.block_size}" height="{self.block_size}" viewBox="0 0 {self.block_size} {self.block_size}">'
-            '<defs><linearGradient id="s" x1="0" y1="0" x2="1" y2="1">'
-            '<stop offset="0%" stop-color="#ffffff" /><stop offset="100%" stop-color="#d9e8ff" />'
-            "</linearGradient></defs>"
-            f'<rect x="1" y="1" width="{self.block_size - 2}" height="{self.block_size - 2}" rx="8" fill="url(#s)" stroke="#7ca4dd" stroke-width="2" />'
-            f'<circle cx="{self.block_size // 2}" cy="{self.block_size // 2}" r="6" fill="#89afe4" fill-opacity="0.55" />'
-            "</svg>"
-        )
-
-        return bg_svg, slider_svg
-
-    @staticmethod
-    def _to_data_uri(svg_text: str) -> str:
-        encoded = base64.b64encode(svg_text.encode("utf-8")).decode("utf-8")
-        return f"data:image/svg+xml;base64,{encoded}"
-
     async def create_challenge(self, width: int) -> dict:
         lock = await self._guard_lock()
         async with lock:
             now = self._now()
             self._cleanup(now)
             effective_width = self._clamp_width(width)
-            expected_x_min = int(effective_width * 0.22)
-            expected_x_max = int(effective_width * 0.72)
-            expected_x = random.randint(expected_x_min, max(expected_x_min, expected_x_max))
+            expected_x = max(effective_width - self.block_size, 0)
             expected_y = (self.height - self.block_size) // 2
             captcha_id = uuid.uuid4().hex
             self._challenges[captcha_id] = _ChallengeRecord(expected_x=expected_x, created_at=now, fail_count=0)
-            bg_svg, slider_svg = self._build_svg_pair(effective_width, expected_x, expected_y)
             return {
                 "captcha_id": captcha_id,
                 "width": effective_width,
-                "height": self.height,
+                "height": self.block_size,
                 "block_size": self.block_size,
                 "block_y": expected_y,
-                "background_image": self._to_data_uri(bg_svg),
-                "slider_image": self._to_data_uri(slider_svg),
+                "background_image": "",
+                "slider_image": "",
                 "min_elapsed_ms": self.min_elapsed_ms,
             }
 

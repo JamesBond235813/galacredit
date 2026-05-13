@@ -29,6 +29,11 @@
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
         </el-table-column>
+        <el-table-column label="IP审查" width="100">
+          <template #default="{ row }">
+            <IpAuditTag @click="openIpAudit(row)" />
+          </template>
+        </el-table-column>
         <el-table-column label="审核员" width="140">
           <template #default="{ row }">
             {{ row.review_admin_name || '--' }}
@@ -58,6 +63,18 @@
             <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
           </template>
         </el-table-column>
+        <el-table-column label="黑名单" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.user_blacklist_hit ? 'danger' : 'success'">
+              {{ row.user_blacklist_hit ? '命中' : '未命中' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="风险管理" width="110">
+          <template #default="{ row }">
+            <el-button link type="danger" :disabled="row.user_blacklist_hit" @click="handleBlacklist(row)">一键拉黑</el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="提交时间" min-width="160">
           <template #default="{ row }">
             {{ formatDateTime(row.application_submitted_at || row.created_at) }}
@@ -65,8 +82,8 @@
         </el-table-column>
         <el-table-column label="信用额度" min-width="200">
           <template #default="{ row }">
-            <div>{{ formatCurrency(row.approved_credit_limit || row.credit_limit) }}</div>
-            <div class="sub-text">用于商品列表信用下单上限</div>
+            <div>{{ formatCurrency(row.available_credit_limit || row.approved_credit_limit || row.credit_limit) }}</div>
+            <div class="sub-text">可用额度；审批额度 {{ formatCurrency(row.approved_credit_limit || row.credit_limit || 0) }}</div>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
@@ -79,9 +96,11 @@
             {{ row.review_note || '--' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDrawer(row)">审批处理</el-button>
+            <el-button link type="primary" @click="openDrawer(row)">
+              {{ row.status === 'APPROVED' ? '额度调整' : '审批处理' }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -100,12 +119,14 @@
 
     <el-drawer
       v-model="drawerVisible"
-      size="640px"
+      size="1040px"
       title="申请审批处理"
       destroy-on-close
       class="applications-drawer"
     >
-      <div v-if="detail" class="detail-stack application-detail-stack">
+      <div v-if="detail" class="identity-drawer-layout">
+        <IdentityImagePanel :row="detail" />
+        <div class="detail-stack application-detail-stack">
         <section class="detail-card detail-card-summary">
           <h3>客户资料</h3>
           <el-descriptions :column="2" border size="small">
@@ -132,7 +153,42 @@
           </el-descriptions>
         </section>
 
-        <section class="detail-card detail-card-approval">
+        <section v-if="isApprovedStage" class="detail-card detail-card-credit-adjust">
+          <h3>可用额度调整</h3>
+          <div class="credit-adjust-summary">
+            <article>
+              <span>已审批额度</span>
+              <strong>{{ formatCurrency(currentRow?.approved_credit_limit || currentRow?.credit_limit || 0) }}</strong>
+            </article>
+            <article>
+              <span>当前可用额度</span>
+              <strong>{{ formatCurrency(currentRow?.available_credit_limit || 0) }}</strong>
+            </article>
+            <article>
+              <span>调整后可用额度</span>
+              <strong>{{ formatCurrency(nextAvailableCredit) }}</strong>
+            </article>
+          </div>
+          <el-form label-width="96px" size="small" class="approval-form">
+            <el-form-item label="增加额度">
+              <el-input-number v-model="creditAdjustForm.amount" :min="0" :step="100" size="small" />
+            </el-form-item>
+            <el-form-item label="调整备注">
+              <el-input
+                v-model="creditAdjustForm.note"
+                type="textarea"
+                :rows="2"
+                placeholder="填写增加额度原因，例如：额度不足以展示商品"
+              />
+            </el-form-item>
+          </el-form>
+          <div class="drawer-footer">
+            <el-button @click="drawerVisible = false">关闭</el-button>
+            <el-button type="primary" :loading="creditAdjustSaving" @click="submitCreditAdjust">确认增加额度</el-button>
+          </div>
+        </section>
+
+        <section v-else class="detail-card detail-card-approval">
           <div v-if="isSuperAdmin" class="assignee-row">
             <el-select
               v-model="selectedReviewAdminId"
@@ -151,7 +207,7 @@
           <el-form label-width="84px" size="small" class="approval-form">
             <el-form-item label="审批结果">
               <el-radio-group v-model="reviewForm.approved">
-                <el-radio :value="true">通过</el-radio>
+                <el-radio :value="true" :disabled="currentRow?.user_blacklist_hit">通过</el-radio>
                 <el-radio :value="false">拒绝</el-radio>
               </el-radio-group>
             </el-form-item>
@@ -179,6 +235,25 @@
                 </div>
               </div>
             </el-form-item>
+            <el-form-item label="减免额度">
+              <el-input-number
+                v-model="reviewForm.approval_discount_amount"
+                :min="0"
+                :step="100"
+                size="small"
+                :disabled="!reviewForm.approved"
+              />
+            </el-form-item>
+            <el-form-item label="期限">
+              <el-input-number
+                v-model="reviewForm.term_days"
+                :min="1"
+                :max="364"
+                :step="1"
+                size="small"
+                :disabled="!reviewForm.approved"
+              />
+            </el-form-item>
             <el-form-item label="审批备注">
               <el-input
                 v-model="reviewForm.review_note"
@@ -191,8 +266,32 @@
 
           <div class="drawer-footer">
             <el-button @click="drawerVisible = false">关闭</el-button>
-            <el-button type="primary" :loading="submitting" @click="submitReview">保存审批结果</el-button>
+            <el-tooltip
+              :disabled="canSubmitReview || !reviewForm.approved"
+              content="请注意先检查风控报告"
+              placement="top"
+            >
+              <span class="review-submit-tooltip-wrap">
+                <el-button type="primary" :loading="submitting" :disabled="!canSubmitReview" @click="submitReview">保存审批结果</el-button>
+              </span>
+            </el-tooltip>
           </div>
+        </section>
+
+        <section class="detail-card">
+          <h3>全部经纬度记录</h3>
+          <el-table :data="locationEvents" size="small">
+            <el-table-column prop="lon_lat" label="经纬度" min-width="150" />
+            <el-table-column label="行政区划" min-width="180">
+              <template #default="{ row }">
+                {{ [row.lon_lat_province, row.lon_lat_city, row.lon_lat_district].filter(Boolean).join(' / ') || '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="lon_lat_detail" label="地址" min-width="220" />
+            <el-table-column label="时间" width="160">
+              <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+            </el-table-column>
+          </el-table>
         </section>
 
         <section class="detail-card detail-card-timeline">
@@ -205,6 +304,7 @@
             </div>
           </div>
         </section>
+        </div>
       </div>
     </el-drawer>
 
@@ -212,6 +312,7 @@
       v-model="riskDialogVisible"
       :loading="riskLoading"
       :report="riskReport"
+      @closed="handleRiskReportClosed"
     />
 
     <LoanHistoryDialog
@@ -219,20 +320,25 @@
       :loan="historyLoan"
       :borrower-name="historyBorrowerName"
     />
+    <IpAuditDialog v-model="ipAuditVisible" :loading="ipAuditLoading" :items="ipAuditItems" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import LoanHistoryDialog from '../components/LoanHistoryDialog.vue';
 import RiskReportDialog from '../components/RiskReportDialog.vue';
-import { assignLoan, getLoanAssignees, getLoans, getRiskReportByUser, getUserDetail, reviewLoan } from '../api';
+import IdentityImagePanel from '../components/IdentityImagePanel.vue';
+import IpAuditDialog from '../components/IpAuditDialog.vue';
+import IpAuditTag from '../components/IpAuditTag.vue';
+import { adjustAvailableCredit, assignLoan, blacklistUser, getLoanAssignees, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, reviewLoan } from '../api';
 import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 
 const loading = ref(false);
 const submitting = ref(false);
+const creditAdjustSaving = ref(false);
 const tableData = ref([]);
 const total = ref(0);
 const drawerVisible = ref(false);
@@ -241,6 +347,8 @@ const detail = ref(null);
 const riskDialogVisible = ref(false);
 const riskLoading = ref(false);
 const riskReport = ref(null);
+const riskReportCheckedUserIds = ref(new Set());
+const pendingRiskReportUserId = ref(null);
 const historyDialogVisible = ref(false);
 const historyLoan = ref(null);
 const historyBorrowerName = ref('');
@@ -248,12 +356,16 @@ const assignLoading = ref(false);
 const assigningReviewer = ref(false);
 const reviewAssigneeOptions = ref([]);
 const selectedReviewAdminId = ref(null);
+const ipAuditVisible = ref(false);
+const ipAuditLoading = ref(false);
+const ipAuditItems = ref([]);
 const adminProfile = ref(readStoredAdminProfile());
 const isSuperAdmin = computed(() => (adminProfile.value?.roles || []).includes('ADMIN'));
+const currentAdminUsername = computed(() => adminProfile.value?.username || '');
 
 const filters = reactive({
   phone: '',
-  status: 'REVIEWING',
+  status: 'ALL',
   page: 1,
   size: 10
 });
@@ -261,9 +373,40 @@ const filters = reactive({
 const reviewForm = reactive({
   approved: true,
   credit_limit: 1000,
+  term_days: 7,
+  approval_discount_amount: 0,
   review_note: ''
 });
+const creditAdjustForm = reactive({
+  amount: 0,
+  note: ''
+});
 const amountShortcutOptions = [1500, 2000, 3000];
+const isApprovedStage = computed(() => currentRow.value?.status === 'APPROVED');
+const nextAvailableCredit = computed(() => Number(currentRow.value?.available_credit_limit || 0) + Number(creditAdjustForm.amount || 0));
+const hasCurrentRiskReportViewed = computed(() => riskReportCheckedUserIds.value.has(currentRow.value?.user_id));
+const canSubmitReview = computed(() => {
+  if (!reviewForm.approved) {
+    return true;
+  }
+  return Boolean(reviewForm.credit_limit) && !currentRow.value?.user_blacklist_hit && hasCurrentRiskReportViewed.value;
+});
+const locationEvents = computed(() => (detail.value?.events || []).filter((item) => item.lon_lat));
+
+const isFreshRiskReportCheckedByCurrentAdmin = (row) => {
+  if (!row?.risk_report_checked_at) {
+    return false;
+  }
+  const checkedAt = new Date(row.risk_report_checked_at).getTime();
+  if (!Number.isFinite(checkedAt)) {
+    return false;
+  }
+  const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+  if (Date.now() - checkedAt > fourteenDaysMs) {
+    return false;
+  }
+  return !row.risk_report_checked_by || row.risk_report_checked_by === currentAdminUsername.value;
+};
 
 const loadReviewAssignees = async () => {
   if (!isSuperAdmin.value) {
@@ -288,6 +431,12 @@ const fetchData = async () => {
       limit: filters.size
     });
     tableData.value = res.items || [];
+    const checkedIds = tableData.value
+      .filter(isFreshRiskReportCheckedByCurrentAdmin)
+      .map((item) => item.user_id);
+    if (checkedIds.length) {
+      riskReportCheckedUserIds.value = new Set([...riskReportCheckedUserIds.value, ...checkedIds]);
+    }
     total.value = res.total || 0;
   } finally {
     loading.value = false;
@@ -296,7 +445,7 @@ const fetchData = async () => {
 
 const resetFilters = () => {
   filters.phone = '';
-  filters.status = 'REVIEWING';
+  filters.status = 'ALL';
   filters.page = 1;
   fetchData();
 };
@@ -308,13 +457,36 @@ const handlePageChange = (page) => {
 
 const openDrawer = async (row) => {
   currentRow.value = row;
+  detail.value = null;
   drawerVisible.value = true;
   detail.value = await getUserDetail(row.user_id);
   selectedReviewAdminId.value = row.review_admin_id || null;
 
   reviewForm.approved = row.status !== 'REJECTED';
+  if (row.user_blacklist_hit) {
+    reviewForm.approved = false;
+  }
   reviewForm.credit_limit = Number(row.approved_credit_limit || row.credit_limit || 1000);
+  reviewForm.term_days = Number(row.term_days || 7);
+  reviewForm.approval_discount_amount = Number(row.approval_discount_amount || 0);
   reviewForm.review_note = row.review_note || '';
+  creditAdjustForm.amount = 0;
+  creditAdjustForm.note = '';
+  if (isFreshRiskReportCheckedByCurrentAdmin(row)) {
+    riskReportCheckedUserIds.value = new Set([...riskReportCheckedUserIds.value, row.user_id]);
+  }
+};
+
+const openIpAudit = async (row) => {
+  ipAuditVisible.value = true;
+  ipAuditLoading.value = true;
+  ipAuditItems.value = [];
+  try {
+    const result = await getUserIpAudit(row.user_id);
+    ipAuditItems.value = result.items || [];
+  } finally {
+    ipAuditLoading.value = false;
+  }
 };
 
 const assignReviewOwner = async () => {
@@ -344,14 +516,38 @@ const openRiskReport = async (row) => {
   riskDialogVisible.value = true;
   riskLoading.value = true;
   riskReport.value = null;
+  pendingRiskReportUserId.value = row.user_id;
 
   try {
     riskReport.value = await getRiskReportByUser({ user_id: row.user_id });
   } catch (error) {
     riskDialogVisible.value = false;
+    pendingRiskReportUserId.value = null;
   } finally {
     riskLoading.value = false;
   }
+};
+
+const handleRiskReportClosed = () => {
+  if (riskReport.value && pendingRiskReportUserId.value) {
+    riskReportCheckedUserIds.value = new Set([...riskReportCheckedUserIds.value, pendingRiskReportUserId.value]);
+  }
+  pendingRiskReportUserId.value = null;
+};
+
+const handleBlacklist = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认将 ${row.user_name || row.user_phone} 加入黑名单？`, '一键拉黑', {
+      type: 'warning',
+      confirmButtonText: '确认拉黑',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await blacklistUser(row.user_id, { note: '后台一键拉黑' });
+  ElMessage.success('已加入黑名单');
+  fetchData();
 };
 
 const openHistoryDialog = (row) => {
@@ -372,12 +568,22 @@ const submitReview = async () => {
     ElMessage.warning('请填写授信额度');
     return;
   }
+  if (reviewForm.approved && currentRow.value?.user_blacklist_hit) {
+    ElMessage.warning('该用户命中黑名单，只能拒绝');
+    return;
+  }
+  if (reviewForm.approved && !riskReportCheckedUserIds.value.has(currentRow.value?.user_id)) {
+    ElMessage.warning('审批通过前请先查询并查看风控报告');
+    return;
+  }
 
   submitting.value = true;
   try {
     await reviewLoan(currentRow.value.id, {
       approved: reviewForm.approved,
       credit_limit: reviewForm.approved ? Number(reviewForm.credit_limit) : undefined,
+      term_days: reviewForm.approved ? Number(reviewForm.term_days || 7) : undefined,
+      approval_discount_amount: reviewForm.approved ? Number(reviewForm.approval_discount_amount || 0) : 0,
       review_note: reviewForm.review_note
     });
     ElMessage.success('审批结果已保存');
@@ -385,6 +591,35 @@ const submitReview = async () => {
     fetchData();
   } finally {
     submitting.value = false;
+  }
+};
+
+const submitCreditAdjust = async () => {
+  if (!currentRow.value?.id || Number(creditAdjustForm.amount || 0) <= 0) {
+    ElMessage.warning('请填写需要增加的可用额度');
+    return;
+  }
+  creditAdjustSaving.value = true;
+  try {
+    const result = await adjustAvailableCredit(currentRow.value.id, {
+      amount: Number(creditAdjustForm.amount || 0),
+      note: creditAdjustForm.note || '审核员后台增加可用额度'
+    });
+    const updatedLoan = result?.loan || {};
+    currentRow.value = {
+      ...currentRow.value,
+      ...updatedLoan,
+      user_id: currentRow.value.user_id,
+      user_name: currentRow.value.user_name,
+      user_phone: currentRow.value.user_phone,
+      user_id_card_num: currentRow.value.user_id_card_num
+    };
+    creditAdjustForm.amount = 0;
+    creditAdjustForm.note = '';
+    ElMessage.success('可用额度已增加');
+    await fetchData();
+  } finally {
+    creditAdjustSaving.value = false;
   }
 };
 
@@ -405,6 +640,10 @@ onMounted(() => {
   margin-top: 18px;
   display: flex;
   justify-content: flex-end;
+}
+
+.review-submit-tooltip-wrap {
+  display: inline-flex;
 }
 
 .amount-edit-row,
@@ -498,6 +737,7 @@ onMounted(() => {
 
 .detail-card-summary,
 .detail-card-approval,
+.detail-card-credit-adjust,
 .detail-card-timeline {
   padding: 14px;
 }
@@ -526,6 +766,33 @@ onMounted(() => {
 
 .approval-form :deep(.el-input-number) {
   width: 132px;
+}
+
+.credit-adjust-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.credit-adjust-summary article {
+  padding: 12px;
+  border: 1px solid #e7edf6;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.credit-adjust-summary span {
+  display: block;
+  color: #7a8aa1;
+  font-size: 12px;
+}
+
+.credit-adjust-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: #1f66e5;
+  font-size: 18px;
 }
 
 .review-preview-grid {

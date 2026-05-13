@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     
     # 数据库配置
     MYSQL_USER: str = "jhl"
-    MYSQL_PASSWORD: str = "cnptj*#SGYN^y5Fa"
+    MYSQL_PASSWORD: str = ""
     MYSQL_HOST: str = "localhost"
     MYSQL_PORT: str = "3306"
     MYSQL_DATABASE: str = "credit_loan_db"
@@ -77,11 +77,11 @@ class Settings(BaseSettings):
         return f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
         
     # JWT 认证配置
-    SECRET_KEY: str = "b47c8f6154b2d3550af3b9187a4128ef"
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
-    SMS_CODE_MOCK_ENABLED: bool = True
+    SMS_CODE_MOCK_ENABLED: bool = False
     SMS_MOCK_CODE: str = "635147"
     SMS_PHONE_COOLDOWN_SECONDS: int = 60
     SMS_IP_RATE_LIMIT_PER_MINUTE: int = 10
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     CAPTCHA_SLIDER_BLOCK_SIZE: int = 44
 
     # Panorama 风控配置
-    RISK_REPORT_CACHE_DAYS: int = 30
+    RISK_REPORT_CACHE_DAYS: int = 14
     RISK_PANORAMA_ENABLED: bool = True
     RISK_PANORAMA_API_URL: str = ""
     RISK_PANORAMA_MERCHANT_NO: str = ""
@@ -110,12 +110,19 @@ class Settings(BaseSettings):
 
     # e签宝身份核验配置
     ESIGN_IDENTITY_ENABLED: bool = False
+    ESIGN_IDENTITY_MOCK_ENABLED: bool = False
     ESIGN_APP_ID: str = ""
     ESIGN_APP_SECRET: str = ""
     ESIGN_OPENAPI_BASE_URL: str = "https://openapi.esign.cn"
     ESIGN_HTTP_TIMEOUT_SECONDS: int = 15
     ESIGN_FACE_CONFIDENCE_THRESHOLD: float = 70.0
     ESIGN_HTTP_PROXY: str=""
+
+    USER_UPLOAD_DIR: str = "uploads"
+    IP138_TOKEN: str = ""
+    IP138_API_URL: str = "https://api.ip138.com/ipdata/"
+    LOGIN_DISTANCE_RISK_HOURS: int = 4
+    LOGIN_DISTANCE_RISK_KM: float = 30.0
 
     LOG_DIR: str = "logs"
     LOG_APP_FILE: str = "app.log"
@@ -129,6 +136,8 @@ class Settings(BaseSettings):
     LOG_TZ: str = "Asia/Shanghai"
     LOG_LEVEL: str = "INFO"
     TID_HEADER_NAME: str = "X-Trace-Id"
+    LOG_REQUEST_BODY_ENABLED: bool = False
+    LOG_RESPONSE_BODY_ENABLED: bool = False
 
     #阿里云短信
     ALI_SMS_VC_TEMPLATE_CODE: str = ''

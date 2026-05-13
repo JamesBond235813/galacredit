@@ -8,7 +8,6 @@ from app.models.loan import Loan
 from app.models.loan_installment import LoanInstallment
 from app.models.loan_transaction import LoanTransaction
 from app.services.loan_amounts import (
-    LOAN_PERIOD_DAYS,
     calculate_guarantee_fee_amount,
     calculate_installment_periods,
     calculate_interest_amount,
@@ -88,7 +87,7 @@ def split_money_by_weights(total_amount: Any, weights: Dict[str, Any]) -> Dict[s
 
 
 def build_installment_due_date(disbursed_at: datetime, period_no: int) -> datetime:
-    return disbursed_at + timedelta(days=period_no * LOAN_PERIOD_DAYS - 1)
+    return disbursed_at + timedelta(days=period_no - 1)
 
 
 def build_installment_blueprint(loan: Loan) -> List[Dict[str, Any]]:
@@ -118,7 +117,7 @@ def build_installment_blueprint(loan: Loan) -> List[Dict[str, Any]]:
         items.append(
             {
                 "period_no": index + 1,
-                "due_date": build_installment_due_date(loan.disbursed_at, index + 1),
+                "due_date": loan.due_date or build_installment_due_date(loan.disbursed_at, int(getattr(loan, "term_days", 1) or 1)),
                 "principal_amount": principal_amount,
                 "interest_amount": interest_amount,
                 "guarantee_fee_amount": guarantee_fee_amount,
@@ -558,7 +557,7 @@ def sync_loan_repayment_state(loan: Loan, now: Optional[datetime] = None) -> str
     if summary["remaining_amount"] <= 0:
         loan.status = "SETTLED"
         loan.repay_attempt_count = 0
-    elif summary["overdue_installment_count"] > 0:
+    elif summary["overdue_installment_count"] > 0 and not bool(getattr(loan, "overdue_hidden", False)):
         loan.status = "OVERDUE"
     else:
         loan.status = "DISBURSED"

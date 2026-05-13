@@ -66,19 +66,17 @@ def normalize_term_days(term_days: Any, allow_empty: bool = False) -> Optional[i
         raise ValueError("账期格式不正确") from exc
 
     if not numeric_term.is_integer():
-        raise ValueError(f"账期必须按 {LOAN_PERIOD_DAYS} 天为单位设置")
+        raise ValueError("期限必须为整数天")
 
     term = int(numeric_term)
-    if term < LOAN_PERIOD_DAYS:
-        raise ValueError(f"账期不能少于 {LOAN_PERIOD_DAYS} 天")
-    if term % LOAN_PERIOD_DAYS != 0:
-        raise ValueError(f"账期必须为 {LOAN_PERIOD_DAYS} 天的倍数")
+    if term < 1:
+        raise ValueError("期限不能少于1天")
     return term
 
 
 def calculate_installment_periods(term_days: Any) -> int:
-    term = normalize_term_days(term_days)
-    return max(term // LOAN_PERIOD_DAYS, 1)
+    normalize_term_days(term_days)
+    return 1
 
 
 def calculate_installment_by_values(
@@ -185,6 +183,23 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "collection_count": getattr(loan, "collection_count", 0) or 0,
         "last_collection_at": getattr(loan, "last_collection_at", None),
         "collection_note": getattr(loan, "collection_note", None),
+        "risk_report_checked_at": getattr(loan, "risk_report_checked_at", None),
+        "risk_report_checked_by": getattr(loan, "risk_report_checked_by", None),
+        "approval_discount_amount": round_money(getattr(loan, "approval_discount_amount", 0)),
+        "order_discount_amount": round_money(getattr(loan, "order_discount_amount", 0)),
+        "card_reissue_closed": bool(getattr(loan, "card_reissue_closed", False)),
+        "extension_count": int(getattr(loan, "extension_count", 0) or 0),
+        "extension_type": getattr(loan, "extension_type", None),
+        "extension_note": getattr(loan, "extension_note", None),
+        "overdue_hidden": bool(getattr(loan, "overdue_hidden", False)),
+        "available_credit_limit": round_money(getattr(getattr(loan, "owner", None), "available_credit_limit", 0)),
+        "overdue_credit_locked": bool(getattr(getattr(loan, "owner", None), "overdue_credit_locked", False)),
+        "extension_source_loan_id": getattr(loan, "extension_source_loan_id", None),
+        "extension_used_at": getattr(loan, "extension_used_at", None),
+        "is_extension_fee_order": bool(getattr(loan, "is_extension_fee_order", False)),
+        "identity_ocr_submitted_at": getattr(loan, "identity_ocr_submitted_at", None),
+        "identity_face_auth_at": getattr(loan, "identity_face_auth_at", None),
+        "fee_extension_ready": bool(getattr(loan, "fee_extension_ready", False)),
         "review_admin_id": getattr(loan, "review_admin_id", None),
         "review_admin_name": getattr(review_admin, "username", None),
         "collection_admin_id": getattr(loan, "collection_admin_id", None),
@@ -196,7 +211,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "rights_title": getattr(loan, "rights_title", None),
         "rights_desc": getattr(loan, "rights_desc", None),
         "rights_price": round_money(getattr(loan, "rights_price", 0)),
-        "ecard_face_value": round_money(getattr(loan, "ecard_face_value", 0) or credit_limit),
+        "ecard_face_value": round_money(getattr(loan, "ecard_face_value", 0)),
         "product_total_price": round_money(
             getattr(loan, "product_total_price", 0)
             or round_money(
@@ -228,6 +243,8 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         payload["fund_flow_summary"] = ledger["summary"]
 
     if include_user:
+        from app.services.upload_storage import build_upload_url
+
         owner = getattr(loan, "__dict__", {}).get("owner")
         source_channel = getattr(owner, "__dict__", {}).get("source_channel") if owner else None
         payload.update(
@@ -235,8 +252,13 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
                 "user_phone": owner.phone if owner else "",
                 "user_name": owner.name if owner else None,
                 "user_id_card_num": owner.id_card_num if owner else None,
+                "id_card_front_image_url": build_upload_url(getattr(owner, "id_card_front_image", None)) if owner else None,
+                "id_card_back_image_url": build_upload_url(getattr(owner, "id_card_back_image", None)) if owner else None,
+                "face_image_url": build_upload_url(getattr(owner, "face_image", None)) if owner else None,
                 "user_face_auth_status": owner.face_auth_status if owner else None,
                 "user_real_name_status": owner.real_name_status if owner else None,
+                "user_blacklist_hit": bool(getattr(owner, "blacklist_hit", False)) if owner else False,
+                "user_blacklist_reason": getattr(owner, "blacklist_reason", None) if owner else None,
                 "user_source_channel_name": source_channel.channel_name if source_channel else None,
                 "user_source_channel_sales_name": source_channel.sales_name if source_channel else None,
                 "application_submitted_at": owner.application_submitted_at if owner else None,

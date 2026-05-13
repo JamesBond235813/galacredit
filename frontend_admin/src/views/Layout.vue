@@ -133,6 +133,7 @@ const iconMap = {
   repayments: CreditCard,
   collections: WarnTriangleFilled,
   financials: WalletFilled,
+  overdueConfig: Setting,
   products: Goods,
   ecardPool: Tickets,
   channels: Connection,

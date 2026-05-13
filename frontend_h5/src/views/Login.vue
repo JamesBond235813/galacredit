@@ -57,23 +57,31 @@
     <div v-if="captchaVisible" class="captcha-layer" @click.self="captchaVisible = false">
       <div class="captcha-popup">
         <div class="captcha-box" ref="captchaContainerRef">
-        <div class="captcha-title">请完成滑块验证</div>
-        <div class="captcha-bg-wrap" v-if="captcha.backgroundImage" :style="{ width: `${captcha.width}px`, height: `${captcha.height}px` }">
-          <img class="captcha-bg" :src="captcha.backgroundImage" alt="captcha-background" />
-          <img
-            ref="sliderPieceRef"
-            class="captcha-slider-piece"
-            :src="captcha.sliderImage"
-            alt="captcha-slider"
-            :style="{ left: `${sliderOffsetX}px`, top: `${captcha.blockY}px`, width: `${captcha.blockSize}px`, height: `${captcha.blockSize}px` }"
-            @mousedown.prevent="onSliderDragStart"
-            @touchstart.prevent="onSliderDragStart"
-          />
+          <div class="captcha-title">请完成滑块验证</div>
+          <div
+            class="simple-slider"
+            :class="{ 'simple-slider--done': sliderVerified }"
+            :style="{ width: `${captcha.width}px` }"
+          >
+            <div class="simple-slider-fill" :style="{ width: `${sliderProgressWidth}px` }"></div>
+            <div class="simple-slider-text">{{ sliderHintText }}</div>
+            <button
+              ref="sliderPieceRef"
+              type="button"
+              class="simple-slider-thumb"
+              :style="{ transform: `translateX(${sliderOffsetX}px)` }"
+              :disabled="captchaVerifying"
+              aria-label="向右滑动验证"
+              @mousedown.prevent="onSliderDragStart"
+              @touchstart.prevent="onSliderDragStart"
+            >
+              →
+            </button>
+          </div>
+          <div class="captcha-actions">
+            <button type="button" class="captcha-refresh-link" @click="refreshCaptcha">刷新</button>
+          </div>
         </div>
-        <div class="captcha-actions">
-          <button type="button" class="captcha-refresh-link" @click="refreshCaptcha">刷新</button>
-        </div>
-      </div>
     </div>
   </div>
   </div>
@@ -104,12 +112,14 @@ const sliderPieceRef = ref(null);
 const sliderOffsetX = ref(0);
 const sliderMoveStartedAt = ref(0);
 const sliderMoveElapsedMs = ref(0);
+const sliderVerified = ref(false);
 const captcha = ref({
   captchaId: '',
   width: 0,
   height: 160,
   blockSize: 44,
   blockY: 0,
+  minElapsedMs: 1200,
   backgroundImage: '',
   sliderImage: ''
 });
@@ -119,6 +129,14 @@ const dragStartClientX = ref(0);
 const dragStartOffsetX = ref(0);
 
 const smsButtonText = computed(() => getSmsButtonText(smsSending.value, cooldownSeconds.value));
+const maxSliderOffset = computed(() => Math.max(captcha.value.width - captcha.value.blockSize, 0));
+const sliderProgressWidth = computed(() => Math.min(sliderOffsetX.value + captcha.value.blockSize, captcha.value.width));
+const sliderHintText = computed(() => {
+  if (captchaVerifying.value) {
+    return '验证中...';
+  }
+  return sliderVerified.value ? '验证通过' : '向右滑动发送验证码';
+});
 
 const startCooldown = (seconds) => {
   if (cooldownTimer) {
@@ -152,12 +170,14 @@ const refreshCaptcha = async () => {
     height: payload.height,
     blockSize: payload.block_size,
     blockY: payload.block_y,
+    minElapsedMs: payload.min_elapsed_ms || 1200,
     backgroundImage: payload.background_image,
     sliderImage: payload.slider_image
   };
   sliderOffsetX.value = 0;
   sliderMoveStartedAt.value = 0;
   sliderMoveElapsedMs.value = 0;
+  sliderVerified.value = false;
 };
 
 const openCaptchaDialog = async () => {
@@ -184,7 +204,7 @@ const verifyCaptchaAndSendSms = async () => {
       phone: phone.value,
       captcha_id: captcha.value.captchaId,
       offset_x: sliderOffsetX.value,
-      elapsed_ms: sliderMoveElapsedMs.value
+      elapsed_ms: Math.max(sliderMoveElapsedMs.value, captcha.value.minElapsedMs || 0)
     });
     smsSending.value = true;
     const smsRes = await sendCode({
@@ -198,6 +218,7 @@ const verifyCaptchaAndSendSms = async () => {
     sliderOffsetX.value = 0;
     sliderMoveStartedAt.value = 0;
     sliderMoveElapsedMs.value = 0;
+    sliderVerified.value = false;
     const detail = String(error?.response?.data?.detail || '');
     if (detail.includes('过期') || detail.includes('失效')) {
       await refreshCaptcha();
@@ -221,8 +242,7 @@ const onDragMove = (event) => {
   }
   const clientX = Number(event.touches?.[0]?.clientX ?? event.clientX ?? 0);
   const delta = clientX - dragStartClientX.value;
-  const maxOffset = Math.max(captcha.value.width - captcha.value.blockSize, 0);
-  sliderOffsetX.value = Math.min(Math.max(dragStartOffsetX.value + delta, 0), maxOffset);
+  sliderOffsetX.value = Math.min(Math.max(dragStartOffsetX.value + delta, 0), maxSliderOffset.value);
   onSliderInput();
 };
 
@@ -235,7 +255,15 @@ const onDragEnd = async () => {
   window.removeEventListener('mouseup', onDragEnd);
   window.removeEventListener('touchmove', onDragMove);
   window.removeEventListener('touchend', onDragEnd);
-  await onSliderRelease();
+  if (sliderOffsetX.value >= maxSliderOffset.value - 2) {
+    sliderOffsetX.value = maxSliderOffset.value;
+    sliderVerified.value = true;
+    await onSliderRelease();
+    return;
+  }
+  sliderOffsetX.value = 0;
+  sliderMoveStartedAt.value = 0;
+  sliderMoveElapsedMs.value = 0;
 };
 
 const onSliderDragStart = (event) => {
@@ -276,10 +304,9 @@ const onSubmit = async () => {
     if (res.refresh_token) {
       localStorage.setItem('refresh_token', res.refresh_token);
     }
+    sessionStorage.removeItem('h5_location_authorized');
     clearEntryChannel();
     showToast('登录成功');
-    // 通过授权方式获取地理位置；失败不阻断登录流程。
-    // captureAndUploadLocation().catch(() => {});
     router.replace('/home');
   } catch (error) {
     if (error.response?.data?.detail === '渠道链接不存在或已停用') {
@@ -354,21 +381,21 @@ onBeforeUnmount(() => {
 }
 
 .captcha-layer {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 20;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   background: rgba(8, 18, 34, 0.2);
-  padding: 0;
+  padding: 16px;
 }
 
 .captcha-popup {
   width: 100%;
-  max-width: none;
+  max-width: 452px;
   background: rgba(236, 244, 255, 0.98);
-  border-radius: 16px 16px 0 0;
+  border-radius: 16px;
   padding: 16px;
   box-shadow: 0 12px 28px rgba(21, 42, 78, 0.18);
 }
@@ -376,26 +403,72 @@ onBeforeUnmount(() => {
 .captcha-title {
   font-size: 15px;
   color: var(--app-primary);
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   font-weight: 600;
 }
 
-.captcha-bg-wrap {
+.simple-slider {
   position: relative;
-  border-radius: 12px;
+  max-width: 100%;
+  height: 46px;
+  border: 1px solid rgba(47, 119, 204, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
   overflow: hidden;
-}
-
-.captcha-bg {
-  display: block;
-  width: 100%;
-}
-
-.captcha-slider-piece {
-  position: absolute;
-  cursor: grab;
-  user-select: none;
   touch-action: none;
+  user-select: none;
+}
+
+.simple-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(47, 119, 204, 0.18), rgba(35, 176, 169, 0.28));
+  transition: width 0.12s ease;
+}
+
+.simple-slider-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4d6684;
+  font-size: 14px;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
+.simple-slider-thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 44px;
+  border: none;
+  border-right: 1px solid rgba(47, 119, 204, 0.22);
+  background: #ffffff;
+  color: var(--app-primary);
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(30, 89, 157, 0.12);
+  cursor: grab;
+  touch-action: none;
+}
+
+.simple-slider-thumb:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.simple-slider--done .simple-slider-fill {
+  background: linear-gradient(90deg, rgba(35, 176, 169, 0.3), rgba(47, 119, 204, 0.28));
+}
+
+.simple-slider--done .simple-slider-text {
+  color: var(--app-primary);
+  font-weight: 600;
 }
 
 .captcha-actions {
@@ -425,6 +498,7 @@ onBeforeUnmount(() => {
   margin-top: 18px;
   margin-bottom: clamp(24px, 6vh, 56px);
   padding: 8px 0;
+  transform: translateX(-10px);
 }
 
 @media (max-height: 760px) {

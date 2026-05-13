@@ -45,7 +45,9 @@ def _build_app():
     return app
 
 
-def test_request_response_log_contains_trace_id_and_url(caplog):
+def test_request_response_log_contains_trace_id_and_url(caplog, monkeypatch):
+    monkeypatch.setattr("app.core.request_logging.settings.LOG_REQUEST_BODY_ENABLED", True)
+    monkeypatch.setattr("app.core.request_logging.settings.LOG_RESPONSE_BODY_ENABLED", True)
     caplog.set_level(logging.INFO)
     client = TestClient(_build_app())
 
@@ -63,7 +65,9 @@ def test_request_response_log_contains_trace_id_and_url(caplog):
     assert '"received"' in response_logs[-1]
 
 
-def test_upload_and_download_content_should_be_masked(caplog):
+def test_upload_and_download_content_should_be_masked(caplog, monkeypatch):
+    monkeypatch.setattr("app.core.request_logging.settings.LOG_REQUEST_BODY_ENABLED", True)
+    monkeypatch.setattr("app.core.request_logging.settings.LOG_RESPONSE_BODY_ENABLED", True)
     caplog.set_level(logging.INFO)
     client = TestClient(_build_app())
 
@@ -103,3 +107,28 @@ def test_slider_captcha_response_should_not_print_response_log(caplog):
     response_logs = [r.message for r in caplog.records if "response_data" in r.message]
     assert any("/api/auth/slider-captcha/create" in item for item in request_logs)
     assert all("/api/auth/slider-captcha/create" not in item for item in response_logs)
+
+
+def test_request_response_body_should_be_disabled_by_default(caplog, monkeypatch):
+    monkeypatch.setattr("app.core.request_logging.settings.LOG_REQUEST_BODY_ENABLED", False)
+    monkeypatch.setattr("app.core.request_logging.settings.LOG_RESPONSE_BODY_ENABLED", False)
+    caplog.set_level(logging.INFO)
+    client = TestClient(_build_app())
+
+    response = client.post(
+        "/echo",
+        json={"phone": "13800000000", "sms_code": "123456"},
+        headers={"Authorization": "Bearer secret-token", "x-test-header": "demo"},
+    )
+    assert response.status_code == 200
+
+    request_logs = [r.message for r in caplog.records if "request_data" in r.message]
+    response_logs = [r.message for r in caplog.records if "response_data" in r.message]
+    assert request_logs
+    assert response_logs
+    assert "123456" not in request_logs[-1]
+    assert "secret-token" not in request_logs[-1]
+    assert "x-test-header" not in request_logs[-1]
+    assert "13800000000" not in request_logs[-1]
+    assert "body=[DISABLED]" in request_logs[-1]
+    assert "body=[DISABLED]" in response_logs[-1]

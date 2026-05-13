@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Boolean, Column, Float, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -13,6 +13,9 @@ class User(Base):
     id_card_num = Column(String(30), nullable=True, unique=True)
     id_address = Column(String(200), nullable=True)
     id_expiry = Column(String(50), nullable=True)
+    id_card_front_image = Column(String(255), nullable=True)
+    id_card_back_image = Column(String(255), nullable=True)
+    face_image = Column(String(255), nullable=True)
     emergency_contact1_name = Column(String(50), nullable=True)
     emergency_contact1_relation = Column(String(20), nullable=True)
     emergency_contact1_phone = Column(String(20), nullable=True)
@@ -29,6 +32,9 @@ class User(Base):
     location_street = Column(String(80), nullable=True)
     location_source = Column(String(30), nullable=True)
     location_updated_at = Column(DateTime, nullable=True)
+    location_risk_blocked = Column(Boolean, default=False, nullable=False)
+    location_risk_reason = Column(String(255), nullable=True)
+    location_risk_at = Column(DateTime, nullable=True)
     face_auth_status = Column(String(20), default="PENDING")
     real_name_status = Column(String(20), default="UNVERIFIED")
     face_auth_at = Column(DateTime, nullable=True)
@@ -38,9 +44,14 @@ class User(Base):
     source_channel_id = Column(Integer, nullable=True, index=True)
     channel_bound_at = Column(DateTime, nullable=True)
     last_channel_visit_at = Column(DateTime, nullable=True)
+    blacklist_hit = Column(Boolean, default=False, nullable=False, index=True)
+    blacklist_reason = Column(String(255), nullable=True)
+    blacklist_checked_at = Column(DateTime, nullable=True)
     
     # 模拟授信额度保存 (在获取到审核后写入)
     approved_limit = Column(Integer, default=0)
+    available_credit_limit = Column(Float, default=0.0)
+    overdue_credit_locked = Column(Boolean, default=False, nullable=False)
     
     created_at = Column(DateTime, default=datetime.now)
 

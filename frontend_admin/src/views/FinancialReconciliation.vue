@@ -30,7 +30,10 @@
         <el-table-column prop="id" label="订单号" width="96" />
         <el-table-column label="借款人" min-width="210">
           <template #default="{ row }">
-            <div>{{ row.user_name || '未实名' }}</div>
+            <div class="borrower-name-row">
+              <span>{{ row.user_name || '未实名' }}</span>
+              <span v-if="row.user_blacklist_hit" class="black-badge">黑</span>
+            </div>
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
         </el-table-column>
@@ -399,6 +402,20 @@ watch(
   margin-top: 4px;
   color: #7f8da2;
   font-size: 12px;
+}
+
+.black-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .pagination-wrap {

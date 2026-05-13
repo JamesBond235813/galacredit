@@ -20,7 +20,9 @@ export const changePassword = (data) => request.post('/user/change-password', da
 // Loan API
 export const getLoanStatus = () => request.get('/loan/status');
 export const applyLimit = () => request.post('/loan/apply');
-export const getProducts = () => request.get('/loan/products');
+export const getProducts = (params) => request.get('/loan/products', { params });
+export const previewPurchaseContract = (data) => request.post('/loan/purchase-contract/preview', data);
+export const signPurchaseContract = (data) => request.post('/loan/purchase-contract/sign', data);
 export const sendOrderSmsCode = () => request.post('/loan/order-sms-code');
 export const withdraw = (data) => request.post('/loan/withdraw', data);
 export const getBill = () => request.get('/loan/bill');

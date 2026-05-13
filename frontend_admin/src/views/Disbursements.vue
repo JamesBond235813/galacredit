@@ -34,6 +34,11 @@
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
         </el-table-column>
+        <el-table-column label="IP审查" width="100">
+          <template #default="{ row }">
+            <IpAuditTag @click="openIpAudit(row)" />
+          </template>
+        </el-table-column>
         <el-table-column label="复借次数" width="120">
           <template #default="{ row }">
             <div>{{ row.relend_label || '初借' }}</div>
@@ -67,6 +72,16 @@
             <div class="sub-text">账单总额 {{ formatCurrency(resolvePaymentAmount(row)) }}</div>
           </template>
         </el-table-column>
+        <el-table-column label="风控报告" width="100">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="风险管理" width="110">
+          <template #default="{ row }">
+            <el-button link type="danger" :disabled="row.user_blacklist_hit" @click="handleBlacklist(row)">一键拉黑</el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="下单时间" min-width="150">
           <template #default="{ row }">
             <div v-if="row.created_at" class="date-cell">
@@ -76,18 +91,21 @@
             <span v-else>--</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="188" fixed="right">
+        <el-table-column label="操作" width="310" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-action-cell">
               <el-button
                 size="small"
                 type="primary"
                 :loading="actionLoading === getDisburseActionKey(row.id)"
+                :disabled="row.user_blacklist_hit"
                 @click="handleDisburse(row)"
               >
                 发卡GO
               </el-button>
-              <el-button link type="primary" @click="openDrawer(row)">查看处理</el-button>
+              <el-button size="small" text type="danger" @click="handleRejectCard(row)">拒绝发卡</el-button>
+              <el-button size="small" text type="danger" @click="handleCloseCard(row)">关闭发卡</el-button>
+              <el-button size="small" text type="primary" @click="openDrawer(row)">查看更多</el-button>
             </div>
           </template>
         </el-table-column>
@@ -105,8 +123,10 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="drawerVisible" size="720px" title="待发卡处理" destroy-on-close>
-      <div v-if="form.id" class="detail-stack">
+    <el-drawer v-model="drawerVisible" size="1080px" title="待发卡处理" destroy-on-close>
+      <div v-if="form.id" class="identity-drawer-layout">
+        <IdentityImagePanel :row="currentRow || {}" />
+        <div class="detail-stack">
         <section class="detail-card">
           <h3>客户与订单信息</h3>
           <el-descriptions :column="2" border>
@@ -150,7 +170,7 @@
               <strong>{{ formatCurrency(currentSummary.paymentAmount) }}</strong>
             </article>
             <article class="preview-card">
-              <span>每期应付</span>
+              <span>到期应付</span>
               <strong>{{ formatCurrency(currentSummary.installmentAmount) }}</strong>
             </article>
           </div>
@@ -158,7 +178,7 @@
           <div class="due-preview">
             <span class="due-preview-label">预计付款日</span>
             <strong>{{ currentSummary.dueDateText }}</strong>
-            <p>规则：每 7 天为 1 期，共 {{ currentSummary.installmentPeriods }} 期；发卡日计为第 1 天，账期第 N 天为付款日。</p>
+            <p>规则：按审批期限生成到期日，发卡日计为第 1 天，期限第 N 天为付款日。</p>
           </div>
 
           <div class="drawer-footer">
@@ -195,6 +215,7 @@
           </div>
           <el-empty v-else description="暂无操作记录" />
         </section>
+        </div>
       </div>
     </el-drawer>
 
@@ -203,6 +224,8 @@
       :loan="historyLoan"
       :borrower-name="historyBorrowerName"
     />
+    <RiskReportDialog v-model="riskDialogVisible" :loading="riskLoading" :report="riskReport" />
+    <IpAuditDialog v-model="ipAuditVisible" :loading="ipAuditLoading" :items="ipAuditItems" />
   </div>
 </template>
 
@@ -210,10 +233,12 @@
 import { computed, h, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import LoanHistoryDialog from '../components/LoanHistoryDialog.vue';
-import { disburseLoan, getAdminStats, getLoans, getUserDetail, updateLoan } from '../api';
+import IdentityImagePanel from '../components/IdentityImagePanel.vue';
+import IpAuditDialog from '../components/IpAuditDialog.vue';
+import IpAuditTag from '../components/IpAuditTag.vue';
+import RiskReportDialog from '../components/RiskReportDialog.vue';
+import { blacklistUser, closeCardReissue, disburseLoan, getAdminStats, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, rejectCardLoan, updateLoan } from '../api';
 import { formatCurrency, formatDate, formatDateTime, formatTime } from '../utils/format';
-
-const BILLING_PERIOD_DAYS = 7;
 
 const loading = ref(false);
 const saving = ref(false);
@@ -227,6 +252,12 @@ const events = ref([]);
 const historyDialogVisible = ref(false);
 const historyLoan = ref(null);
 const historyBorrowerName = ref('');
+const riskDialogVisible = ref(false);
+const riskLoading = ref(false);
+const riskReport = ref(null);
+const ipAuditVisible = ref(false);
+const ipAuditLoading = ref(false);
+const ipAuditItems = ref([]);
 
 const filters = reactive({
   phone: '',
@@ -239,7 +270,7 @@ const form = reactive({
   review_note: ''
 });
 
-const resolveEcardFaceValue = (source) => Number(source?.ecard_face_value || source?.credit_limit || 0);
+const resolveEcardFaceValue = (source) => Number(source?.ecard_face_value ?? source?.credit_limit ?? 0);
 const resolveRightsPrice = (source) => Number(source?.rights_price || 0);
 const resolvePaymentAmount = (source) => {
   const fromSnapshot = Number(source?.product_total_price || source?.total_repayment_amount || 0);
@@ -263,11 +294,7 @@ const resolveTermDays = (source) => {
   const ecardFaceValue = Math.round(resolveEcardFaceValue(source));
   return Number(TERM_DAYS_FALLBACK_BY_ECARD_FACE_VALUE[ecardFaceValue] || 0);
 };
-const resolveInstallmentPeriods = (termDays) => (
-  termDays >= BILLING_PERIOD_DAYS && termDays % BILLING_PERIOD_DAYS === 0
-    ? termDays / BILLING_PERIOD_DAYS
-    : 0
-);
+const resolveInstallmentPeriods = (termDays) => (Number(termDays || 0) > 0 ? 1 : 0);
 const resolveDueDateText = (termDays) => {
   if (!termDays) {
     return '--';
@@ -366,6 +393,12 @@ const openDrawer = async (row) => {
 
   try {
     const detail = await getUserDetail(row.user_id);
+    currentRow.value = {
+      ...currentRow.value,
+      id_card_front_image_url: detail.id_card_front_image_url,
+      id_card_back_image_url: detail.id_card_back_image_url,
+      face_image_url: detail.face_image_url
+    };
     events.value = detail.events || [];
   } catch (error) {
     events.value = [];
@@ -376,6 +409,76 @@ const openHistoryDialog = (row) => {
   historyLoan.value = row.latest_settled_loan || null;
   historyBorrowerName.value = row.user_name || row.user_phone || '';
   historyDialogVisible.value = true;
+};
+
+const openRiskReport = async (row) => {
+  riskDialogVisible.value = true;
+  riskLoading.value = true;
+  riskReport.value = null;
+  try {
+    riskReport.value = await getRiskReportByUser({ user_id: row.user_id });
+  } catch (error) {
+    riskDialogVisible.value = false;
+  } finally {
+    riskLoading.value = false;
+  }
+};
+
+const handleBlacklist = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认将 ${row.user_name || row.user_phone} 加入黑名单？`, '一键拉黑', {
+      type: 'warning',
+      confirmButtonText: '确认拉黑',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await blacklistUser(row.user_id, { note: '后台一键拉黑' });
+  ElMessage.success('已加入黑名单');
+  fetchData();
+};
+
+const handleRejectCard = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认拒绝 ${row.user_name || row.user_phone} 的发卡？`, '拒绝发卡', {
+      type: 'warning',
+      confirmButtonText: '确认拒绝',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await rejectCardLoan(row.id, { note: '后台拒绝发卡' });
+  ElMessage.success('已拒绝发卡');
+  fetchData();
+};
+
+const handleCloseCard = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认关闭 ${row.user_name || row.user_phone} 的发卡资格并加入黑名单？`, '关闭发卡', {
+      type: 'warning',
+      confirmButtonText: '确认关闭',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await closeCardReissue(row.id);
+  ElMessage.success('已关闭发卡并加入黑名单');
+  fetchData();
+};
+
+const openIpAudit = async (row) => {
+  ipAuditVisible.value = true;
+  ipAuditLoading.value = true;
+  ipAuditItems.value = [];
+  try {
+    const result = await getUserIpAudit(row.user_id);
+    ipAuditItems.value = result.items || [];
+  } finally {
+    ipAuditLoading.value = false;
+  }
 };
 
 const saveConfig = async () => {
@@ -417,12 +520,12 @@ const createConfirmMessage = (row, summary) => h('div', { class: 'confirm-shell'
   h('div', { class: 'confirm-grid confirm-grid-detail' }, [
     createMetric('信用支付金额', formatCurrency(summary.paymentAmount)),
     createMetric(
-      '账期',
+      '期限',
       summary.termDays && summary.installmentPeriods
-        ? `${summary.termDays} 天 / ${summary.installmentPeriods} 期`
+        ? `${summary.termDays} 天`
         : '待确认'
     ),
-    createMetric('每期应付', formatCurrency(summary.installmentAmount))
+    createMetric('到期应付', formatCurrency(summary.installmentAmount))
   ]),
   h('div', { class: 'confirm-note' }, [
     h('span', { class: 'confirm-note-label' }, '预计付款日'),
@@ -441,14 +544,19 @@ const handleDisburse = async (row = null) => {
 
   const summary = buildSummary(targetRow);
   if (!summary.ecardFaceValue || !summary.paymentAmount) {
+    if (!summary.paymentAmount) {
+      ElMessage.warning('订单快照不完整，请先核对商品配置');
+      return;
+    }
+  }
+  if (targetRow.user_blacklist_hit) {
+    ElMessage.warning('该用户命中黑名单，不能继续发卡');
+    return;
+  }
+  if (!summary.ecardFaceValue && summary.rightsPrice <= 0) {
     ElMessage.warning('订单快照不完整，请先核对商品配置');
     return;
   }
-  if (summary.termDays && !summary.installmentPeriods) {
-    ElMessage.warning(`账期必须为 ${BILLING_PERIOD_DAYS} 天的倍数`);
-    return;
-  }
-
   try {
     await ElMessageBox({
       title: '确认发放京东E卡',
@@ -525,8 +633,19 @@ onMounted(() => {
 
 .row-action-cell {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+.row-action-cell :deep(.el-button) {
+  margin-left: 0;
+  width: auto;
+  justify-content: center;
 }
 
 .pagination-wrap {

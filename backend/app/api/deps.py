@@ -66,6 +66,11 @@ async def get_user_by_token_async(db: AsyncSession, token: str) -> User:
     ).scalar_one_or_none()
     if token_row is None:
         raise credentials_exception
+    if getattr(user, "location_risk_blocked", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=user.location_risk_reason or "当前登录环境存在风险，请联系客服处理",
+        )
     return user
 
 

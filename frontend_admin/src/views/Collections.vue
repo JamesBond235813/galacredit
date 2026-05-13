@@ -56,12 +56,16 @@
           <template #default="{ row }">
             <div class="borrower-name-row">
               <span>{{ row.user_name || '未实名' }}</span>
+              <span v-if="row.user_blacklist_hit" class="black-badge">黑</span>
               <span v-if="Number(row.repay_attempt_count || 0) > 0" class="repay-attempt-badge">
                 {{ Number(row.repay_attempt_count || 0) }}
               </span>
             </div>
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
+        </el-table-column>
+        <el-table-column label="IP审查" width="100">
+          <template #default="{ row }"><IpAuditTag @click="openIpAudit(row)" /></template>
         </el-table-column>
         <el-table-column label="催收员" width="130">
           <template #default="{ row }">
@@ -132,6 +136,16 @@
             <el-button link type="primary" @click="openFollowLogs(row)">查询</el-button>
           </template>
         </el-table-column>
+        <el-table-column label="风控报告" width="100">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="风险管理" width="110">
+          <template #default="{ row }">
+            <el-button link type="danger" :disabled="row.user_blacklist_hit" @click="handleBlacklist(row)">一键拉黑</el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="danger" @click="openDrawer(row)">催收处理</el-button>
@@ -151,8 +165,10 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="drawerVisible" size="720px" title="逾期催收处理" destroy-on-close>
-      <div v-if="currentRow" class="detail-stack">
+    <el-drawer v-model="drawerVisible" size="1080px" title="逾期催收处理" destroy-on-close>
+      <div v-if="currentRow" class="identity-drawer-layout">
+        <IdentityImagePanel :row="currentRow" />
+        <div class="detail-stack">
         <section class="detail-card">
           <h3>客户与账单信息</h3>
           <el-descriptions :column="2" border>
@@ -194,7 +210,33 @@
               <span>剩余待还</span>
               <strong>{{ formatCurrency(currentRow.remaining_repayment_amount) }}</strong>
             </article>
+            <article class="bill-cell">
+              <span>可用额度</span>
+              <strong>{{ formatCurrency(currentRow.available_credit_limit) }}</strong>
+            </article>
           </div>
+          <div class="extension-prep-box">
+            <el-button :loading="overdueDisplaySaving" @click="submitOverdueDisplayClose">关闭逾期显示</el-button>
+            <el-input-number v-model="creditAdjustForm.amount" :min="0" :step="100" :controls="false" placeholder="增加可用额度" />
+            <el-input v-model="creditAdjustForm.note" placeholder="额度调整备注" clearable />
+            <el-button type="primary" :loading="creditAdjustSaving" @click="submitCreditAdjust">增加额度</el-button>
+          </div>
+        </section>
+
+        <section class="detail-card">
+          <h3>全部经纬度记录</h3>
+          <el-table :data="locationEvents" size="small">
+            <el-table-column prop="lon_lat" label="经纬度" min-width="150" />
+            <el-table-column label="行政区划" min-width="180">
+              <template #default="{ row }">
+                {{ [row.lon_lat_province, row.lon_lat_city, row.lon_lat_district].filter(Boolean).join(' / ') || '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="lon_lat_detail" label="地址" min-width="220" />
+            <el-table-column label="时间" width="160">
+              <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+            </el-table-column>
+          </el-table>
         </section>
 
         <section class="detail-card">
@@ -235,6 +277,9 @@
             <el-button plain type="primary" @click="jumpToFinance">
               去财务平账
             </el-button>
+            <el-button plain type="warning" @click="openExtensionDialog">
+              展期
+            </el-button>
           </div>
         </section>
 
@@ -254,6 +299,7 @@
           <h3>账单台账</h3>
           <LoanLedgerPanel :ledger="loanLedger" :loading="ledgerLoading" />
         </section>
+        </div>
       </div>
     </el-drawer>
 
@@ -280,16 +326,45 @@
       :loan="historyLoan"
       :borrower-name="historyBorrowerName"
     />
+    <RiskReportDialog v-model="riskDialogVisible" :loading="riskLoading" :report="riskReport" />
+    <IpAuditDialog v-model="ipAuditVisible" :loading="ipAuditLoading" :items="ipAuditItems" />
+    <el-dialog v-model="extensionVisible" width="460px" title="账单展期" destroy-on-close>
+      <el-form label-width="110px">
+        <el-form-item label="展期类型">
+          <el-radio-group v-model="extensionForm.extension_type">
+            <el-radio value="FREE">无附加条件</el-radio>
+            <el-radio value="FEE">带息费</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="展期天数">
+          <el-input-number v-model="extensionForm.days" :min="1" :max="365" />
+        </el-form-item>
+        <el-form-item label="减免金额">
+          <el-input-number v-model="extensionForm.reduction_amount" :min="0" :disabled="extensionForm.extension_type !== 'FREE'" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="extensionForm.note" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="extensionVisible = false">取消</el-button>
+        <el-button type="primary" :loading="extensionSaving" @click="submitExtension">确认展期</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import IdentityImagePanel from '../components/IdentityImagePanel.vue';
+import IpAuditDialog from '../components/IpAuditDialog.vue';
+import IpAuditTag from '../components/IpAuditTag.vue';
 import LoanLedgerPanel from '../components/LoanLedgerPanel.vue';
 import LoanHistoryDialog from '../components/LoanHistoryDialog.vue';
-import { ackRepayAttempt, assignLoan, collectLoan, getAdminStats, getLoanAssignees, getLoanLedger, getLoans, getUserDetail } from '../api';
+import RiskReportDialog from '../components/RiskReportDialog.vue';
+import { ackRepayAttempt, adjustAvailableCredit, assignLoan, blacklistUser, collectLoan, extendLoan, getAdminStats, getLoanAssignees, getLoanLedger, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, updateOverdueDisplay } from '../api';
 import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDate, formatDateTime, formatTime } from '../utils/format';
 
@@ -304,6 +379,7 @@ const stats = ref({});
 const currentRow = ref(null);
 const collectionNote = ref('');
 const followEvents = ref([]);
+const locationEvents = ref([]);
 const logVisible = ref(false);
 const logLoading = ref(false);
 const logEvents = ref([]);
@@ -314,6 +390,18 @@ const historyLoan = ref(null);
 const historyBorrowerName = ref('');
 const loanLedger = ref(null);
 const ledgerLoading = ref(false);
+const riskDialogVisible = ref(false);
+const riskLoading = ref(false);
+const riskReport = ref(null);
+const ipAuditVisible = ref(false);
+const ipAuditLoading = ref(false);
+const ipAuditItems = ref([]);
+const extensionVisible = ref(false);
+const extensionSaving = ref(false);
+const extensionForm = reactive({ extension_type: 'FREE', days: 3, reduction_amount: 0, note: '' });
+const creditAdjustSaving = ref(false);
+const creditAdjustForm = reactive({ amount: 0, note: '' });
+const overdueDisplaySaving = ref(false);
 const assignLoading = ref(false);
 const assigningCollector = ref(false);
 const collectionAssigneeOptions = ref([]);
@@ -532,9 +620,17 @@ const openDrawer = async (row) => {
 
   try {
     const detail = await getUserDetail(row.user_id);
+    currentRow.value = {
+      ...currentRow.value,
+      id_card_front_image_url: detail.id_card_front_image_url,
+      id_card_back_image_url: detail.id_card_back_image_url,
+      face_image_url: detail.face_image_url
+    };
     followEvents.value = filterFollowEvents(detail.events, row.id);
+    locationEvents.value = (detail.events || []).filter((item) => item.lon_lat);
   } catch (error) {
     followEvents.value = [];
+    locationEvents.value = [];
   }
 };
 
@@ -579,6 +675,104 @@ const openHistoryDialog = (row) => {
   historyLoan.value = row.latest_settled_loan || null;
   historyBorrowerName.value = row.user_name || row.user_phone || '';
   historyDialogVisible.value = true;
+};
+
+const openRiskReport = async (row) => {
+  riskDialogVisible.value = true;
+  riskLoading.value = true;
+  riskReport.value = null;
+  try {
+    riskReport.value = await getRiskReportByUser({ user_id: row.user_id });
+  } catch (error) {
+    riskDialogVisible.value = false;
+  } finally {
+    riskLoading.value = false;
+  }
+};
+
+const openIpAudit = async (row) => {
+  ipAuditVisible.value = true;
+  ipAuditLoading.value = true;
+  ipAuditItems.value = [];
+  try {
+    const result = await getUserIpAudit(row.user_id);
+    ipAuditItems.value = result.items || [];
+  } finally {
+    ipAuditLoading.value = false;
+  }
+};
+
+const handleBlacklist = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认将 ${row.user_name || row.user_phone} 加入黑名单？`, '一键拉黑', {
+      type: 'warning',
+      confirmButtonText: '确认拉黑',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await blacklistUser(row.user_id, { note: '后台一键拉黑' });
+  ElMessage.success('已加入黑名单');
+  fetchData();
+};
+
+const openExtensionDialog = () => {
+  extensionForm.extension_type = 'FREE';
+  extensionForm.days = 3;
+  extensionForm.reduction_amount = 0;
+  extensionForm.note = '';
+  extensionVisible.value = true;
+};
+
+const submitExtension = async () => {
+  if (!currentRow.value?.id) {
+    return;
+  }
+  extensionSaving.value = true;
+  try {
+    await extendLoan(currentRow.value.id, extensionForm);
+    ElMessage.success('展期成功');
+    extensionVisible.value = false;
+    drawerVisible.value = false;
+    fetchData();
+  } finally {
+    extensionSaving.value = false;
+  }
+};
+
+const submitOverdueDisplayClose = async () => {
+  if (!currentRow.value?.id) {
+    return;
+  }
+  overdueDisplaySaving.value = true;
+  try {
+    await updateOverdueDisplay(currentRow.value.id, { overdue_hidden: true, note: '展期前关闭逾期显示' });
+    ElMessage.success('逾期显示已关闭');
+    fetchData();
+  } finally {
+    overdueDisplaySaving.value = false;
+  }
+};
+
+const submitCreditAdjust = async () => {
+  if (!currentRow.value?.id || Number(creditAdjustForm.amount || 0) <= 0) {
+    ElMessage.warning('请填写需要增加的可用额度');
+    return;
+  }
+  creditAdjustSaving.value = true;
+  try {
+    await adjustAvailableCredit(currentRow.value.id, {
+      amount: Number(creditAdjustForm.amount || 0),
+      note: creditAdjustForm.note || ''
+    });
+    ElMessage.success('可用额度已增加');
+    creditAdjustForm.amount = 0;
+    creditAdjustForm.note = '';
+    fetchData();
+  } finally {
+    creditAdjustSaving.value = false;
+  }
 };
 
 const handleCollect = async () => {
@@ -627,6 +821,20 @@ watch(
   margin-top: 4px;
   color: #7f8da2;
   font-size: 12px;
+}
+
+.black-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .borrower-name-row {
@@ -782,6 +990,14 @@ watch(
   flex-wrap: wrap;
 }
 
+.extension-prep-box {
+  display: grid;
+  grid-template-columns: auto 160px minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
 .assignee-row {
   display: flex;
   align-items: center;
@@ -812,6 +1028,10 @@ watch(
 
 @media (max-width: 1024px) {
   .bill-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .extension-prep-box {
     grid-template-columns: 1fr;
   }
 }

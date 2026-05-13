@@ -14,6 +14,7 @@ export const updateChannel = (id, data) => request.patch(`/admin/channels/${id}`
 export const getProducts = (params) => request.get('/admin/products', { params });
 export const createProduct = (data) => request.post('/admin/products', data);
 export const updateProduct = (id, data) => request.patch(`/admin/products/${id}`, data);
+export const uploadProductRightsImage = (formData) => request.post('/admin/products/rights-image', formData);
 export const getEcardPool = (params) => request.get('/admin/ecard-pool', { params });
 export const createEcardPoolItem = (data) => request.post('/admin/ecard-pool', data);
 export const updateEcardPoolItem = (id, data) => request.patch(`/admin/ecard-pool/${id}`, data);
@@ -29,16 +30,30 @@ export const deleteAdminUser = (id) => request.delete(`/admin/admin-users/${id}`
 export const getUsers = (params) => request.get('/admin/users', { params });
 export const getUserSourceChannels = (params) => request.get('/admin/users/source-channels', { params });
 export const getUserDetail = (id) => request.get(`/admin/users/${id}`);
+export const getUserIpAudit = (id) => request.get(`/admin/users/${id}/ip-audit`);
 export const createFrontUser = (data) => request.post('/admin/users', data);
 export const resetFrontUserPassword = (id, data) => request.post(`/admin/users/${id}/reset-password`, data);
 export const getRiskReportByUser = (data) => request.post('/admin/risk/report', data);
+export const getBlacklist = (params) => request.get('/admin/blacklist', { params });
+export const uploadBlacklist = (formData) => request.post('/admin/blacklist/upload', formData);
+export const blacklistUser = (id, data) => request.post(`/admin/users/${id}/blacklist`, data);
+export const removeBlacklistUser = (id, data) => request.post(`/admin/users/${id}/blacklist/remove`, data);
+export const getOverdueFeeConfigs = (params) => request.get('/admin/overdue-fee-configs', { params });
+export const createOverdueFeeConfig = (data) => request.post('/admin/overdue-fee-configs', data);
 
 // Loan API for Admin
 export const getLoans = (params) => request.get('/admin/loans', { params });
 export const getLoanLedger = (id) => request.get(`/admin/loans/${id}/ledger`);
+export const getLoanPurchaseContract = (id) => request.get(`/admin/loans/${id}/purchase-contract`);
 export const reviewLoan = (id, data) => request.post(`/admin/loans/${id}/review`, data);
 export const updateLoan = (id, data) => request.patch(`/admin/loans/${id}`, data);
 export const disburseLoan = (id, data) => request.post(`/admin/loans/${id}/disburse`, data);
+export const rejectCardLoan = (id, data) => request.post(`/admin/loans/${id}/reject-card`, data);
+export const reissueCardLoan = (id) => request.post(`/admin/loans/${id}/reissue-card`);
+export const closeCardReissue = (id) => request.post(`/admin/loans/${id}/close-card-reissue`);
+export const extendLoan = (id, data) => request.post(`/admin/loans/${id}/extend`, data);
+export const adjustAvailableCredit = (id, data) => request.post(`/admin/loans/${id}/available-credit/adjust`, data);
+export const updateOverdueDisplay = (id, data) => request.post(`/admin/loans/${id}/overdue-display`, data);
 export const settleLoan = (id) => request.post(`/admin/loans/${id}/settle`);
 export const remindLoan = (id, data) => request.post(`/admin/loans/${id}/remind`, data);
 export const collectLoan = (id, data) => request.post(`/admin/loans/${id}/collect`, data);

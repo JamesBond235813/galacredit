@@ -10,6 +10,8 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "repayments", "label": "还款管理", "route": "/repayments"},
     {"key": "collections", "label": "催收管理", "route": "/collections"},
     {"key": "financials", "label": "财务平账", "route": "/financials"},
+    {"key": "blacklist", "label": "黑名单", "route": "/blacklist"},
+    {"key": "overdue-config", "label": "逾期配置", "route": "/overdue-config"},
     {"key": "products", "label": "商品管理", "route": "/products"},
     {"key": "ecard-pool", "label": "卡池管理", "route": "/ecard-pool"},
     {"key": "channels", "label": "渠道管理", "route": "/channels"},
@@ -31,9 +33,9 @@ ALL_ADMIN_ROLE_KEYS = [item["key"] for item in ADMIN_ROLE_OPTIONS]
 
 ADMIN_ROLE_PERMISSION_MAP = {
     "ADMIN": list(ALL_ADMIN_PERMISSION_KEYS),
-    "REVIEW": ["users", "applications", "repayments"],
-    "FINANCE": ["disbursements", "financials", "products", "ecard-pool"],
-    "COLLECTION": ["collections"],
+    "REVIEW": ["users", "applications", "repayments", "blacklist"],
+    "FINANCE": ["disbursements", "financials", "products", "ecard-pool", "blacklist"],
+    "COLLECTION": ["collections", "blacklist"],
     "BUSINESS_CONSULTANT": ["users", "exclusive-links"],
 }
 

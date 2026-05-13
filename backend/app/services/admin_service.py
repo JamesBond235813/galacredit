@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Optional
@@ -19,10 +20,12 @@ from app.core.database import get_async_db
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.admin import Admin
+from app.models.blacklist import BlacklistEntry
 from app.models.channel import Channel
 from app.models.ecard_pool import EcardPool
 from app.models.loan import Loan
 from app.models.loan_transaction import LoanTransaction
+from app.models.overdue_fee_config import OverdueFeeConfig
 from app.models.product import Product
 from app.models.user import User
 from app.models.user_event import UserEvent
@@ -46,6 +49,7 @@ from app.schemas.channel import (
 )
 from app.schemas.loan import (
     AdminStatsResponse,
+    AvailableCreditAdjustRequest,
     DisburseRequest,
     EcardPoolCreateRequest,
     EcardPoolUpdateRequest,
@@ -62,6 +66,8 @@ from app.schemas.loan import (
     RepaymentStatsResponse,
     LoanReviewRequest,
     LoanUpdateRequest,
+    OverdueDisplayRequest,
+    OverdueFeeConfigCreateRequest,
     PaginatedEcardPoolResponse,
     PaginatedProductResponse,
     PaginatedLoanResponse,
@@ -125,6 +131,15 @@ from app.services.risk_report import (
     get_user_for_risk_report_async,
     serialize_risk_report,
 )
+from app.services.upload_storage import build_upload_url
+from app.services.blacklist_service import (
+    add_blacklist_entry,
+    blacklist_user,
+    refresh_user_blacklist_status,
+    remove_user_from_blacklist,
+    serialize_blacklist_entry,
+    upload_blacklist_entries,
+)
 
 
 LOAN_STATUSES = {
@@ -136,6 +151,7 @@ LOAN_STATUSES = {
     "DISBURSED",
     "SETTLED",
     "OVERDUE",
+    "CARD_REJECTED",
 }
 
 LOAN_PAGE_PERMISSION_KEYS = (
@@ -244,6 +260,25 @@ def ensure_valid_term_days(term_days: Optional[int]) -> Optional[int]:
         return normalize_term_days(term_days)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _set_available_credit(user: User, amount: float):
+    user.available_credit_limit = round_money(max(float(amount or 0), 0))
+
+
+async def _find_ready_fee_extension_orders(db: AsyncSession, source_loan: Loan):
+    result = await db.execute(
+        select(Loan)
+        .where(
+            Loan.user_id == source_loan.user_id,
+            Loan.is_extension_fee_order.is_(True),
+            Loan.extension_source_loan_id == source_loan.id,
+            Loan.extension_used_at.is_(None),
+            Loan.status == "DISBURSED",
+        )
+        .order_by(Loan.disbursed_at.asc(), Loan.id.asc())
+    )
+    return result.scalars().all()
 
 def serialize_admin_user(admin: Admin, current_admin: Optional[Admin] = None):
     roles = parse_admin_roles(getattr(admin, "roles", None))
@@ -367,8 +402,16 @@ def serialize_user_summary(user: User):
         "phone": mask_secret(user.phone, left=0, right=4),
         "name": user.name,
         "id_card_num": mask_secret(user.id_card_num, left=6, right=1),
+        "id_card_front_image_url": build_upload_url(getattr(user, "id_card_front_image", None)),
+        "id_card_back_image_url": build_upload_url(getattr(user, "id_card_back_image", None)),
+        "face_image_url": build_upload_url(getattr(user, "face_image", None)),
         "face_auth_status": user.face_auth_status,
         "approved_limit": user.approved_limit,
+        "available_credit_limit": round_money(getattr(user, "available_credit_limit", 0)),
+        "overdue_credit_locked": bool(getattr(user, "overdue_credit_locked", False)),
+        "blacklist_hit": bool(getattr(user, "blacklist_hit", False)),
+        "blacklist_reason": getattr(user, "blacklist_reason", None),
+        "blacklist_checked_at": getattr(user, "blacklist_checked_at", None),
         "created_at": user.created_at,
         "last_login_at": user.last_login_at,
         "application_submitted_at": user.application_submitted_at,
@@ -382,6 +425,7 @@ def serialize_user_summary(user: User):
         "current_interest_amount": loan_snapshot["interest_amount"] if loan_snapshot else None,
         "current_guarantee_fee_amount": loan_snapshot["guarantee_fee_amount"] if loan_snapshot else None,
         "current_penalty_amount": loan_snapshot["penalty_amount"] if loan_snapshot else None,
+        "current_blacklist_hit": bool(getattr(user, "blacklist_hit", False)),
         "first_disbursed_at": getattr(first_deal_loan, "disbursed_at", None),
         "first_deal_amount": round_money(getattr(first_deal_loan, "product_total_price", 0)) if first_deal_loan else None,
         "latest_disbursed_at": getattr(latest_deal_loan, "disbursed_at", None),
@@ -416,7 +460,15 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
         "id_card_num": user.id_card_num,
         "id_address": user.id_address,
         "id_expiry": user.id_expiry,
+        "id_card_front_image_url": build_upload_url(getattr(user, "id_card_front_image", None)),
+        "id_card_back_image_url": build_upload_url(getattr(user, "id_card_back_image", None)),
+        "face_image_url": build_upload_url(getattr(user, "face_image", None)),
         "approved_limit": user.approved_limit,
+        "available_credit_limit": round_money(getattr(user, "available_credit_limit", 0)),
+        "overdue_credit_locked": bool(getattr(user, "overdue_credit_locked", False)),
+        "blacklist_hit": bool(getattr(user, "blacklist_hit", False)),
+        "blacklist_reason": getattr(user, "blacklist_reason", None),
+        "blacklist_checked_at": getattr(user, "blacklist_checked_at", None),
         "emergency_contact1_name": user.emergency_contact1_name,
         "emergency_contact1_relation": user.emergency_contact1_relation,
         "emergency_contact1_phone": user.emergency_contact1_phone,
@@ -454,11 +506,57 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
                 "event_type": event.event_type,
                 "title": event.title,
                 "detail": event.detail,
+                "ip": event.ip,
+                "ip_country": event.ip_country,
+                "ip_province": event.ip_province,
+                "ip_city": event.ip_city,
+                "ip_district": event.ip_district,
+                "ip_detail": event.ip_detail,
+                "lon_lat": event.lon_lat,
+                "lon_lat_province": event.lon_lat_province,
+                "lon_lat_city": event.lon_lat_city,
+                "lon_lat_district": event.lon_lat_district,
+                "lon_lat_detail": event.lon_lat_detail,
                 "created_at": event.created_at,
             }
             for event in event_list
         ],
     }
+
+
+async def _get_user_ip_audit(db: AsyncSession, current_admin: Admin, user_id: int):
+    ensure_any_admin_page_permission(current_admin, ("users", "applications", "disbursements", "repayments", "collections"))
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    events = (
+        await db.execute(
+            select(UserEvent)
+            .where(UserEvent.user_id == user_id, UserEvent.ip != "")
+            .order_by(UserEvent.created_at.desc(), UserEvent.id.desc())
+        )
+    ).scalars().all()
+    seen = set()
+    items = []
+    for event in events:
+        ip = (event.ip or "").strip()
+        if not ip or ip in seen:
+            continue
+        seen.add(ip)
+        items.append(
+            {
+                "ip": ip,
+                "operation": event.title or event.event_type,
+                "detail": event.detail,
+                "created_at": event.created_at,
+                "country": event.ip_country,
+                "province": event.ip_province,
+                "city": event.ip_city,
+                "district": event.ip_district,
+                "address": event.ip_detail,
+            }
+        )
+    return {"user_id": user.id, "name": user.name, "phone": mask_secret(user.phone, left=0, right=4), "items": items}
 
 def serialize_channel(channel: Channel, advisor: Optional[Admin] = None):
     payload = build_channel_metrics(channel)
@@ -553,6 +651,12 @@ def resolve_product_payment_amount(ecard_face_value: float, rights_price: float,
     return round_money(float(ecard_face_value or 0) + float(rights_price or 0))
 
 def serialize_product(product: Product):
+    rights_detail = None
+    if getattr(product, "rights_detail_json", None):
+        try:
+            rights_detail = json.loads(product.rights_detail_json)
+        except (TypeError, ValueError):
+            rights_detail = None
     return {
         "id": product.id,
         "name": product.name,
@@ -560,8 +664,10 @@ def serialize_product(product: Product):
         "rights_price": round_money(product.rights_price),
         "rights_title": product.rights_title,
         "rights_desc": product.rights_desc,
+        "rights_detail": rights_detail,
         "term_days": product.term_days,
         "payment_amount": round_money(product.payment_amount),
+        "product_type": getattr(product, "product_type", None) or "ECARD_RIGHTS",
         "is_active": bool(product.is_active),
         "created_at": product.created_at,
         "updated_at": product.updated_at,
@@ -1022,18 +1128,23 @@ async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int)
     return serialize_user_detail(user, events=events)
 
 async def _get_risk_report(db: AsyncSession, req: AdminRiskReportRequest, current_admin: Admin):
-    ensure_admin_page_permission(current_admin, "applications")
+    ensure_any_admin_page_permission(current_admin, ("users", "applications", "disbursements", "repayments", "collections", "financials"))
     user = await get_user_for_risk_report_async(db, req.user_id)
     report = await get_or_create_risk_report_async(
         db,
         name=user.name,
         id_card=user.id_card_num,
         phone=user.phone,
+        user_id=user.id,
     )
+    latest_loan = await get_latest_loan_async(db, user.id)
+    if latest_loan:
+        latest_loan.risk_report_checked_at = datetime.now()
+        latest_loan.risk_report_checked_by = current_admin.username
     await log_user_event_async(
         db,
         user=user,
-        loan=await get_latest_loan_async(db, user.id),
+        loan=latest_loan,
         actor_type="ADMIN",
         operator_name=current_admin.username,
         event_type="ADMIN_RISK_REPORT",
@@ -1227,6 +1338,10 @@ async def _get_products(db: AsyncSession, current_admin: Admin, keyword: Optiona
 
 async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCreateRequest):
     ensure_admin_page_permission(current_admin, "products")
+    if req.product_type == "ECARD_RIGHTS" and round_money(req.ecard_face_value) <= 0:
+        raise HTTPException(status_code=400, detail="E卡+权益商品必须填写E卡面值")
+    if req.product_type == "RIGHTS_ONLY" and round_money(req.rights_price) <= 0:
+        raise HTTPException(status_code=400, detail="纯权益包必须填写权益金额")
     payment_amount = resolve_product_payment_amount(req.ecard_face_value, req.rights_price, req.payment_amount)
     product = Product(
         name=req.name.strip(),
@@ -1234,8 +1349,10 @@ async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCr
         rights_price=round_money(req.rights_price),
         rights_title=req.rights_title.strip(),
         rights_desc=(req.rights_desc or "").strip() or None,
+        rights_detail_json=json.dumps(req.rights_detail, ensure_ascii=False) if req.rights_detail else None,
         term_days=req.term_days,
         payment_amount=payment_amount,
+        product_type=req.product_type,
         is_active=req.is_active,
     )
     db.add(product)
@@ -1259,6 +1376,8 @@ async def _update_product(db: AsyncSession, current_admin: Admin, product_id: in
         product.rights_title = payload["rights_title"].strip()
     if "rights_desc" in payload:
         product.rights_desc = (payload["rights_desc"] or "").strip() or None
+    if "rights_detail" in payload:
+        product.rights_detail_json = json.dumps(payload["rights_detail"], ensure_ascii=False) if payload["rights_detail"] else None
     if "term_days" in payload and payload["term_days"] is not None:
         product.term_days = payload["term_days"]
     if "is_active" in payload and payload["is_active"] is not None:
@@ -1267,6 +1386,12 @@ async def _update_product(db: AsyncSession, current_admin: Admin, product_id: in
         product.payment_amount = round_money(payload["payment_amount"])
     elif "ecard_face_value" in payload or "rights_price" in payload:
         product.payment_amount = resolve_product_payment_amount(product.ecard_face_value, product.rights_price)
+    if "product_type" in payload and payload["product_type"] is not None:
+        product.product_type = payload["product_type"]
+    if product.product_type == "ECARD_RIGHTS" and round_money(product.ecard_face_value) <= 0:
+        raise HTTPException(status_code=400, detail="E卡+权益商品必须填写E卡面值")
+    if product.product_type == "RIGHTS_ONLY" and round_money(product.rights_price) <= 0:
+        raise HTTPException(status_code=400, detail="纯权益包必须填写权益金额")
     await db.commit()
     await db.refresh(product)
     return serialize_product(product)
@@ -1470,18 +1595,33 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
             raise HTTPException(status_code=403, detail="仅可处理分配给你的审批订单")
 
     owner = loan.owner
+    await refresh_user_blacklist_status(db, owner)
     if req.approved:
+        if owner.blacklist_hit:
+            raise HTTPException(status_code=400, detail="该用户命中黑名单，只能操作拒绝")
+        if not loan.risk_report_checked_at:
+            raise HTTPException(status_code=400, detail="审批通过前请先查看风控报告")
+        if loan.risk_report_checked_at < datetime.now() - timedelta(days=14):
+            raise HTTPException(status_code=400, detail="风控报告已超过14天，请重新查询后再审批通过")
+        if loan.risk_report_checked_by and loan.risk_report_checked_by != current_admin.username:
+            raise HTTPException(status_code=400, detail="当前审核员审批通过前请先查看风控报告")
         if req.credit_limit is None:
             raise HTTPException(status_code=400, detail="请填写信用额度")
         approved_credit_limit = round_money(req.credit_limit)
+        term_days = ensure_valid_term_days(req.term_days or 7)
+        discount_amount = round_money(req.approval_discount_amount or 0)
+        if discount_amount > approved_credit_limit:
+            raise HTTPException(status_code=400, detail="减免额度不能超过授信额度")
 
         loan.status = "APPROVED"
         loan.approved_credit_limit = approved_credit_limit
         loan.credit_limit = approved_credit_limit
+        loan.approval_discount_amount = discount_amount
+        loan.order_discount_amount = 0
         loan.fee_rate = DEFAULT_FEE_RATE
         loan.fee_amount = 0
-        loan.term_days = None
-        loan.product_term_days = None
+        loan.term_days = term_days
+        loan.product_term_days = term_days
         loan.review_note = (req.review_note or "后台已完成授信审批").strip()
         loan.approved_at = datetime.now()
         loan.due_date = None
@@ -1510,9 +1650,13 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.ecard_password = None
         loan.ecard_expires_at = None
         owner.approved_limit = int(approved_credit_limit)
+        _set_available_credit(owner, approved_credit_limit)
+        owner.overdue_credit_locked = False
 
         detail = (
             f"审批通过；授信额度 {approved_credit_limit:.2f} 元；"
+            f"期限 {term_days} 天；"
+            f"减免额度 {discount_amount:.2f} 元；"
             f"用户可在商品列表中下单并消耗信用额度；备注：{loan.review_note}"
         )
         title = "后台审批通过"
@@ -1521,6 +1665,8 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.status = "REJECTED"
         loan.credit_limit = 0
         loan.approved_credit_limit = 0
+        loan.approval_discount_amount = 0
+        loan.order_discount_amount = 0
         loan.fee_rate = DEFAULT_FEE_RATE
         loan.fee_amount = 0
         loan.term_days = None
@@ -1548,6 +1694,7 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.ecard_password = None
         loan.ecard_expires_at = None
         owner.approved_limit = 0
+        _set_available_credit(owner, 0)
 
         detail = f"审批拒绝；备注：{loan.review_note}"
         title = "后台审批拒绝"
@@ -1571,8 +1718,8 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
 async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanUpdateRequest):
     ensure_admin_page_permission(current_admin, "disbursements")
     loan = (
-        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
-    ).scalar_one_or_none()
+        await db.execute(select(Loan).options(joinedload(Loan.owner), joinedload(Loan.installments)).where(Loan.id == loan_id))
+    ).unique().scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
 
@@ -1597,6 +1744,7 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
             loan.approved_at = datetime.now()
         if new_status == "REJECTED":
             owner.approved_limit = 0
+            _set_available_credit(owner, 0)
             loan.approved_at = None
             loan.approved_credit_limit = 0
             loan.credit_limit = 0 if "credit_limit" not in payload else loan.credit_limit
@@ -1619,11 +1767,25 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         if new_status == "SETTLED":
             loan.penalty_amount = payload.get("penalty_amount", loan.penalty_amount)
             loan.repay_attempt_count = 0
+        if new_status == "OVERDUE":
+            await blacklist_user(
+                db,
+                owner,
+                source="OVERDUE",
+                reason="订单逾期自动进入黑名单",
+                created_by=current_admin.username,
+            )
+            owner.approved_limit = 0
+            _set_available_credit(owner, 0)
+            owner.overdue_credit_locked = True
+            loan.approved_credit_limit = 0
 
     if "credit_limit" in payload:
         loan.credit_limit = float(payload["credit_limit"])
         if loan.status == "APPROVED":
             loan.approved_credit_limit = float(payload["credit_limit"])
+            _set_available_credit(owner, payload["credit_limit"])
+            owner.overdue_credit_locked = False
         owner.approved_limit = int(payload["credit_limit"])
         change_messages.append(f"额度改为 {loan.credit_limit:.0f} 元")
 
@@ -1701,46 +1863,50 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
 async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: DisburseRequest):
     ensure_admin_page_permission(current_admin, "disbursements")
     loan = (
-        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
-    ).scalar_one_or_none()
+        await db.execute(select(Loan).options(joinedload(Loan.owner), joinedload(Loan.installments)).where(Loan.id == loan_id))
+    ).unique().scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status != "WITHDRAWING":
         raise HTTPException(status_code=400, detail="仅待发卡订单支持发卡")
+    await refresh_user_blacklist_status(db, loan.owner)
+    if loan.owner.blacklist_hit:
+        raise HTTPException(status_code=400, detail="该用户命中黑名单，当前不允许发卡")
 
     term_days = ensure_valid_term_days(req.term_days or loan.product_term_days or loan.term_days)
     if not term_days:
         raise HTTPException(status_code=400, detail="请先确认账期天数")
-    if round_money(loan.ecard_face_value or loan.credit_limit) <= 0:
+    if round_money(loan.product_total_price or 0) <= 0:
         raise HTTPException(status_code=400, detail="请先确认商品信息")
 
     now = datetime.now()
     today = now.date()
     tomorrow_start = datetime(now.year, now.month, now.day) + timedelta(days=1)
-    ecard_face_value = round_money(loan.ecard_face_value or loan.credit_limit)
-    ecard_item = (
-        await db.execute(
-            select(EcardPool)
-            .where(
-                EcardPool.status == "AVAILABLE",
-                EcardPool.face_value == ecard_face_value,
-                EcardPool.expires_at >= tomorrow_start,
+    ecard_face_value = round_money(loan.ecard_face_value or 0)
+    ecard_item = None
+    if ecard_face_value > 0:
+        ecard_item = (
+            await db.execute(
+                select(EcardPool)
+                .where(
+                    EcardPool.status == "AVAILABLE",
+                    EcardPool.face_value == ecard_face_value,
+                    EcardPool.expires_at >= tomorrow_start,
+                )
+                .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
             )
-            .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
-        )
-    ).scalars().first()
-    # 兜底校验：即使数据库比较存在时区/函数差异，也严格禁止“今天到期”的卡发放。
-    if ecard_item and ecard_item.expires_at.date() <= today:
-        ecard_item = None
-    if not ecard_item:
-        raise HTTPException(status_code=400, detail=f"卡池库存不足：未找到面额 {ecard_face_value:.2f} 元且有效的京东E卡")
+        ).scalars().first()
+        if ecard_item and ecard_item.expires_at.date() <= today:
+            ecard_item = None
+        if not ecard_item:
+            raise HTTPException(status_code=400, detail=f"卡池库存不足：未找到面额 {ecard_face_value:.2f} 元且有效的京东E卡")
 
     sync_loan_fee_fields(loan)
     disbursed_at = now
     loan.status = "DISBURSED"
     loan.term_days = term_days
     loan.product_term_days = term_days
-    loan.credit_limit = ecard_face_value
+    loan.credit_limit = ecard_face_value if ecard_face_value > 0 else round_money(loan.product_total_price)
     if not loan.product_total_price:
         loan.product_total_price = round_money(loan.credit_limit + (loan.rights_price or loan.fee_amount))
     loan.disbursed_at = disbursed_at
@@ -1752,13 +1918,18 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
     loan.reduced_penalty_amount = 0
     loan.collection_admin_id = None
     loan.collection_transferred_at = None
-    loan.ecard_account = ecard_item.account
-    loan.ecard_password = ecard_item.password
-    loan.ecard_expires_at = ecard_item.expires_at
 
-    ecard_item.status = "ASSIGNED"
-    ecard_item.loan_id = loan.id
-    ecard_item.assigned_at = now
+    if ecard_item:
+        loan.ecard_account = ecard_item.account
+        loan.ecard_password = ecard_item.password
+        loan.ecard_expires_at = ecard_item.expires_at
+        ecard_item.status = "ASSIGNED"
+        ecard_item.loan_id = loan.id
+        ecard_item.assigned_at = now
+    else:
+        loan.ecard_account = None
+        loan.ecard_password = None
+        loan.ecard_expires_at = None
 
     await ensure_installment_records_async(db, loan)
     await create_disbursement_transaction_async(
@@ -1778,18 +1949,377 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
         title="后台确认发卡",
         detail=(
             f"发卡商品：{loan.product_name or '未命名商品'}；"
-            f"京东E卡面值 {loan.credit_limit:.2f} 元；"
+            f"京东E卡面值 {ecard_face_value:.2f} 元；"
             f"旅游权益 {round_money(loan.rights_price):.2f} 元；"
             f"支付金额 {round_money(loan.product_total_price):.2f} 元；"
             f"账期 {loan.term_days} 天；"
             f"到期日 {loan.due_date.strftime('%Y-%m-%d')}；"
-            f"卡池记录 #{ecard_item.id}。"
+            f"卡池记录 #{ecard_item.id if ecard_item else '无E卡'}。"
         ),
     )
 
     await db.commit()
     await db.refresh(loan)
     return {"msg": "发卡成功", "loan": serialize_loan(loan)}
+
+async def _reject_card_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanFollowUpRequest):
+    ensure_admin_page_permission(current_admin, "disbursements")
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status != "WITHDRAWING":
+        raise HTTPException(status_code=400, detail="仅待发卡订单支持拒绝发卡")
+    loan.status = "CARD_REJECTED"
+    loan.review_note = (req.note or "后台拒绝发卡").strip()
+    loan.disbursed_at = None
+    loan.due_date = None
+    loan.ecard_account = None
+    loan.ecard_password = None
+    loan.ecard_expires_at = None
+    if loan.is_extension_fee_order:
+        _set_available_credit(
+            loan.owner,
+            round_money(getattr(loan.owner, "available_credit_limit", 0)) + round_money(loan.product_total_price or loan.credit_limit or 0),
+        )
+    else:
+        loan.owner.approved_limit = 0
+        _set_available_credit(loan.owner, 0)
+    await log_user_event_async(
+        db,
+        user=loan.owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_CARD_REJECTED",
+        title="后台拒绝发卡",
+        detail=loan.review_note,
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "已拒绝发卡", "loan": serialize_loan(loan)}
+
+
+async def _reissue_card_loan(db: AsyncSession, current_admin: Admin, loan_id: int):
+    ensure_admin_page_permission(current_admin, "users")
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status != "CARD_REJECTED":
+        raise HTTPException(status_code=400, detail="仅拒发卡订单支持二次发卡")
+    if loan.card_reissue_closed:
+        raise HTTPException(status_code=400, detail="该订单已关闭二次发卡")
+    await refresh_user_blacklist_status(db, loan.owner)
+    if loan.owner.blacklist_hit:
+        raise HTTPException(status_code=400, detail="该用户命中黑名单，不能二次发卡")
+    loan.status = "WITHDRAWING"
+    await log_user_event_async(
+        db,
+        user=loan.owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_CARD_REISSUE",
+        title="后台开启二次发卡",
+        detail="该订单已重新进入待发卡列表。",
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "已进入待发卡", "loan": serialize_loan(loan)}
+
+
+async def _close_card_reissue(db: AsyncSession, current_admin: Admin, loan_id: int):
+    ensure_any_admin_page_permission(current_admin, ("users", "disbursements"))
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status not in {"WITHDRAWING", "CARD_REJECTED"}:
+        raise HTTPException(status_code=400, detail="仅待发卡/拒发卡订单支持关闭发卡")
+    loan.card_reissue_closed = True
+    loan.status = "REJECTED"
+    loan.review_note = "关闭发卡：用户不再具备发卡资格"
+    loan.credit_limit = 0
+    loan.approved_credit_limit = 0
+    loan.disbursed_at = None
+    loan.due_date = None
+    loan.ecard_account = None
+    loan.ecard_password = None
+    loan.ecard_expires_at = None
+    loan.owner.approved_limit = 0
+    _set_available_credit(loan.owner, 0)
+    await blacklist_user(
+        db,
+        loan.owner,
+        source="MANUAL",
+        reason="关闭发卡，用户不再具备发卡资格",
+        created_by=current_admin.username,
+    )
+    await log_user_event_async(
+        db,
+        user=loan.owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_CARD_REISSUE_CLOSED",
+        title="后台关闭发卡",
+        detail="订单已关闭，用户已加入黑名单。",
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "已关闭发卡", "loan": serialize_loan(loan)}
+
+
+async def _extend_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req):
+    ensure_any_admin_page_permission(current_admin, ("repayments", "collections"))
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner), joinedload(Loan.installments)).where(Loan.id == loan_id))
+    ).unique().scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status not in {"DISBURSED", "OVERDUE"}:
+        raise HTTPException(status_code=400, detail="当前账单不支持展期")
+    days = int(req.days)
+    fee_order = None
+    if req.extension_type == "FREE":
+        reduction_amount = round_money(req.reduction_amount or 0)
+        if reduction_amount > 0:
+            await ensure_installment_records_async(db, loan)
+            await register_reduction_async(
+                db,
+                loan,
+                reduction_amount,
+                operator_name=current_admin.username,
+                note=(req.note or "无附加条件展期减免平账").strip(),
+            )
+    else:
+        ready_orders = await _find_ready_fee_extension_orders(db, loan)
+        if req.fee_order_id:
+            fee_order = next((item for item in ready_orders if int(item.id) == int(req.fee_order_id)), None)
+        else:
+            fee_order = ready_orders[0] if ready_orders else None
+        if not fee_order:
+            raise HTTPException(status_code=400, detail="带息费展期前，用户必须先完成一笔未使用的纯权益订单")
+    base_due_date = loan.due_date or datetime.now()
+    old_due_date = loan.due_date
+    loan.due_date = base_due_date + timedelta(days=days)
+    if old_due_date and loan.installments:
+        for installment in loan.installments:
+            if getattr(installment, "status", None) != "SETTLED":
+                installment.due_date = installment.due_date + timedelta(days=days)
+    loan.status = "DISBURSED"
+    loan.overdue_hidden = True
+    loan.extension_count = int(loan.extension_count or 0) + 1
+    loan.extension_type = req.extension_type
+    loan.extension_note = (req.note or "").strip() or None
+    if fee_order:
+        fee_order.due_date = loan.due_date
+        fee_order.extension_used_at = datetime.now()
+        fee_order.extension_type = "FEE"
+        fee_order.extension_note = f"作为订单 {loan.id} 带息费展期权益订单"
+        await ensure_installment_records_async(db, fee_order)
+        if fee_order.installments:
+            for installment in fee_order.installments:
+                if getattr(installment, "status", None) != "SETTLED":
+                    installment.due_date = loan.due_date
+    sync_loan_repayment_state(loan)
+    await log_user_event_async(
+        db,
+        user=loan.owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_LOAN_EXTENDED",
+        title="后台账单展期",
+        detail=f"{'无附加条件' if req.extension_type == 'FREE' else '带息费'}展期 {days} 天；备注：{loan.extension_note or '--'}",
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "展期成功", "loan": serialize_loan(loan)}
+
+
+async def _adjust_available_credit(db: AsyncSession, current_admin: Admin, loan_id: int, req: AvailableCreditAdjustRequest):
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status == "OVERDUE" and not loan.overdue_hidden:
+        raise HTTPException(status_code=400, detail="逾期用户需先关闭逾期状态显示，再增加可用信用额度")
+    if loan.status == "OVERDUE" or loan.overdue_hidden:
+        ensure_admin_page_permission(current_admin, "collections")
+    else:
+        ensure_admin_page_permission(current_admin, "applications")
+    owner = loan.owner
+    before_amount = round_money(getattr(owner, "available_credit_limit", 0))
+    add_amount = round_money(req.amount)
+    _set_available_credit(owner, before_amount + add_amount)
+    if loan.status != "OVERDUE" or loan.overdue_hidden:
+        owner.overdue_credit_locked = False
+    await log_user_event_async(
+        db,
+        user=owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_AVAILABLE_CREDIT_ADJUSTED",
+        title="后台增加可用信用额度",
+        detail=f"增加 {add_amount:.2f} 元；调整前 {before_amount:.2f} 元；调整后 {owner.available_credit_limit:.2f} 元；备注：{(req.note or '--').strip()}",
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "可用额度已增加", "loan": serialize_loan(loan)}
+
+
+async def _update_overdue_display(db: AsyncSession, current_admin: Admin, loan_id: int, req: OverdueDisplayRequest):
+    ensure_admin_page_permission(current_admin, "collections")
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner), joinedload(Loan.installments)).where(Loan.id == loan_id))
+    ).unique().scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status not in {"OVERDUE", "DISBURSED"}:
+        raise HTTPException(status_code=400, detail="当前账单不支持调整逾期显示")
+    loan.overdue_hidden = bool(req.overdue_hidden)
+    if loan.overdue_hidden and loan.status == "OVERDUE":
+        loan.status = "DISBURSED"
+    if loan.overdue_hidden:
+        loan.owner.overdue_credit_locked = False
+    await log_user_event_async(
+        db,
+        user=loan.owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_OVERDUE_DISPLAY_UPDATED",
+        title="后台调整逾期状态显示",
+        detail=f"逾期显示已{'关闭' if loan.overdue_hidden else '开启'}；备注：{(req.note or '--').strip()}",
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "逾期状态已调整", "loan": serialize_loan(loan)}
+
+
+async def _get_blacklist_entries(db: AsyncSession, current_admin: Admin, keyword: Optional[str], skip: int, limit: int):
+    ensure_admin_page_permission(current_admin, "blacklist")
+    limit = min(max(limit, 1), 100)
+    stmt = select(BlacklistEntry).where(BlacklistEntry.removed_at.is_(None))
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(
+            or_(
+                BlacklistEntry.name.like(pattern),
+                BlacklistEntry.phone.like(pattern),
+                BlacklistEntry.id_card_num.like(pattern),
+            )
+        )
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
+    items = (
+        await db.execute(stmt.order_by(BlacklistEntry.created_at.desc()).offset(skip).limit(limit))
+    ).scalars().all()
+    return {"total": total, "page": skip // limit + 1, "size": limit, "items": [serialize_blacklist_entry(item) for item in items]}
+
+
+def serialize_overdue_fee_config(item: OverdueFeeConfig):
+    return {
+        "id": item.id,
+        "daily_penalty_amount": round_money(item.daily_penalty_amount),
+        "effective_date": item.effective_date,
+        "note": item.note,
+        "created_by": item.created_by,
+        "created_at": item.created_at,
+    }
+
+
+async def _get_overdue_fee_configs(db: AsyncSession, current_admin: Admin, skip: int, limit: int):
+    ensure_admin_page_permission(current_admin, "overdue-config")
+    limit = min(max(limit, 1), 100)
+    total = (await db.scalar(select(func.count(OverdueFeeConfig.id)))) or 0
+    items = (
+        await db.execute(
+            select(OverdueFeeConfig)
+            .order_by(OverdueFeeConfig.effective_date.desc(), OverdueFeeConfig.id.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+    ).scalars().all()
+    return {"total": total, "page": skip // limit + 1, "size": limit, "items": [serialize_overdue_fee_config(item) for item in items]}
+
+
+async def _create_overdue_fee_config(db: AsyncSession, current_admin: Admin, req: OverdueFeeConfigCreateRequest):
+    ensure_admin_page_permission(current_admin, "overdue-config")
+    existed = (
+        await db.execute(select(OverdueFeeConfig).where(OverdueFeeConfig.effective_date == req.effective_date))
+    ).scalars().first()
+    if existed:
+        raise HTTPException(status_code=400, detail="该生效日已存在逾期费用配置")
+    item = OverdueFeeConfig(
+        daily_penalty_amount=round_money(req.daily_penalty_amount),
+        effective_date=req.effective_date,
+        note=(req.note or "").strip() or None,
+        created_by=current_admin.username,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return serialize_overdue_fee_config(item)
+
+
+async def _manual_blacklist_user(db: AsyncSession, current_admin: Admin, user_id: int, req: LoanFollowUpRequest):
+    ensure_any_admin_page_permission(current_admin, ("users", "applications", "disbursements", "repayments", "collections", "financials"))
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    entry = await blacklist_user(
+        db,
+        user,
+        source="MANUAL",
+        reason=(req.note or "后台一键拉黑").strip(),
+        created_by=current_admin.username,
+    )
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=await get_latest_loan_async(db, user.id),
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_BLACKLIST_USER",
+        title="后台一键拉黑",
+        detail=entry.reason or "后台一键拉黑",
+    )
+    await db.commit()
+    return {"msg": "已加入黑名单", "entry": serialize_blacklist_entry(entry)}
+
+
+async def _remove_blacklist_user(db: AsyncSession, current_admin: Admin, user_id: int, req: LoanFollowUpRequest):
+    ensure_admin_page_permission(current_admin, "blacklist")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    count = await remove_user_from_blacklist(db, user, removed_by=current_admin.username, reason=req.note)
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=await get_latest_loan_async(db, user.id),
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_BLACKLIST_REMOVE",
+        title="后台移出黑名单",
+        detail=req.note or f"已移出 {count} 条命中记录。",
+    )
+    await db.commit()
+    return {"msg": "已移出黑名单", "removed": count}
+
+
+async def _upload_blacklist(db: AsyncSession, current_admin: Admin, file: UploadFile):
+    ensure_admin_page_permission(current_admin, "blacklist")
+    result = await upload_blacklist_entries(db, file, created_by=current_admin.username)
+    await db.commit()
+    return result
 
 async def _settle_loan(db: AsyncSession, current_admin: Admin, loan_id: int):
     ensure_admin_page_permission(current_admin, "financials")
@@ -1840,6 +2370,7 @@ async def _finance_reconcile_loan(
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status not in {"DISBURSED", "OVERDUE"}:
         raise HTTPException(status_code=400, detail="当前订单暂不支持财务平账")
+    was_overdue_or_locked = loan.status == "OVERDUE" or bool(getattr(loan.owner, "overdue_credit_locked", False))
 
     received_amount = round(float(req.received_amount or 0), 2)
     reduction_amount = round(float(req.reduction_amount or 0), 2)
@@ -1875,6 +2406,9 @@ async def _finance_reconcile_loan(
 
     remaining_amount = calculate_remaining_repayment_amount(loan)
     sync_loan_repayment_state(loan)
+    if received_amount > 0 and not was_overdue_or_locked:
+        before_available = round_money(getattr(loan.owner, "available_credit_limit", 0))
+        _set_available_credit(loan.owner, before_available + received_amount)
 
     detail_parts = []
     if received_amount > 0:

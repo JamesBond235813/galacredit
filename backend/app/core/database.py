@@ -82,6 +82,12 @@ SCHEMA_PATCHES = {
         "source_channel_id": "ALTER TABLE users ADD COLUMN source_channel_id INT NULL",
         "channel_bound_at": "ALTER TABLE users ADD COLUMN channel_bound_at DATETIME NULL",
         "last_channel_visit_at": "ALTER TABLE users ADD COLUMN last_channel_visit_at DATETIME NULL",
+        "blacklist_hit": "ALTER TABLE users ADD COLUMN blacklist_hit TINYINT(1) NOT NULL DEFAULT 0",
+        "blacklist_reason": "ALTER TABLE users ADD COLUMN blacklist_reason VARCHAR(255) NULL",
+        "blacklist_checked_at": "ALTER TABLE users ADD COLUMN blacklist_checked_at DATETIME NULL",
+        "id_card_front_image": "ALTER TABLE users ADD COLUMN id_card_front_image VARCHAR(255) NULL",
+        "id_card_back_image": "ALTER TABLE users ADD COLUMN id_card_back_image VARCHAR(255) NULL",
+        "face_image": "ALTER TABLE users ADD COLUMN face_image VARCHAR(255) NULL",
         "location_latitude": "ALTER TABLE users ADD COLUMN location_latitude VARCHAR(32) NULL",
         "location_longitude": "ALTER TABLE users ADD COLUMN location_longitude VARCHAR(32) NULL",
         "location_accuracy": "ALTER TABLE users ADD COLUMN location_accuracy VARCHAR(32) NULL",
@@ -92,6 +98,11 @@ SCHEMA_PATCHES = {
         "location_street": "ALTER TABLE users ADD COLUMN location_street VARCHAR(80) NULL",
         "location_source": "ALTER TABLE users ADD COLUMN location_source VARCHAR(30) NULL",
         "location_updated_at": "ALTER TABLE users ADD COLUMN location_updated_at DATETIME NULL",
+        "location_risk_blocked": "ALTER TABLE users ADD COLUMN location_risk_blocked TINYINT(1) NOT NULL DEFAULT 0",
+        "location_risk_reason": "ALTER TABLE users ADD COLUMN location_risk_reason VARCHAR(255) NULL",
+        "location_risk_at": "ALTER TABLE users ADD COLUMN location_risk_at DATETIME NULL",
+        "available_credit_limit": "ALTER TABLE users ADD COLUMN available_credit_limit FLOAT DEFAULT 0",
+        "overdue_credit_locked": "ALTER TABLE users ADD COLUMN overdue_credit_locked TINYINT(1) NOT NULL DEFAULT 0",
     },
     "loans": {
         "approved_credit_limit": "ALTER TABLE loans ADD COLUMN approved_credit_limit FLOAT DEFAULT 0",
@@ -124,23 +135,67 @@ SCHEMA_PATCHES = {
         "ecard_password": "ALTER TABLE loans ADD COLUMN ecard_password VARCHAR(100) NULL",
         "ecard_expires_at": "ALTER TABLE loans ADD COLUMN ecard_expires_at DATETIME NULL",
         "order_no": "ALTER TABLE loans ADD COLUMN order_no VARCHAR(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '订单号'",
+        "risk_report_checked_at": "ALTER TABLE loans ADD COLUMN risk_report_checked_at DATETIME NULL",
+        "risk_report_checked_by": "ALTER TABLE loans ADD COLUMN risk_report_checked_by VARCHAR(50) NULL",
+        "approval_discount_amount": "ALTER TABLE loans ADD COLUMN approval_discount_amount FLOAT DEFAULT 0",
+        "order_discount_amount": "ALTER TABLE loans ADD COLUMN order_discount_amount FLOAT DEFAULT 0",
+        "card_reissue_closed": "ALTER TABLE loans ADD COLUMN card_reissue_closed TINYINT(1) NOT NULL DEFAULT 0",
+        "extension_count": "ALTER TABLE loans ADD COLUMN extension_count INT DEFAULT 0",
+        "extension_type": "ALTER TABLE loans ADD COLUMN extension_type VARCHAR(30) NULL",
+        "extension_note": "ALTER TABLE loans ADD COLUMN extension_note VARCHAR(255) NULL",
+        "overdue_hidden": "ALTER TABLE loans ADD COLUMN overdue_hidden TINYINT(1) NOT NULL DEFAULT 0",
+        "extension_source_loan_id": "ALTER TABLE loans ADD COLUMN extension_source_loan_id INT NULL",
+        "extension_used_at": "ALTER TABLE loans ADD COLUMN extension_used_at DATETIME NULL",
+        "is_extension_fee_order": "ALTER TABLE loans ADD COLUMN is_extension_fee_order TINYINT(1) NOT NULL DEFAULT 0",
+        "identity_ocr_submitted_at": "ALTER TABLE loans ADD COLUMN identity_ocr_submitted_at DATETIME NULL",
+        "identity_face_auth_at": "ALTER TABLE loans ADD COLUMN identity_face_auth_at DATETIME NULL",
     },
     "channels": {
         "sales_name": "ALTER TABLE channels ADD COLUMN sales_name VARCHAR(50) NOT NULL DEFAULT '未命名业务员'",
         "status": "ALTER TABLE channels ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'",
         "note": "ALTER TABLE channels ADD COLUMN note VARCHAR(255) NULL",
+        "admin_user_id": "ALTER TABLE channels ADD COLUMN admin_user_id INT DEFAULT 0",
         "invite_code": "ALTER TABLE channels ADD COLUMN invite_code VARCHAR(32) NOT NULL DEFAULT '' COMMENT '渠道邀请码'",
     },
     "user_events": {
         "operator_name": "ALTER TABLE user_events ADD COLUMN operator_name VARCHAR(50) NULL",
+        "ip": "ALTER TABLE user_events ADD COLUMN ip VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'ip地址'",
+        "ip_country": "ALTER TABLE user_events ADD COLUMN ip_country VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'ip所在国家'",
+        "ip_province": "ALTER TABLE user_events ADD COLUMN ip_province VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'ip所在省份'",
+        "ip_city": "ALTER TABLE user_events ADD COLUMN ip_city VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'ip所在城市'",
+        "ip_district": "ALTER TABLE user_events ADD COLUMN ip_district VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'ip所在区县'",
+        "ip_detail": "ALTER TABLE user_events ADD COLUMN ip_detail TEXT NULL COMMENT 'ip详情地址'",
+        "lon_lat": "ALTER TABLE user_events ADD COLUMN lon_lat VARCHAR(32) NOT NULL DEFAULT '' COMMENT '经纬度。格式: lat,lon'",
+        "lon_lat_country": "ALTER TABLE user_events ADD COLUMN lon_lat_country VARCHAR(32) NOT NULL DEFAULT '' COMMENT '经纬度所在国家'",
+        "lon_lat_province": "ALTER TABLE user_events ADD COLUMN lon_lat_province VARCHAR(32) NOT NULL DEFAULT '' COMMENT '经纬度所在省份'",
+        "lon_lat_city": "ALTER TABLE user_events ADD COLUMN lon_lat_city VARCHAR(32) NOT NULL DEFAULT '' COMMENT '经纬度所在城市'",
+        "lon_lat_district": "ALTER TABLE user_events ADD COLUMN lon_lat_district VARCHAR(32) NOT NULL DEFAULT '' COMMENT '经纬度所在区县'",
+        "lon_lat_detail": "ALTER TABLE user_events ADD COLUMN lon_lat_detail TEXT NULL COMMENT '经纬度详细地址'",
     },
     "risk_control_report": {
+        "user_id": "ALTER TABLE risk_control_report ADD COLUMN user_id INT NULL",
         "source": "ALTER TABLE risk_control_report ADD COLUMN source VARCHAR(20) NULL",
+    },
+    "products": {
+        "product_type": "ALTER TABLE products ADD COLUMN product_type VARCHAR(30) NOT NULL DEFAULT 'ECARD_RIGHTS'",
+        "rights_detail_json": "ALTER TABLE products ADD COLUMN rights_detail_json TEXT NULL",
+    },
+    "user_phone_bindings": {
+        "bind_type": "ALTER TABLE user_phone_bindings ADD COLUMN bind_type VARCHAR(30) NOT NULL DEFAULT 'ACTIVE'",
+        "note": "ALTER TABLE user_phone_bindings ADD COLUMN note VARCHAR(255) NULL",
+        "unbound_at": "ALTER TABLE user_phone_bindings ADD COLUMN unbound_at DATETIME NULL",
     },
     "admins": {
         "roles": "ALTER TABLE admins ADD COLUMN roles TEXT NULL",
         "permissions": "ALTER TABLE admins ADD COLUMN permissions TEXT NULL",
         "updated_at": "ALTER TABLE admins ADD COLUMN updated_at DATETIME NULL",
+    },
+    "overdue_fee_configs": {
+        "daily_penalty_amount": "ALTER TABLE overdue_fee_configs ADD COLUMN daily_penalty_amount FLOAT NOT NULL DEFAULT 10",
+        "effective_date": "ALTER TABLE overdue_fee_configs ADD COLUMN effective_date DATE NOT NULL",
+        "note": "ALTER TABLE overdue_fee_configs ADD COLUMN note VARCHAR(255) NULL",
+        "created_by": "ALTER TABLE overdue_fee_configs ADD COLUMN created_by VARCHAR(50) NULL",
+        "created_at": "ALTER TABLE overdue_fee_configs ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
     },
 }
 
@@ -195,6 +250,18 @@ def sync_legacy_schema():
                 if column_name not in existing_columns:
                     connection.execute(text(ddl))
 
+        if "user_events" in existing_tables:
+            user_event_columns = {column["name"]: column for column in inspector.get_columns("user_events")}
+            for column_name, comment in {
+                "ip_detail": "ip详情地址",
+                "lon_lat_detail": "经纬度详细地址",
+            }.items():
+                column = user_event_columns.get(column_name)
+                if column and "TEXT" not in str(column.get("type", "")).upper():
+                    connection.execute(
+                        text(f"ALTER TABLE user_events MODIFY {column_name} TEXT NULL COMMENT '{comment}'")
+                    )
+
         if "channels" in existing_tables:
             # 兼容历史数据：先为旧渠道补齐唯一邀请码，再补唯一索引，避免默认值冲突导致建索引失败
             connection.execute(
@@ -221,6 +288,33 @@ def sync_legacy_schema():
                     """
                 )
             )
+
+        if "products" in existing_tables:
+            product_indexes = {idx["name"] for idx in inspector.get_indexes("products")}
+            if "ix_products_product_type" not in product_indexes:
+                connection.execute(text("ALTER TABLE products ADD INDEX ix_products_product_type (product_type)"))
+
+        if "blacklist_entries" in existing_tables:
+            blacklist_indexes = {idx["name"] for idx in inspector.get_indexes("blacklist_entries")}
+            for index_name, ddl in {
+                "ix_blacklist_entries_phone": "ALTER TABLE blacklist_entries ADD INDEX ix_blacklist_entries_phone (phone)",
+                "ix_blacklist_entries_id_card_num": "ALTER TABLE blacklist_entries ADD INDEX ix_blacklist_entries_id_card_num (id_card_num)",
+                "ix_blacklist_entries_phone_md5": "ALTER TABLE blacklist_entries ADD INDEX ix_blacklist_entries_phone_md5 (phone_md5)",
+                "ix_blacklist_entries_id_card_md5": "ALTER TABLE blacklist_entries ADD INDEX ix_blacklist_entries_id_card_md5 (id_card_md5)",
+                "ix_blacklist_entries_removed_at": "ALTER TABLE blacklist_entries ADD INDEX ix_blacklist_entries_removed_at (removed_at)",
+            }.items():
+                if index_name not in blacklist_indexes:
+                    connection.execute(text(ddl))
+
+        if "user_phone_bindings" in existing_tables:
+            phone_binding_indexes = {idx["name"] for idx in inspector.get_indexes("user_phone_bindings")}
+            for index_name, ddl in {
+                "ix_user_phone_bindings_phone": "ALTER TABLE user_phone_bindings ADD INDEX ix_user_phone_bindings_phone (phone)",
+                "ix_user_phone_bindings_user_id": "ALTER TABLE user_phone_bindings ADD INDEX ix_user_phone_bindings_user_id (user_id)",
+                "ix_user_phone_bindings_unbound_at": "ALTER TABLE user_phone_bindings ADD INDEX ix_user_phone_bindings_unbound_at (unbound_at)",
+            }.items():
+                if index_name not in phone_binding_indexes:
+                    connection.execute(text(ddl))
 
 
 async def ensure_default_admins():
@@ -268,6 +362,7 @@ async def ensure_default_products():
         default_products = [
             {
                 "name": "京东E卡1000元 + 韶关丹霞山2日旅游",
+                "product_type": "ECARD_RIGHTS",
                 "ecard_face_value": 1000.0,
                 "rights_price": 600.0,
                 "rights_title": "韶关丹霞山2日旅游",
@@ -277,6 +372,7 @@ async def ensure_default_products():
             },
             {
                 "name": "京东E卡1500元 + 韶关丹霞山3日旅游",
+                "product_type": "ECARD_RIGHTS",
                 "ecard_face_value": 1500.0,
                 "rights_price": 900.0,
                 "rights_title": "韶关丹霞山3日旅游",
@@ -286,12 +382,23 @@ async def ensure_default_products():
             },
             {
                 "name": "京东E卡2000元 + 韶关丹霞山4日旅游",
+                "product_type": "ECARD_RIGHTS",
                 "ecard_face_value": 2000.0,
                 "rights_price": 1200.0,
                 "rights_title": "韶关丹霞山4日旅游",
                 "rights_desc": "酒店住宿4晚 + 丹霞山公园门票6张 + 酒店晚餐4顿",
                 "term_days": 21,
                 "payment_amount": 3200.0,
+            },
+            {
+                "name": "韶关丹霞山权益包",
+                "product_type": "RIGHTS_ONLY",
+                "ecard_face_value": 0.0,
+                "rights_price": 600.0,
+                "rights_title": "韶关丹霞山旅游权益",
+                "rights_desc": "无E卡，仅包含旅游权益包，适用于展期等权益类订单。",
+                "term_days": 7,
+                "payment_amount": 600.0,
             },
         ]
 
@@ -305,6 +412,16 @@ async def ensure_default_products():
 
         if changed:
             await db.commit()
+
+
+async def run_async_database_bootstrap():
+    try:
+        await ensure_default_admins()
+        await ensure_default_products()
+        await migrate_loan_to_new_semantics()
+        await migrate_user_events_to_new_semantics()
+    finally:
+        await async_engine.dispose()
 
 
 async def migrate_loan_to_new_semantics():
@@ -465,10 +582,7 @@ def initialize_database():
 
     Base.metadata.create_all(bind=engine)
     sync_legacy_schema()
-    asyncio.run(ensure_default_admins())
-    asyncio.run(ensure_default_products())
-    asyncio.run(migrate_loan_to_new_semantics())
-    asyncio.run(migrate_user_events_to_new_semantics())
+    asyncio.run(run_async_database_bootstrap())
 
 
 async def get_db():

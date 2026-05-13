@@ -1,7 +1,7 @@
 from typing import Optional
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Admin
@@ -76,6 +76,7 @@ async def get_latest_loan_async(db: AsyncSession, user_id: int) -> Optional[Loan
         await db.execute(
             select(Loan)
             .where(Loan.user_id == user_id)
+            .where(or_(Loan.is_extension_fee_order.is_(False), Loan.is_extension_fee_order.is_(None)))
             .order_by(Loan.id.desc())
             .limit(1)
         )
@@ -111,6 +112,7 @@ async def create_init_loan_async(db: AsyncSession, user_id: int) -> Loan:
             await db.execute(
                 select(Loan)
                 .where(Loan.user_id == user_id)
+                .where(or_(Loan.is_extension_fee_order.is_(False), Loan.is_extension_fee_order.is_(None)))
                 .order_by(Loan.id.desc())
                 .limit(1)
             )

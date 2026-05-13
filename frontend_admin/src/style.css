@@ -83,6 +83,17 @@ textarea {
   color: #2c72e5;
 }
 
+.identity-drawer-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.identity-drawer-layout > .detail-stack {
+  flex: 1;
+  min-width: 0;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -172,6 +183,17 @@ textarea {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.identity-drawer-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.identity-drawer-layout > .detail-stack {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 1440px) {

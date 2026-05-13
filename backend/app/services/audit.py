@@ -44,6 +44,11 @@ async def log_user_event_async(
         event_type=event_type,
         title=title,
         detail=_stringify_detail(detail),
+        lon_lat=f"{user.location_latitude},{user.location_longitude}" if user.location_latitude and user.location_longitude else "",
+        lon_lat_province=user.location_province or "",
+        lon_lat_city=user.location_city or "",
+        lon_lat_district=user.location_district or "",
+        lon_lat_detail=user.location_address or "",
     )
     db.add(event)
     await db.flush()

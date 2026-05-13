@@ -87,6 +87,13 @@ textarea {
   font: inherit;
 }
 
+input,
+textarea,
+select,
+.van-field__control {
+  font-size: 16px !important;
+}
+
 button {
   margin: 0;
   padding: 0;

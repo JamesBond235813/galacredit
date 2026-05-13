@@ -33,9 +33,30 @@
           </template>
         </el-table-column>
         <el-table-column prop="id_card_num" label="身份证号" min-width="180" />
+        <el-table-column label="IP审查" width="100">
+          <template #default="{ row }">
+            <IpAuditTag @click="openIpAudit(row)" />
+          </template>
+        </el-table-column>
         <el-table-column label="当前状态" width="110">
           <template #default="{ row }">
             <el-tag :type="getStatusTagType(row.current_loan_status)">{{ getStatusText(row.current_loan_status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="黑名单" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.blacklist_hit ? 'danger' : 'success'">{{ row.blacklist_hit ? '命中' : '未命中' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="风控报告" width="100">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="风险管理" width="110">
+          <template #default="{ row }">
+            <el-button v-if="!row.blacklist_hit" link type="danger" @click="handleBlacklist(row)">一键拉黑</el-button>
+            <el-button v-else link type="primary" @click="handleRemoveBlacklist(row)">移出黑名单</el-button>
           </template>
         </el-table-column>
         <el-table-column label="人脸状态" width="110">
@@ -73,6 +94,22 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openDrawer(row)">查看档案</el-button>
             <el-button v-if="!isBusinessConsultant" link type="warning" @click="openResetDialog(row)">重置密码</el-button>
+            <el-button
+              v-if="row.current_loan_status === 'CARD_REJECTED'"
+              link
+              type="primary"
+              @click="handleReissue(row)"
+            >
+              二次发卡
+            </el-button>
+            <el-button
+              v-if="row.current_loan_status === 'CARD_REJECTED'"
+              link
+              type="danger"
+              @click="handleCloseReissue(row)"
+            >
+              关闭发卡
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -89,8 +126,10 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="drawerVisible" size="680px" title="用户档案详情" destroy-on-close>
-      <div v-if="detail" class="detail-stack">
+    <el-drawer v-model="drawerVisible" size="1080px" title="用户档案详情" destroy-on-close>
+      <div v-if="detail" class="identity-drawer-layout">
+        <IdentityImagePanel :row="detail" />
+        <div class="detail-stack">
         <section class="detail-card">
           <h3>实名资料</h3>
           <el-descriptions :column="2" border>
@@ -175,6 +214,19 @@
               {{ detail.latest_loan ? formatCurrency(detail.latest_loan.installment_amount) : '--' }}
             </el-descriptions-item>
             <el-descriptions-item label="审批备注">{{ detail.latest_loan?.review_note || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="风控报告">
+              <el-button link type="primary" @click="openRiskReport(detail)">查看最近报告</el-button>
+            </el-descriptions-item>
+            <el-descriptions-item label="购销合同">
+              <el-button
+                link
+                type="primary"
+                :disabled="!detail.latest_loan?.id"
+                @click="openPurchaseContract(detail.latest_loan)"
+              >
+                查看已签合同
+              </el-button>
+            </el-descriptions-item>
           </el-descriptions>
         </section>
 
@@ -224,6 +276,7 @@
             <el-descriptions-item label="审批备注">{{ detail.first_deal_loan?.review_note || '--' }}</el-descriptions-item>
           </el-descriptions>
         </section>
+        </div>
       </div>
     </el-drawer>
 
@@ -282,13 +335,30 @@
         <el-button type="primary" :loading="resetting" @click="submitResetPassword">确认重置</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="contractDialogVisible" width="760px" title="小荷包商品购销合同" append-to-body destroy-on-close>
+      <div v-loading="contractLoading" class="admin-contract-view">
+        <div v-if="purchaseContract" class="admin-contract-meta">
+          <span>合同编号：{{ purchaseContract.signature_no || '--' }}</span>
+          <span>订单号：{{ purchaseContract.order_no || '--' }}</span>
+          <span>签署时间：{{ formatDateTime(purchaseContract.signed_at) }}</span>
+        </div>
+        <div v-if="purchaseContract" class="admin-contract-content" v-html="purchaseContract.contract_content"></div>
+        <el-empty v-else-if="!contractLoading" description="暂无已签署购销合同" />
+      </div>
+    </el-dialog>
+    <RiskReportDialog v-model="riskDialogVisible" :loading="riskLoading" :report="riskReport" />
+    <IpAuditDialog v-model="ipAuditVisible" :loading="ipAuditLoading" :items="ipAuditItems" />
   </div>
 </template>
 
 <script setup>
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { onMounted, reactive, ref } from 'vue';
-import { createFrontUser, getUserDetail, getUserSourceChannels, getUsers, resetFrontUserPassword } from '../api';
+import IdentityImagePanel from '../components/IdentityImagePanel.vue';
+import IpAuditDialog from '../components/IpAuditDialog.vue';
+import IpAuditTag from '../components/IpAuditTag.vue';
+import RiskReportDialog from '../components/RiskReportDialog.vue';
+import { blacklistUser, closeCardReissue, createFrontUser, getLoanPurchaseContract, getRiskReportByUser, getUserDetail, getUserIpAudit, getUserSourceChannels, getUsers, reissueCardLoan, removeBlacklistUser, resetFrontUserPassword } from '../api';
 import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 import { getDealColumnConfig } from '../utils/usersDealColumns';
@@ -299,6 +369,15 @@ const tableData = ref([]);
 const total = ref(0);
 const drawerVisible = ref(false);
 const detail = ref(null);
+const riskDialogVisible = ref(false);
+const riskLoading = ref(false);
+const riskReport = ref(null);
+const ipAuditVisible = ref(false);
+const ipAuditLoading = ref(false);
+const ipAuditItems = ref([]);
+const contractDialogVisible = ref(false);
+const contractLoading = ref(false);
+const purchaseContract = ref(null);
 
 const createDrawerVisible = ref(false);
 const creating = ref(false);
@@ -358,9 +437,103 @@ const handlePageChange = (page) => {
   fetchData();
 };
 
+const openIpAudit = async (row) => {
+  ipAuditVisible.value = true;
+  ipAuditLoading.value = true;
+  ipAuditItems.value = [];
+  try {
+    const result = await getUserIpAudit(row.id);
+    ipAuditItems.value = result.items || [];
+  } finally {
+    ipAuditLoading.value = false;
+  }
+};
+
 const openDrawer = async (row) => {
+  detail.value = null;
   drawerVisible.value = true;
   detail.value = await getUserDetail(row.id);
+};
+
+const openRiskReport = async (row) => {
+  const userId = row.user_id || row.id;
+  if (!userId) {
+    return;
+  }
+  riskDialogVisible.value = true;
+  riskLoading.value = true;
+  riskReport.value = null;
+  try {
+    riskReport.value = await getRiskReportByUser({ user_id: userId });
+  } catch (error) {
+    riskDialogVisible.value = false;
+  } finally {
+    riskLoading.value = false;
+  }
+};
+
+const openPurchaseContract = async (loan) => {
+  if (!loan?.id) {
+    return;
+  }
+  contractDialogVisible.value = true;
+  contractLoading.value = true;
+  purchaseContract.value = null;
+  try {
+    purchaseContract.value = await getLoanPurchaseContract(loan.id);
+  } catch (error) {
+    contractDialogVisible.value = false;
+  } finally {
+    contractLoading.value = false;
+  }
+};
+
+const handleBlacklist = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认将 ${row.name || row.phone} 加入黑名单？`, '一键拉黑', {
+      type: 'warning',
+      confirmButtonText: '确认拉黑',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await blacklistUser(row.id, { note: '后台一键拉黑' });
+  ElMessage.success('已加入黑名单');
+  fetchData();
+};
+
+const handleRemoveBlacklist = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确认将 ${row.name || row.phone} 移出黑名单？`, '移出黑名单', {
+      type: 'warning',
+      confirmButtonText: '确认移出',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await removeBlacklistUser(row.id, { note: '后台手动移出黑名单' });
+  ElMessage.success('已移出黑名单');
+  fetchData();
+};
+
+const handleReissue = async (row) => {
+  if (!row.current_loan_id) {
+    return;
+  }
+  await reissueCardLoan(row.current_loan_id);
+  ElMessage.success('已进入待发卡列表');
+  fetchData();
+};
+
+const handleCloseReissue = async (row) => {
+  if (!row.current_loan_id) {
+    return;
+  }
+  await closeCardReissue(row.current_loan_id);
+  ElMessage.success('已关闭二次发卡');
+  fetchData();
 };
 
 const searchChannels = async (keyword = '') => {
@@ -471,5 +644,54 @@ onMounted(() => {
   margin-top: 16px;
   display: grid;
   gap: 12px;
+}
+
+.admin-contract-view {
+  min-height: 220px;
+}
+
+.admin-contract-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  color: #66788f;
+  font-size: 13px;
+}
+
+.admin-contract-content {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 6px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #16233a;
+}
+
+.admin-contract-content :deep(h1) {
+  text-align: center;
+  font-size: 20px;
+}
+
+.admin-contract-content :deep(h2) {
+  margin-top: 18px;
+  font-size: 15px;
+}
+
+.admin-contract-content :deep(.contract-summary) {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-contract-content :deep(.contract-summary th),
+.admin-contract-content :deep(.contract-summary td) {
+  border: 1px solid #d8e3f2;
+  padding: 8px;
+  text-align: left;
+}
+
+.admin-contract-content :deep(.contract-summary th) {
+  width: 30%;
+  background: #f4f8ff;
 }
 </style>

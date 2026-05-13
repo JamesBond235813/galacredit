@@ -177,12 +177,36 @@ CREATE TABLE `loans` (
                          `review_admin_id` int DEFAULT NULL,
                          `collection_admin_id` int DEFAULT NULL,
                          `collection_transferred_at` datetime DEFAULT NULL,
+                         `extension_source_loan_id` int DEFAULT NULL,
+                         `extension_used_at` datetime DEFAULT NULL,
+                         `is_extension_fee_order` tinyint(1) NOT NULL DEFAULT '0',
+                         `identity_ocr_submitted_at` datetime DEFAULT NULL,
+                         `identity_face_auth_at` datetime DEFAULT NULL,
                          PRIMARY KEY (`id`),
                          KEY `ix_loans_user_id` (`user_id`),
                          KEY `ix_loans_id` (`id`),
                          KEY `ix_loans_status` (`status`),
                          KEY `idx_order_no` (`order_no`),
                          KEY `idx_usr_disburse` (`user_id`,`disbursed_at`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+# 转储表 oauth_clients
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `overdue_fee_configs`;
+
+CREATE TABLE `overdue_fee_configs` (
+                                       `id` int NOT NULL AUTO_INCREMENT,
+                                       `daily_penalty_amount` float NOT NULL DEFAULT '10',
+                                       `effective_date` date NOT NULL,
+                                       `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                       `created_by` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                       `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                       PRIMARY KEY (`id`),
+                                       KEY `ix_overdue_fee_configs_id` (`id`),
+                                       KEY `ix_overdue_fee_configs_effective_date` (`effective_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -250,14 +274,17 @@ CREATE TABLE `products` (
                             `rights_price` float NOT NULL,
                             `rights_title` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
                             `rights_desc` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+                            `rights_detail_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
                             `term_days` int NOT NULL,
                             `payment_amount` float NOT NULL,
+                            `product_type` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ECARD_RIGHTS',
                             `is_active` tinyint(1) NOT NULL,
                             `created_at` datetime NOT NULL,
                             `updated_at` datetime NOT NULL,
                             PRIMARY KEY (`id`),
                             KEY `ix_products_name` (`name`),
                             KEY `ix_products_is_active` (`is_active`),
+                            KEY `ix_products_product_type` (`product_type`),
                             KEY `ix_products_id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -287,6 +314,51 @@ CREATE TABLE `risk_control_report` (
 
 
 
+# 转储表 purchase_contract_signatures
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `purchase_contract_signatures`;
+
+CREATE TABLE `purchase_contract_signatures` (
+                                                `id` int NOT NULL AUTO_INCREMENT,
+                                                `signature_no` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL,
+                                                `order_no` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,
+                                                `user_id` int NOT NULL,
+                                                `loan_id` int DEFAULT NULL,
+                                                `product_id` int NOT NULL,
+                                                `extension_source_loan_id` int DEFAULT NULL,
+                                                `contract_title` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '小荷包商品购销合同',
+                                                `contract_content` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+                                                `contract_text` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `party_a_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+                                                `party_a_legal_person` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+                                                `party_b_name` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `party_b_id_card` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `party_b_phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `party_b_address` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `product_name` varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `ecard_face_value` float DEFAULT '0',
+                                                `rights_price` float DEFAULT '0',
+                                                `discount_amount` float DEFAULT '0',
+                                                `payment_amount` float DEFAULT '0',
+                                                `term_days` int DEFAULT NULL,
+                                                `due_date_text` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `signed_at` datetime NOT NULL,
+                                                `ip` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                                                `created_at` datetime NOT NULL,
+                                                PRIMARY KEY (`id`),
+                                                UNIQUE KEY `ix_purchase_contract_signatures_signature_no` (`signature_no`),
+                                                KEY `ix_purchase_contract_signatures_order_no` (`order_no`),
+                                                KEY `ix_purchase_contract_signatures_user_id` (`user_id`),
+                                                KEY `ix_purchase_contract_signatures_loan_id` (`loan_id`),
+                                                KEY `ix_purchase_contract_signatures_product_id` (`product_id`),
+                                                KEY `ix_purchase_contract_signatures_extension_source_loan_id` (`extension_source_loan_id`),
+                                                KEY `ix_purchase_contract_signatures_signed_at` (`signed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
 # 转储表 user_events
 # ------------------------------------------------------------
 
@@ -307,13 +379,13 @@ CREATE TABLE `user_events` (
                                `ip_province` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'ip所在省份',
                                `ip_city` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'ip所在省份',
                                `ip_district` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'ip所在省份',
-                               `ip_detail` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'ip详情地址',
+                               `ip_detail` text COLLATE utf8mb4_unicode_ci COMMENT 'ip详情地址',
                                `lon_lat` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '经纬度。格式: lat,lon',
                                `lon_lat_country` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '经纬度所在省份',
                                `lon_lat_province` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '经纬度所在省份',
                                `lon_lat_city` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '经纬度所在省份',
                                `lon_lat_district` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '经纬度所在省份',
-                               `lon_lat_detail` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '经纬度详细地址',
+                               `lon_lat_detail` text COLLATE utf8mb4_unicode_ci COMMENT '经纬度详细地址',
                                PRIMARY KEY (`id`),
                                KEY `ix_user_events_user_id` (`user_id`),
                                KEY `ix_user_events_loan_id` (`loan_id`),
@@ -339,6 +411,8 @@ CREATE TABLE `users` (
                          `id_address` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `id_expiry` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `approved_limit` int DEFAULT NULL,
+                         `available_credit_limit` float DEFAULT '0',
+                         `overdue_credit_locked` tinyint(1) NOT NULL DEFAULT '0',
                          `created_at` datetime DEFAULT NULL,
                          `emergency_contact1_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `emergency_contact1_relation` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -370,5 +444,3 @@ CREATE TABLE `users` (
                          UNIQUE KEY `id_card_num` (`id_card_num`),
                          KEY `idx_ch_created` (`source_channel_id`,`created_at`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-

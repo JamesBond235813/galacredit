@@ -130,8 +130,7 @@
       <div class="agreement-box">
         <van-checkbox v-model="agreed" icon-size="18px" checked-color="#2f7ef7" label-disabled>
           <span class="agreement-toggle" @click.stop="toggleAgreed">我已阅读并同意</span>
-          <span class="agreement-link" @click.stop="goPersonalAgreement">《个人信息授权协议》</span>和
-          <span class="agreement-link">《信用消费服务协议》</span>
+          <span class="agreement-link" @click.stop="goPersonalAgreement">《个人信息授权协议》</span>
         </van-checkbox>
       </div>
 
@@ -271,6 +270,51 @@ const setFile = (side, file) => {
   backPreview.value = previewUrl;
 };
 
+const compressImageIfNeeded = (file) =>
+  new Promise((resolve) => {
+    const limit = 2.5 * 1024 * 1024;
+    if (!file || file.size <= limit || !file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.src = String(reader.result || '');
+    };
+    reader.onerror = () => resolve(file);
+    img.onload = () => {
+      try {
+        const maxSide = 1800;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            resolve(new File([blob], file.name || `id-card-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+          },
+          'image/jpeg',
+          0.82
+        );
+      } catch (error) {
+        resolve(file);
+      }
+    };
+    img.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+
 const openPicker = (side) => {
   pendingSide.value = side;
   pickerVisible.value = true;
@@ -297,10 +341,11 @@ const chooseSource = (source) => {
   closePicker();
 };
 
-const handleFileChange = (event, side) => {
+const handleFileChange = async (event, side) => {
   const file = event.target.files?.[0];
   if (file) {
-    setFile(side, file);
+    const finalFile = await compressImageIfNeeded(file);
+    setFile(side, finalFile);
   }
 
   event.target.value = '';
@@ -319,6 +364,12 @@ const onSubmit = async () => {
 
     showToast({ type: 'loading', message: '正在智能识别...', duration: 1500 });
     const res = await submitOCR(formData);
+    if (res.access_token) {
+      localStorage.setItem('token', res.access_token);
+      if (res.refresh_token) {
+        localStorage.setItem('refresh_token', res.refresh_token);
+      }
+    }
 
     extractedInfo.value = {
       name: res.name,
@@ -326,6 +377,9 @@ const onSubmit = async () => {
       address: res.id_address,
       expiry: res.id_expiry
     };
+    if (res.phone_reclaimed) {
+      showToast('已完成手机号实名归属更新');
+    }
     showConfirm.value = true;
   } catch (error) {
     // handled by interceptor

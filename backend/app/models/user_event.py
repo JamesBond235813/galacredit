@@ -22,13 +22,13 @@ class UserEvent(Base):
     ip_province = Column(String(32), nullable=False, default="")
     ip_city = Column(String(32), nullable=False, default="")
     ip_district = Column(String(32), nullable=False, default="")
-    ip_detail = Column(String(32), nullable=False, default="")
+    ip_detail = Column(Text, nullable=True, default="")
     lon_lat = Column(String(32), nullable=False, default="")
     lon_lat_country = Column(String(32), nullable=False, default="")
     lon_lat_province = Column(String(32), nullable=False, default="")
     lon_lat_city = Column(String(32), nullable=False, default="")
     lon_lat_district = Column(String(32), nullable=False, default="")
-    lon_lat_detail = Column(String(255), nullable=False, default="")
+    lon_lat_detail = Column(Text, nullable=True, default="")
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     user = relationship(

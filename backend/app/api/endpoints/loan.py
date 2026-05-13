@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import random
 import string
@@ -6,27 +7,31 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user_async, get_user_by_token_async
+from app.api.req_util import resolve_client_ip
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.loan import Loan
 from app.models.product import Product
+from app.models.purchase_contract import PurchaseContractSignature
 from app.models.user import User
-from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanOrderSmsCodeResponse, LoanResponse, ProductItemResponse
+from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanOrderSmsCodeResponse, LoanResponse, ProductItemResponse, PurchaseContractPreviewRequest, PurchaseContractResponse
 from app.services.audit import log_user_event_async
+from app.services.blacklist_service import refresh_user_blacklist_status
 from app.services.loan_amounts import serialize_loan_snapshot
 from app.services.loan_assignment import assign_review_admin_if_needed_async
 from app.services.loan_flow import create_init_loan_async, get_latest_loan_async, get_or_create_loan_async
 from app.services.loan_ledger import sync_loan_repayment_state
 from app.services.loan_ws_notify import notify_loan_snapshot_changed, wait_loan_snapshot_changed
 from app.services.admin_service import notify_admin_stats_changed
+from app.services.purchase_contract import PARTY_A_LEGAL_PERSON, PARTY_A_NAME, build_contract_payload, generate_contract_no, serialize_purchase_contract
 from app.services.sms_service import sms_service
 
 router = APIRouter()
@@ -45,6 +50,54 @@ def generate_order_no(now: Optional[datetime] = None) -> str:
     # 订单号规则：毫秒级时间戳 + 4位随机字母数字，保证可读且易追踪。
     suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
     return f"{current.strftime('%Y%m%d%H%M%S%f')[:-3]}{suffix}"
+
+
+def _is_rights_only_product(product: Product) -> bool:
+    return (getattr(product, "product_type", None) == "RIGHTS_ONLY") or float(getattr(product, "ecard_face_value", 0) or 0) <= 0
+
+
+def _is_regular_ecard_rights_loan(loan: Loan) -> bool:
+    return float(getattr(loan, "ecard_face_value", 0) or 0) > 0 and float(getattr(loan, "rights_price", 0) or 0) > 0
+
+
+async def _resolve_order_contract_context(
+    db: AsyncSession,
+    *,
+    current_user: User,
+    product_id: int,
+    extension_source_loan_id: Optional[int] = None,
+):
+    db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
+    loan = await get_or_create_latest_loan(db, current_user.id)
+    source_loan = None
+    if extension_source_loan_id:
+        source_loan = (
+            await db.execute(
+                select(Loan)
+                .where(
+                    Loan.id == extension_source_loan_id,
+                    Loan.user_id == current_user.id,
+                    Loan.status.in_(["DISBURSED", "OVERDUE"]),
+                )
+            )
+        ).scalar_one_or_none()
+        if not source_loan:
+            raise HTTPException(status_code=400, detail="未找到可展期的原账单")
+        if not _is_regular_ecard_rights_loan(source_loan):
+            raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+    elif loan.status != "APPROVED":
+        raise HTTPException(status_code=400, detail="当前状态不可下单")
+
+    product = (
+        await db.execute(select(Product).where(Product.id == product_id, Product.is_active.is_(True)))
+    ).scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="商品不存在或已下架")
+    if source_loan and not _is_rights_only_product(product):
+        raise HTTPException(status_code=400, detail="带息费展期只能下单纯权益包")
+    if not source_loan and _is_rights_only_product(product):
+        raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+    return db_user, loan, source_loan, product
 
 
 async def get_or_create_latest_loan(db: AsyncSession, user_id: int):
@@ -68,7 +121,7 @@ async def get_latest_loan_snapshot_async(db: AsyncSession, user_id: int) -> Loan
     snapshot_loan = (
         await db.execute(
             select(Loan)
-            .options(selectinload(Loan.installments))
+            .options(selectinload(Loan.installments), selectinload(Loan.owner))
             .where(Loan.id == loan.id)
         )
     )
@@ -126,6 +179,9 @@ async def apply_limit(
 ):
     loan = await get_or_create_latest_loan(db, current_user.id)
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
+    if await refresh_user_blacklist_status(db, db_user):
+        await db.commit()
+        raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
 
     if not db_user.application_submitted_at:
         raise HTTPException(status_code=400, detail="请先完成补充资料提交")
@@ -151,6 +207,117 @@ async def apply_limit(
     return serialize_loan_snapshot(loan)
 
 
+@router.post("/purchase-contract/preview", response_model=PurchaseContractResponse)
+async def preview_purchase_contract(
+    req: PurchaseContractPreviewRequest,
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
+):
+    db_user, loan, _source_loan, product = await _resolve_order_contract_context(
+        db,
+        current_user=current_user,
+        product_id=req.product_id,
+        extension_source_loan_id=req.extension_source_loan_id,
+    )
+    order_no = generate_order_no()
+    payload = build_contract_payload(
+        user=db_user,
+        loan=loan,
+        product=product,
+        order_no=order_no,
+        use_discount=req.use_discount,
+    )
+    return {
+        "id": None,
+        "signature_no": None,
+        "order_no": order_no,
+        "user_id": db_user.id,
+        "loan_id": loan.id,
+        "product_id": product.id,
+        "contract_title": "小荷包商品购销合同",
+        "contract_content": payload["contract_content"],
+        "party_a_name": PARTY_A_NAME,
+        "party_a_legal_person": PARTY_A_LEGAL_PERSON,
+        "party_b_name": db_user.name,
+        "party_b_id_card": db_user.id_card_num,
+        "party_b_phone": db_user.phone,
+        "product_name": payload["product_name"],
+        "ecard_face_value": payload["ecard_face_value"],
+        "rights_price": payload["rights_price"],
+        "discount_amount": payload["discount_amount"],
+        "payment_amount": payload["payment_amount"],
+        "term_days": payload["term_days"],
+        "due_date_text": payload["due_date_text"],
+        "signed_at": None,
+        "ip": None,
+    }
+
+
+@router.post("/purchase-contract/sign", response_model=PurchaseContractResponse)
+async def sign_purchase_contract(
+    req: PurchaseContractPreviewRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
+):
+    db_user, loan, source_loan, product = await _resolve_order_contract_context(
+        db,
+        current_user=current_user,
+        product_id=req.product_id,
+        extension_source_loan_id=req.extension_source_loan_id,
+    )
+    signed_at = datetime.now()
+    order_no = generate_order_no(signed_at)
+    payload = build_contract_payload(
+        user=db_user,
+        loan=loan,
+        product=product,
+        order_no=order_no,
+        use_discount=req.use_discount,
+        signed_at=signed_at,
+    )
+    signature = PurchaseContractSignature(
+        signature_no=generate_contract_no(signed_at),
+        order_no=order_no,
+        user_id=db_user.id,
+        loan_id=loan.id,
+        product_id=product.id,
+        extension_source_loan_id=source_loan.id if source_loan else None,
+        contract_title="小荷包商品购销合同",
+        contract_content=payload["contract_content"],
+        contract_text=payload["contract_text"],
+        party_a_name=PARTY_A_NAME,
+        party_a_legal_person=PARTY_A_LEGAL_PERSON,
+        party_b_name=db_user.name,
+        party_b_id_card=db_user.id_card_num,
+        party_b_phone=db_user.phone,
+        party_b_address=payload["party_b_address"],
+        product_name=payload["product_name"],
+        ecard_face_value=payload["ecard_face_value"],
+        rights_price=payload["rights_price"],
+        discount_amount=payload["discount_amount"],
+        payment_amount=payload["payment_amount"],
+        term_days=payload["term_days"],
+        due_date_text=payload["due_date_text"],
+        signed_at=signed_at,
+        ip=resolve_client_ip(request, default_ip=""),
+        user_agent=(request.headers.get("user-agent") or "")[:255],
+    )
+    db.add(signature)
+    await db.flush()
+    await log_user_event_async(
+        db,
+        user=db_user,
+        loan=loan,
+        event_type="PURCHASE_CONTRACT_SIGNED",
+        title="签署小荷包商品购销合同",
+        detail=f"合同编号：{signature.signature_no}；订单号：{order_no}；商品：{product.name}；金额：{payload['payment_amount']:.2f} 元。",
+    )
+    await db.commit()
+    await db.refresh(signature)
+    return serialize_purchase_contract(signature)
+
+
 @router.post("/withdraw", response_model=LoanResponse)
 async def withdraw(
     req: LoanOrderRequest,
@@ -159,7 +326,26 @@ async def withdraw(
 ):
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     loan = await get_or_create_latest_loan(db, current_user.id)
-    if loan.status != "APPROVED":
+    if await refresh_user_blacklist_status(db, db_user):
+        await db.commit()
+        raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+    source_loan = None
+    if req.extension_source_loan_id:
+        source_loan = (
+            await db.execute(
+                select(Loan)
+                .where(
+                    Loan.id == req.extension_source_loan_id,
+                    Loan.user_id == current_user.id,
+                    Loan.status.in_(["DISBURSED", "OVERDUE"]),
+                )
+            )
+        ).scalar_one_or_none()
+        if not source_loan:
+            raise HTTPException(status_code=400, detail="未找到可展期的原账单")
+        if not _is_regular_ecard_rights_loan(source_loan):
+            raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+    elif loan.status != "APPROVED":
         raise HTTPException(status_code=400, detail="当前状态不可下单")
     verified = await sms_service.verify_code(phone=db_user.phone, biz_type=ORDER_SMS_BIZ_TYPE, code=req.sms_code)
     if not verified:
@@ -170,73 +356,113 @@ async def withdraw(
     ).scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="商品不存在或已下架")
+    if source_loan and not _is_rights_only_product(product):
+        raise HTTPException(status_code=400, detail="带息费展期只能下单纯权益包")
+    if not source_loan and _is_rights_only_product(product):
+        raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
 
-    approved_limit = float(loan.approved_credit_limit or loan.credit_limit or db_user.approved_limit or 0)
+    available_limit = float(getattr(db_user, "available_credit_limit", 0) or 0)
     payment_amount = float(product.payment_amount or 0)
     if payment_amount <= 0:
         raise HTTPException(status_code=400, detail="商品支付金额配置异常")
-    if approved_limit <= 0:
+    if available_limit <= 0:
         raise HTTPException(status_code=400, detail="暂无可用信用额度")
-    if payment_amount - approved_limit > 1e-6:
+    if payment_amount - available_limit > 1e-6:
         raise HTTPException(status_code=400, detail="信用额度不足，请选择更低金额商品")
 
     ecard_face_value = float(product.ecard_face_value or 0)
     rights_price = float(product.rights_price or 0)
-    fee_rate = (rights_price / ecard_face_value) if ecard_face_value > 0 else 0.0
+    available_discount = 0.0 if source_loan else float(loan.approval_discount_amount or 0)
+    discount_amount = min(available_discount, rights_price) if req.use_discount else 0.0
+    payment_amount = round(payment_amount - discount_amount, 2)
+    effective_rights_price = max(rights_price - discount_amount, 0)
+    signature = (
+        await db.execute(
+            select(PurchaseContractSignature).where(
+                PurchaseContractSignature.id == req.contract_signature_id,
+                PurchaseContractSignature.user_id == current_user.id,
+                PurchaseContractSignature.product_id == product.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not signature:
+        raise HTTPException(status_code=400, detail="请先阅读并同意《小荷包商品购销合同》")
+    if (signature.extension_source_loan_id or None) != (req.extension_source_loan_id or None):
+        raise HTTPException(status_code=400, detail="合同签署记录与当前下单类型不匹配")
+    if abs(float(signature.payment_amount or 0) - float(payment_amount or 0)) > 1e-6:
+        raise HTTPException(status_code=400, detail="合同签署金额与当前下单金额不一致，请重新阅读并同意合同")
+    fee_rate = (effective_rights_price / ecard_face_value) if ecard_face_value > 0 else 0.0
 
-    loan.credit_limit = ecard_face_value
-    loan.fee_rate = fee_rate
-    loan.fee_amount = rights_price
-    loan.term_days = product.term_days
-    loan.product_term_days = product.term_days
-    loan.product_id = product.id
-    loan.product_name = product.name
-    loan.rights_title = product.rights_title
-    loan.rights_desc = product.rights_desc
-    loan.rights_price = rights_price
-    loan.ecard_face_value = ecard_face_value
-    loan.product_total_price = payment_amount
-    loan.order_no = generate_order_no()
-    loan.status = "WITHDRAWING"
-    loan.disbursed_at = None
-    loan.due_date = None
-    loan.penalty_amount = 0
-    loan.repaid_amount = 0
-    loan.reduction_amount = 0
-    loan.paid_penalty_amount = 0
-    loan.reduced_penalty_amount = 0
-    loan.reminder_count = 0
-    loan.last_reminded_at = None
-    loan.collection_count = 0
-    loan.last_collection_at = None
-    loan.collection_note = None
-    loan.collection_admin_id = None
-    loan.collection_transferred_at = None
-    loan.repay_attempt_count = 0
-    loan.ecard_account = None
-    loan.ecard_password = None
-    loan.ecard_expires_at = None
+    order_loan = loan
+    if source_loan:
+        order_loan = Loan(
+            user_id=current_user.id,
+            status="WITHDRAWING",
+            approved_credit_limit=payment_amount,
+            is_extension_fee_order=True,
+            extension_source_loan_id=source_loan.id,
+        )
+        db.add(order_loan)
+        await db.flush()
+
+    order_loan.credit_limit = ecard_face_value if ecard_face_value > 0 else payment_amount
+    order_loan.fee_rate = fee_rate
+    order_loan.fee_amount = effective_rights_price
+    order_term_days = source_loan.term_days if source_loan else (loan.term_days or product.term_days)
+    order_loan.term_days = order_term_days
+    order_loan.product_term_days = order_term_days
+    order_loan.product_id = product.id
+    order_loan.product_name = product.name
+    order_loan.rights_title = product.rights_title
+    order_loan.rights_desc = product.rights_desc
+    order_loan.rights_price = effective_rights_price
+    order_loan.ecard_face_value = ecard_face_value
+    order_loan.product_total_price = payment_amount
+    order_loan.order_discount_amount = discount_amount
+    order_loan.order_no = signature.order_no or generate_order_no()
+    order_loan.status = "WITHDRAWING"
+    order_loan.disbursed_at = None
+    order_loan.due_date = None
+    order_loan.penalty_amount = 0
+    order_loan.repaid_amount = 0
+    order_loan.reduction_amount = 0
+    order_loan.paid_penalty_amount = 0
+    order_loan.reduced_penalty_amount = 0
+    order_loan.reminder_count = 0
+    order_loan.last_reminded_at = None
+    order_loan.collection_count = 0
+    order_loan.last_collection_at = None
+    order_loan.collection_note = None
+    order_loan.collection_admin_id = None
+    order_loan.collection_transferred_at = None
+    order_loan.repay_attempt_count = 0
+    order_loan.ecard_account = None
+    order_loan.ecard_password = None
+    order_loan.ecard_expires_at = None
+    signature.loan_id = order_loan.id
+    db_user.available_credit_limit = round(max(available_limit - payment_amount, 0), 2)
 
     await log_user_event_async(
         db,
         user=db_user,
-        loan=loan,
+        loan=order_loan,
         event_type="ORDER_SUBMIT",
         title="提交信用下单",
         detail=(
             f"已下单商品：{product.name}；"
             f"京东E卡面值 {ecard_face_value:.2f} 元；"
-            f"旅游权益 {rights_price:.2f} 元；"
+            f"旅游权益 {effective_rights_price:.2f} 元；"
+            f"抵扣券 {discount_amount:.2f} 元；"
             f"信用支付金额 {payment_amount:.2f} 元；"
-            f"账期 {product.term_days} 天。"
+            f"账期 {order_term_days} 天。"
         ),
     )
 
     await db.commit()
-    await db.refresh(loan)
+    await db.refresh(order_loan)
     await notify_loan_snapshot_changed(current_user.id)
     await notify_admin_stats_changed()
-    return serialize_loan_snapshot(loan)
+    return serialize_loan_snapshot(order_loan)
 
 
 @router.post("/order-sms-code", response_model=LoanOrderSmsCodeResponse)
@@ -320,18 +546,60 @@ async def register_repay_attempt(
 
 @router.get("/products", response_model=list[ProductItemResponse])
 async def get_products(
+    extension_source_loan_id: Optional[int] = Query(None, ge=1),
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
-    loan = await get_or_create_latest_loan(db, current_user.id)
-    approved_limit = float(loan.approved_credit_limit or loan.credit_limit or db_user.approved_limit or 0)
+    available_limit = float(getattr(db_user, "available_credit_limit", 0) or 0)
     products = (
         await db.execute(select(Product).where(Product.is_active.is_(True)).order_by(Product.payment_amount.asc(), Product.id.asc()))
     ).scalars().all()
-    if approved_limit > 0:
-        products = [item for item in products if float(item.payment_amount or 0) <= approved_limit + 1e-6]
-    return products
+    if extension_source_loan_id:
+        source_loan = (
+            await db.execute(
+                select(Loan).where(
+                    Loan.id == extension_source_loan_id,
+                    Loan.user_id == current_user.id,
+                    Loan.status.in_(["DISBURSED", "OVERDUE"]),
+                )
+            )
+        ).scalar_one_or_none()
+        if not source_loan or not _is_regular_ecard_rights_loan(source_loan):
+            return []
+        products = [item for item in products if _is_rights_only_product(item)]
+    else:
+        products = [item for item in products if not _is_rights_only_product(item)]
+    if available_limit > 0:
+        products = [item for item in products if float(item.payment_amount or 0) <= available_limit + 1e-6]
+    else:
+        products = []
+    result = []
+    for item in products:
+        rights_detail = None
+        if getattr(item, "rights_detail_json", None):
+            try:
+                rights_detail = json.loads(item.rights_detail_json)
+            except (TypeError, ValueError):
+                rights_detail = None
+        result.append(
+            {
+                "id": item.id,
+                "name": item.name,
+                "ecard_face_value": item.ecard_face_value,
+                "rights_price": item.rights_price,
+                "rights_title": item.rights_title,
+                "rights_desc": item.rights_desc,
+                "rights_detail": rights_detail,
+                "term_days": item.term_days,
+                "payment_amount": item.payment_amount,
+                "product_type": item.product_type,
+                "is_active": item.is_active,
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+            }
+        )
+    return result
 
 
 @router.get("/ecard-secret", response_model=EcardSecretResponse)

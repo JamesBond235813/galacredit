@@ -7,6 +7,7 @@
     append-to-body
     destroy-on-close
     class="risk-dialog"
+    @closed="emit('closed')"
   >
     <div v-loading="loading" class="risk-report-shell">
       <template v-if="normalizedReport">
@@ -282,7 +283,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue', 'closed']);
 
 const dialogVisible = computed({
   get: () => props.modelValue,

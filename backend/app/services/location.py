@@ -6,7 +6,7 @@ import httpx
 from app.core.request_logging import request_logger
 
 
-async def reverse_geocode(latitude: float, longitude: float, timeout_seconds: int = 8) -> Dict[str, Optional[str]]:
+async def reverse_geocode(latitude: float, longitude: float, timeout_seconds: int = 1) -> Dict[str, Optional[str]]:
     """
     轻量反向地理编码（OpenStreetMap Nominatim）。
     失败时返回空结构，不影响主流程。

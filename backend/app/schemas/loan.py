@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import List, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -128,6 +128,21 @@ class LoanResponse(LoanBase):
     collection_admin_id: Optional[int] = None
     collection_admin_name: Optional[str] = None
     collection_transferred_at: Optional[datetime] = None
+    risk_report_checked_at: Optional[datetime] = None
+    risk_report_checked_by: Optional[str] = None
+    approval_discount_amount: float = 0
+    order_discount_amount: float = 0
+    card_reissue_closed: bool = False
+    extension_count: int = 0
+    extension_type: Optional[str] = None
+    extension_note: Optional[str] = None
+    overdue_hidden: bool = False
+    available_credit_limit: float = 0
+    overdue_credit_locked: bool = False
+    extension_source_loan_id: Optional[int] = None
+    extension_used_at: Optional[datetime] = None
+    is_extension_fee_order: bool = False
+    fee_extension_ready: bool = False
     product_id: Optional[int] = None
     product_name: Optional[str] = None
     rights_title: Optional[str] = None
@@ -154,7 +169,7 @@ class LoanResponse(LoanBase):
 
 
 class DisburseRequest(BaseModel):
-    term_days: Optional[int] = Field(None, ge=7, le=364)
+    term_days: Optional[int] = Field(None, ge=1, le=364)
 
     @field_validator("term_days")
     @classmethod
@@ -168,8 +183,9 @@ class LoanReviewRequest(BaseModel):
     approved: bool
     credit_limit: Optional[float] = Field(None, ge=0)
     fee_rate: Optional[float] = Field(None, ge=0, le=5)
-    term_days: Optional[int] = Field(None, ge=7, le=364)
+    term_days: Optional[int] = Field(None, ge=1, le=364)
     review_note: Optional[str] = Field(None, max_length=255)
+    approval_discount_amount: Optional[float] = Field(0, ge=0)
 
     @field_validator("term_days")
     @classmethod
@@ -182,7 +198,7 @@ class LoanReviewRequest(BaseModel):
 class LoanUpdateRequest(BaseModel):
     credit_limit: Optional[float] = Field(None, ge=0)
     fee_rate: Optional[float] = Field(None, ge=0, le=5)
-    term_days: Optional[int] = Field(None, ge=7, le=364)
+    term_days: Optional[int] = Field(None, ge=1, le=364)
     due_date: Optional[datetime] = None
     penalty_amount: Optional[float] = Field(None, ge=0)
     review_note: Optional[str] = Field(None, max_length=255)
@@ -224,12 +240,57 @@ class LoanFinanceReconcileRequest(BaseModel):
     note: Optional[str] = Field(None, max_length=255)
 
 
+class LoanExtensionRequest(BaseModel):
+    extension_type: str = Field(..., pattern=r"^(FREE|FEE)$")
+    days: int = Field(..., ge=1, le=365)
+    reduction_amount: float = Field(0, ge=0)
+    fee_order_id: Optional[int] = Field(None, ge=1)
+    note: Optional[str] = Field(None, max_length=255)
+
+
+class AvailableCreditAdjustRequest(BaseModel):
+    amount: float = Field(..., gt=0)
+    note: Optional[str] = Field(None, max_length=255)
+
+
+class OverdueDisplayRequest(BaseModel):
+    overdue_hidden: bool = True
+    note: Optional[str] = Field(None, max_length=255)
+
+
+class OverdueFeeConfigCreateRequest(BaseModel):
+    daily_penalty_amount: float = Field(..., ge=0)
+    effective_date: date
+    note: Optional[str] = Field(None, max_length=255)
+
+
+class OverdueFeeConfigResponse(BaseModel):
+    id: int
+    daily_penalty_amount: float
+    effective_date: date
+    note: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: datetime
+
+
+class PaginatedOverdueFeeConfigResponse(BaseModel):
+    total: int
+    page: int
+    size: int
+    items: List[OverdueFeeConfigResponse]
+
+
 class LoanWithUserResponse(LoanResponse):
     user_phone: str
     user_name: Optional[str] = None
     user_id_card_num: Optional[str] = None
+    id_card_front_image_url: Optional[str] = None
+    id_card_back_image_url: Optional[str] = None
+    face_image_url: Optional[str] = None
     user_face_auth_status: Optional[str] = None
     user_real_name_status: Optional[str] = None
+    user_blacklist_hit: bool = False
+    user_blacklist_reason: Optional[str] = None
     user_source_channel_name: Optional[str] = None
     user_source_channel_sales_name: Optional[str] = None
     application_submitted_at: Optional[datetime] = None
@@ -347,8 +408,10 @@ class ProductItemResponse(BaseModel):
     rights_price: float = 0
     rights_title: str
     rights_desc: Optional[str] = None
+    rights_detail: Optional[Dict[str, Any]] = None
     term_days: int
     payment_amount: float = 0
+    product_type: str = "ECARD_RIGHTS"
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
@@ -356,12 +419,14 @@ class ProductItemResponse(BaseModel):
 
 class ProductCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    ecard_face_value: float = Field(..., gt=0)
+    ecard_face_value: float = Field(..., ge=0)
     rights_price: float = Field(..., ge=0)
     rights_title: str = Field(..., min_length=1, max_length=120)
     rights_desc: Optional[str] = Field(None, max_length=1000)
-    term_days: int = Field(..., ge=7, le=364)
+    rights_detail: Optional[Dict[str, Any]] = None
+    term_days: int = Field(..., ge=1, le=364)
     payment_amount: Optional[float] = Field(None, gt=0)
+    product_type: str = Field("ECARD_RIGHTS", pattern=r"^(ECARD_RIGHTS|RIGHTS_ONLY)$")
     is_active: bool = True
 
     @field_validator("term_days")
@@ -374,12 +439,14 @@ class ProductCreateRequest(BaseModel):
 
 class ProductUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=120)
-    ecard_face_value: Optional[float] = Field(None, gt=0)
+    ecard_face_value: Optional[float] = Field(None, ge=0)
     rights_price: Optional[float] = Field(None, ge=0)
     rights_title: Optional[str] = Field(None, min_length=1, max_length=120)
     rights_desc: Optional[str] = Field(None, max_length=1000)
-    term_days: Optional[int] = Field(None, ge=7, le=364)
+    rights_detail: Optional[Dict[str, Any]] = None
+    term_days: Optional[int] = Field(None, ge=1, le=364)
     payment_amount: Optional[float] = Field(None, gt=0)
+    product_type: Optional[str] = Field(None, pattern=r"^(ECARD_RIGHTS|RIGHTS_ONLY)$")
     is_active: Optional[bool] = None
 
     @field_validator("term_days")
@@ -400,6 +467,40 @@ class PaginatedProductResponse(BaseModel):
 class LoanOrderRequest(BaseModel):
     product_id: int = Field(..., ge=1)
     sms_code: str = Field(..., pattern=r"^\d{6}$")
+    use_discount: bool = False
+    extension_source_loan_id: Optional[int] = Field(None, ge=1)
+    contract_signature_id: int = Field(..., ge=1)
+
+
+class PurchaseContractPreviewRequest(BaseModel):
+    product_id: int = Field(..., ge=1)
+    use_discount: bool = False
+    extension_source_loan_id: Optional[int] = Field(None, ge=1)
+
+
+class PurchaseContractResponse(BaseModel):
+    id: Optional[int] = None
+    signature_no: Optional[str] = None
+    order_no: str
+    user_id: int
+    loan_id: Optional[int] = None
+    product_id: int
+    contract_title: str = "小荷包商品购销合同"
+    contract_content: str
+    party_a_name: str
+    party_a_legal_person: str
+    party_b_name: Optional[str] = None
+    party_b_id_card: Optional[str] = None
+    party_b_phone: Optional[str] = None
+    product_name: Optional[str] = None
+    ecard_face_value: float = 0
+    rights_price: float = 0
+    discount_amount: float = 0
+    payment_amount: float = 0
+    term_days: Optional[int] = None
+    due_date_text: Optional[str] = None
+    signed_at: Optional[datetime] = None
+    ip: Optional[str] = None
 
 
 class LoanOrderSmsCodeResponse(BaseModel):

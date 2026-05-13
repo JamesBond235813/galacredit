@@ -147,7 +147,7 @@ let loanSnapshotSubscriber = null;
 let loadedProductsLoanId = null;
 
 const loanStatus = computed(() => loanData.value?.status || 'REVIEWING');
-const creditLimit = computed(() => Number(loanData.value?.credit_limit || 0));
+const creditLimit = computed(() => Number(loanData.value?.available_credit_limit ?? loanData.value?.approved_credit_limit ?? loanData.value?.credit_limit ?? 0));
 const recommendedProduct = computed(() => {
   if (!products.value.length) {
     return null;

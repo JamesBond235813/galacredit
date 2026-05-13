@@ -22,6 +22,7 @@ from app.models.ecard_pool import EcardPool
 from app.models.loan import Loan
 from app.models.loan_transaction import LoanTransaction
 from app.models.product import Product
+from app.models.purchase_contract import PurchaseContractSignature
 from app.models.user import User
 from app.models.user_event import UserEvent
 from app.schemas.admin import (
@@ -45,6 +46,7 @@ from app.schemas.channel import (
 )
 from app.schemas.loan import (
     AdminStatsResponse,
+    AvailableCreditAdjustRequest,
     DisburseRequest,
     EcardPoolCreateRequest,
     EcardPoolUpdateRequest,
@@ -53,6 +55,7 @@ from app.schemas.loan import (
     LoanAssignRequest,
     LoanLedgerResponse,
     LoanFinanceReconcileRequest,
+    LoanExtensionRequest,
     LoanFollowUpRequest,
     ProjectCashInsightResponse,
     ProductCreateRequest,
@@ -61,9 +64,13 @@ from app.schemas.loan import (
     RepaymentStatsResponse,
     LoanReviewRequest,
     LoanUpdateRequest,
+    OverdueDisplayRequest,
+    OverdueFeeConfigCreateRequest,
+    PaginatedOverdueFeeConfigResponse,
     PaginatedEcardPoolResponse,
     PaginatedProductResponse,
     PaginatedLoanResponse,
+    PurchaseContractResponse,
 )
 from app.schemas.risk import AdminRiskReportRequest, RiskReportResponse
 from app.schemas.user import PaginatedUserResponse, UserDetailResponse
@@ -124,8 +131,10 @@ from app.services.risk_report import (
     serialize_risk_report,
 )
 from app.services.loan_ws_notify import notify_loan_snapshot_changed
+from app.services.purchase_contract import serialize_purchase_contract
+from app.services.upload_storage import build_upload_url, save_product_rights_image
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_risk_report, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
 router = APIRouter()
 
 
@@ -138,6 +147,7 @@ LOAN_STATUSES = {
     "DISBURSED",
     "SETTLED",
     "OVERDUE",
+    "CARD_REJECTED",
 }
 
 LOAN_PAGE_PERMISSION_KEYS = (
@@ -734,6 +744,28 @@ async def get_loan_ledger(
     return await _get_loan_ledger(db, current_admin, loan_id)
 
 
+@router.get("/loans/{loan_id}/purchase-contract", response_model=PurchaseContractResponse)
+async def get_loan_purchase_contract(
+    loan_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    ensure_any_admin_page_permission(current_admin, ("users", "applications", "disbursements", "repayments", "collections", "financials"))
+    loan = (await db.execute(select(Loan).where(Loan.id == loan_id))).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    signature = (
+        await db.execute(
+            select(PurchaseContractSignature)
+            .where(PurchaseContractSignature.loan_id == loan_id)
+            .order_by(PurchaseContractSignature.signed_at.desc(), PurchaseContractSignature.id.desc())
+        )
+    ).scalars().first()
+    if not signature:
+        raise HTTPException(status_code=404, detail="暂无已签署购销合同")
+    return serialize_purchase_contract(signature)
+
+
 
 
 @router.get("/users/{user_id}", response_model=UserDetailResponse)
@@ -745,6 +777,15 @@ async def get_user_detail(
     return await _get_user_detail(db, current_admin, user_id)
 
 
+@router.get("/users/{user_id}/ip-audit")
+async def get_user_ip_audit(
+    user_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_user_ip_audit(db, current_admin, user_id)
+
+
 
 
 @router.post("/risk/report", response_model=RiskReportResponse)
@@ -754,6 +795,71 @@ async def get_risk_report(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     return await _get_risk_report(db, req,  current_admin)
+
+
+@router.get("/blacklist")
+async def get_blacklist(
+    keyword: Optional[str] = Query(None, description="姓名/手机号/身份证号"),
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_blacklist_entries(db, current_admin, keyword, skip, limit)
+
+
+@router.post("/blacklist/upload")
+async def upload_blacklist(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _upload_blacklist(db, current_admin, file)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/users/{user_id}/blacklist")
+async def manual_blacklist_user(
+    user_id: int,
+    req: LoanFollowUpRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _manual_blacklist_user(db, current_admin, user_id, req)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/users/{user_id}/blacklist/remove")
+async def remove_blacklist_user(
+    user_id: int,
+    req: LoanFollowUpRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _remove_blacklist_user(db, current_admin, user_id, req)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.get("/overdue-fee-configs", response_model=PaginatedOverdueFeeConfigResponse)
+async def get_overdue_fee_configs(
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_overdue_fee_configs(db, current_admin, skip, limit)
+
+
+@router.post("/overdue-fee-configs")
+async def create_overdue_fee_config(
+    req: OverdueFeeConfigCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _create_overdue_fee_config(db, current_admin, req)
 
 
 
@@ -840,6 +946,25 @@ async def create_product(
     result = await _create_product(db, current_admin, req)
     await notify_admin_stats_changed()
     return result
+
+
+@router.post("/products/rights-image")
+async def upload_product_rights_image(
+    file: UploadFile = File(...),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    ensure_admin_page_permission(current_admin, "products")
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="请上传图片文件")
+    raw = await file.read()
+    await file.close()
+    if not raw:
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片不能超过8MB")
+    relative_path = save_product_rights_image(raw, content_type=content_type)
+    return {"url": build_upload_url(relative_path), "path": relative_path}
 
 
 
@@ -977,6 +1102,82 @@ async def disburse_loan(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     result = await _disburse_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/reject-card")
+async def reject_card_loan(
+    loan_id: int,
+    req: LoanFollowUpRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _reject_card_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/reissue-card")
+async def reissue_card_loan(
+    loan_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _reissue_card_loan(db, current_admin, loan_id)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/close-card-reissue")
+async def close_card_reissue(
+    loan_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _close_card_reissue(db, current_admin, loan_id)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/extend")
+async def extend_loan(
+    loan_id: int,
+    req: LoanExtensionRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _extend_loan(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/available-credit/adjust")
+async def adjust_available_credit(
+    loan_id: int,
+    req: AvailableCreditAdjustRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _adjust_available_credit(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/overdue-display")
+async def update_overdue_display(
+    loan_id: int,
+    req: OverdueDisplayRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _update_overdue_display(db, current_admin, loan_id, req)
     await _notify_user_loan_snapshot_if_needed(db, loan_id)
     await notify_admin_stats_changed()
     return result

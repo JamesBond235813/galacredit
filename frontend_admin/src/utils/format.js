@@ -7,7 +7,8 @@ export const statusTextMap = {
   DISBURSED: '待付款',
   FIRST_BORROW: '首借',
   SETTLED: '已结清',
-  OVERDUE: '已逾期'
+  OVERDUE: '已逾期',
+  CARD_REJECTED: '拒发卡'
 };
 
 export const statusTagMap = {
@@ -19,7 +20,8 @@ export const statusTagMap = {
   DISBURSED: 'success',
   FIRST_BORROW: 'success',
   SETTLED: 'info',
-  OVERDUE: 'danger'
+  OVERDUE: 'danger',
+  CARD_REJECTED: 'danger'
 };
 
 export const getStatusText = (status) => statusTextMap[status] || status || '--';

@@ -4,6 +4,7 @@ from app.services import sms_service
 
 
 def test_sms_service_should_enforce_cooldown_by_phone_and_biz(monkeypatch):
+    monkeypatch.setattr(sms_service.settings, "SMS_CODE_MOCK_ENABLED", True)
     service = sms_service.SmsService()
     now = {"value": 1000.0}
     monkeypatch.setattr(sms_service.SmsService, "_now", staticmethod(lambda: now["value"]))
@@ -19,6 +20,7 @@ def test_sms_service_should_enforce_cooldown_by_phone_and_biz(monkeypatch):
 
 
 def test_sms_service_should_allow_different_biz_type(monkeypatch):
+    monkeypatch.setattr(sms_service.settings, "SMS_CODE_MOCK_ENABLED", True)
     service = sms_service.SmsService()
     now = {"value": 2000.0}
     monkeypatch.setattr(sms_service.SmsService, "_now", staticmethod(lambda: now["value"]))
@@ -30,6 +32,7 @@ def test_sms_service_should_allow_different_biz_type(monkeypatch):
 
 
 def test_sms_service_should_verify_and_consume_code(monkeypatch):
+    monkeypatch.setattr(sms_service.settings, "SMS_CODE_MOCK_ENABLED", True)
     service = sms_service.SmsService()
     now = {"value": 3000.0}
     monkeypatch.setattr(sms_service.SmsService, "_now", staticmethod(lambda: now["value"]))
