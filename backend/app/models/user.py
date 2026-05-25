@@ -47,6 +47,10 @@ class User(Base):
     blacklist_hit = Column(Boolean, default=False, nullable=False, index=True)
     blacklist_reason = Column(String(255), nullable=True)
     blacklist_checked_at = Column(DateTime, nullable=True)
+    risk_list_hit = Column(Boolean, default=False, nullable=False, index=True)
+    risk_list_source = Column(String(50), nullable=True)
+    risk_list_reason = Column(String(255), nullable=True)
+    risk_list_checked_at = Column(DateTime, nullable=True)
     
     # 模拟授信额度保存 (在获取到审核后写入)
     approved_limit = Column(Integer, default=0)

@@ -1,5 +1,7 @@
 from typing import Any, Optional
 
+from app.services.approved_credit_expiry import APPROVED_CREDIT_VALID_DAYS, get_approved_credit_expires_at
+
 
 DEFAULT_FEE_RATE = 0.6
 LOAN_PERIOD_DAYS = 7
@@ -130,6 +132,56 @@ def mask_secret(value: Any, left: int = 3, right: int = 2) -> str:
     return f"{text[:left]}{'*' * (len(text) - left - right)}{text[-right:]}"
 
 
+def serialize_loan_ecard_item(item: Any, index: int = 0) -> dict:
+    """序列化订单E卡明细。
+
+    :param item: 订单E卡明细对象
+    :param index: 明细序号
+    :return: 脱敏后的E卡明细
+    """
+    return {
+        "id": getattr(item, "id", None),
+        "ecard_pool_id": getattr(item, "ecard_pool_id", None),
+        "index": index,
+        "face_value": round_money(getattr(item, "face_value", 0)),
+        "account_masked": mask_secret(getattr(item, "account", None), left=4, right=4) or None,
+        "password_masked": mask_secret(getattr(item, "password", None), left=4, right=4) or None,
+        "expires_at": getattr(item, "expires_at", None),
+    }
+
+
+def get_serialized_loan_ecard_items(loan: Any) -> list[dict]:
+    """获取订单E卡明细，兼容历史单卡字段。
+
+    :param loan: 订单对象
+    :return: 订单E卡明细列表
+    """
+    loaded_items = getattr(loan, "__dict__", {}).get("ecard_items")
+    if loaded_items:
+        return [
+            serialize_loan_ecard_item(item, index=index)
+            for index, item in enumerate(loaded_items)
+            if getattr(item, "account", None) and getattr(item, "password", None)
+        ]
+
+    if getattr(loan, "ecard_account", None) and getattr(loan, "ecard_password", None):
+        legacy_item = type(
+            "LegacyLoanEcard",
+            (),
+            {
+                "id": None,
+                "ecard_pool_id": None,
+                "face_value": getattr(loan, "ecard_face_value", 0),
+                "account": getattr(loan, "ecard_account", None),
+                "password": getattr(loan, "ecard_password", None),
+                "expires_at": getattr(loan, "ecard_expires_at", None),
+            },
+        )()
+        return [serialize_loan_ecard_item(legacy_item, index=0)]
+
+    return []
+
+
 def sync_loan_fee_fields(loan: Any, fee_rate: Any = None):
     normalized_rate = normalize_fee_rate(
         fee_rate if fee_rate is not None else getattr(loan, "fee_rate", DEFAULT_FEE_RATE)
@@ -149,6 +201,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
 
     review_admin = getattr(loan, "__dict__", {}).get("review_admin")
     collection_admin = getattr(loan, "__dict__", {}).get("collection_admin")
+    ecard_items = get_serialized_loan_ecard_items(loan)
 
     payload = {
         "id": loan.id,
@@ -168,8 +221,12 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
             term_days,
         ),
         "penalty_amount": round_money(getattr(loan, "penalty_amount", 0)),
+        "paid_penalty_amount": round_money(getattr(loan, "paid_penalty_amount", 0)),
+        "reduced_penalty_amount": round_money(getattr(loan, "reduced_penalty_amount", 0)),
         "repaid_amount": round_money(getattr(loan, "repaid_amount", 0)),
         "reduction_amount": round_money(getattr(loan, "reduction_amount", 0)),
+        "other_fee_amount": round_money(getattr(loan, "other_fee_amount", 0)),
+        "actual_repayment_date": getattr(loan, "actual_repayment_date", None),
         "total_repayment_amount": calculate_total_repayment_by_values(
             credit_limit,
             fee_rate,
@@ -178,6 +235,8 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "remaining_repayment_amount": calculate_remaining_repayment_amount(loan),
         "review_note": getattr(loan, "review_note", None),
         "approved_at": getattr(loan, "approved_at", None),
+        "approved_credit_valid_days": APPROVED_CREDIT_VALID_DAYS,
+        "approved_credit_expires_at": get_approved_credit_expires_at(loan),
         "reminder_count": getattr(loan, "reminder_count", 0) or 0,
         "last_reminded_at": getattr(loan, "last_reminded_at", None),
         "collection_count": getattr(loan, "collection_count", 0) or 0,
@@ -210,6 +269,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "product_name": getattr(loan, "product_name", None),
         "rights_title": getattr(loan, "rights_title", None),
         "rights_desc": getattr(loan, "rights_desc", None),
+        "rights_contact_phone": getattr(loan, "rights_contact_phone", None),
         "rights_price": round_money(getattr(loan, "rights_price", 0)),
         "ecard_face_value": round_money(getattr(loan, "ecard_face_value", 0)),
         "product_total_price": round_money(
@@ -223,9 +283,10 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "ecard_account_masked": mask_secret(getattr(loan, "ecard_account", None), left=4, right=4) or None,
         "ecard_password_masked": mask_secret(getattr(loan, "ecard_password", None), left=4, right=4) or None,
         "ecard_expires_at": getattr(loan, "ecard_expires_at", None),
-        "has_issued_ecard": bool(getattr(loan, "ecard_account", None) and getattr(loan, "ecard_password", None)),
+        "ecard_items": ecard_items,
+        "has_issued_ecard": bool(ecard_items),
         "relend_count": int(getattr(loan, "relend_count", 0) or 0),
-        "relend_label": getattr(loan, "relend_label", None) or "初借",
+        "relend_label": getattr(loan, "relend_label", None) or "首购",
         "created_at": getattr(loan, "created_at", None),
         "disbursed_at": getattr(loan, "disbursed_at", None),
     }
@@ -259,6 +320,10 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
                 "user_real_name_status": owner.real_name_status if owner else None,
                 "user_blacklist_hit": bool(getattr(owner, "blacklist_hit", False)) if owner else False,
                 "user_blacklist_reason": getattr(owner, "blacklist_reason", None) if owner else None,
+                "user_risk_list_hit": bool(getattr(owner, "risk_list_hit", False)) if owner else False,
+                "user_risk_list_source": getattr(owner, "risk_list_source", None) if owner else None,
+                "user_risk_list_reason": getattr(owner, "risk_list_reason", None) if owner else None,
+                "user_risk_list_checked_at": getattr(owner, "risk_list_checked_at", None) if owner else None,
                 "user_source_channel_name": source_channel.channel_name if source_channel else None,
                 "user_source_channel_sales_name": source_channel.sales_name if source_channel else None,
                 "application_submitted_at": owner.application_submitted_at if owner else None,

@@ -38,6 +38,7 @@ from app.services.loan_ws_notify import notify_loan_snapshot_changed
 from app.services.admin_service import notify_admin_stats_changed
 from app.services.loan_assignment import assign_review_admin_if_needed_async
 from app.services.phone_binding import build_released_phone, close_active_phone_bindings, record_phone_binding
+from app.services.risk_list_service import refresh_user_risk_list_status
 from app.services.upload_storage import build_upload_url, save_user_image
 
 router = APIRouter()
@@ -135,6 +136,10 @@ def _build_user_response(user: User, **extra) -> dict:
         "location_risk_blocked": bool(getattr(user, "location_risk_blocked", False)),
         "location_risk_reason": getattr(user, "location_risk_reason", None),
         "location_risk_at": getattr(user, "location_risk_at", None),
+        "risk_list_hit": bool(getattr(user, "risk_list_hit", False)),
+        "risk_list_source": getattr(user, "risk_list_source", None),
+        "risk_list_reason": getattr(user, "risk_list_reason", None),
+        "risk_list_checked_at": getattr(user, "risk_list_checked_at", None),
         "face_auth_status": user.face_auth_status,
         "real_name_status": user.real_name_status,
         "face_auth_at": user.face_auth_at,
@@ -330,6 +335,7 @@ async def mock_ocr(
     active_user.ocr_submitted_at = now
 
     hit = await refresh_user_blacklist_status(db, active_user)
+    await refresh_user_risk_list_status(db, active_user)
     if hit:
         await db.commit()
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
@@ -403,7 +409,7 @@ async def mock_face_auth(
             score = compare_result.get("score")
         except ESignIdentityError as exc:
             fail_detail = str(exc).strip()
-            mismatch_message = "人脸识别信息与身份证信息不符，请重新尝试借款。"
+            mismatch_message = "人脸识别信息与身份证信息不符，请重新尝试认证。"
             if "不符" in fail_detail or "不匹配" in fail_detail or "未通过" in fail_detail:
                 fail_detail = mismatch_message
             loan = await get_or_create_loan_async(db, current_user.id)
@@ -460,6 +466,7 @@ async def submit_application(
 ):
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     hit = await refresh_user_blacklist_status(db, db_user)
+    await refresh_user_risk_list_status(db, db_user)
     if hit:
         await db.commit()
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
@@ -475,6 +482,8 @@ async def submit_application(
         loan = await create_init_loan_async(db, current_user.id)
     elif loan.status == "REVIEWING":
         is_resubmitting = True
+    elif loan.status == "REJECTED":
+        raise HTTPException(status_code=400, detail="很遗憾，您当前未通过审核")
     elif loan.status in {"APPROVED", "WITHDRAWING", "DISBURSED", "OVERDUE"}:
         raise HTTPException(status_code=400, detail="当前订单流程进行中，暂不能重复提交资料")
 
@@ -503,8 +512,10 @@ async def submit_application(
     loan.penalty_amount = 0
     loan.repaid_amount = 0
     loan.reduction_amount = 0
+    loan.other_fee_amount = 0
     loan.paid_penalty_amount = 0
     loan.reduced_penalty_amount = 0
+    loan.actual_repayment_date = None
     loan.review_note = None
     loan.approved_at = None
     loan.reminder_count = 0
@@ -520,6 +531,7 @@ async def submit_application(
     loan.product_name = None
     loan.rights_title = None
     loan.rights_desc = None
+    loan.rights_contact_phone = None
     loan.rights_price = 0
     loan.ecard_face_value = 0
     loan.product_total_price = 0

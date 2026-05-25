@@ -85,6 +85,10 @@ SCHEMA_PATCHES = {
         "blacklist_hit": "ALTER TABLE users ADD COLUMN blacklist_hit TINYINT(1) NOT NULL DEFAULT 0",
         "blacklist_reason": "ALTER TABLE users ADD COLUMN blacklist_reason VARCHAR(255) NULL",
         "blacklist_checked_at": "ALTER TABLE users ADD COLUMN blacklist_checked_at DATETIME NULL",
+        "risk_list_hit": "ALTER TABLE users ADD COLUMN risk_list_hit TINYINT(1) NOT NULL DEFAULT 0 COMMENT '风险名单命中状态'",
+        "risk_list_source": "ALTER TABLE users ADD COLUMN risk_list_source VARCHAR(50) NULL COMMENT '风险名单命中来源'",
+        "risk_list_reason": "ALTER TABLE users ADD COLUMN risk_list_reason VARCHAR(255) NULL COMMENT '风险名单命中原因'",
+        "risk_list_checked_at": "ALTER TABLE users ADD COLUMN risk_list_checked_at DATETIME NULL COMMENT '风险名单最近核查时间'",
         "id_card_front_image": "ALTER TABLE users ADD COLUMN id_card_front_image VARCHAR(255) NULL",
         "id_card_back_image": "ALTER TABLE users ADD COLUMN id_card_back_image VARCHAR(255) NULL",
         "face_image": "ALTER TABLE users ADD COLUMN face_image VARCHAR(255) NULL",
@@ -121,12 +125,15 @@ SCHEMA_PATCHES = {
         "collection_transferred_at": "ALTER TABLE loans ADD COLUMN collection_transferred_at DATETIME NULL",
         "repaid_amount": "ALTER TABLE loans ADD COLUMN repaid_amount FLOAT DEFAULT 0",
         "reduction_amount": "ALTER TABLE loans ADD COLUMN reduction_amount FLOAT DEFAULT 0",
+        "other_fee_amount": "ALTER TABLE loans ADD COLUMN other_fee_amount FLOAT DEFAULT 0 COMMENT '已登记其他费用'",
         "paid_penalty_amount": "ALTER TABLE loans ADD COLUMN paid_penalty_amount FLOAT DEFAULT 0",
         "reduced_penalty_amount": "ALTER TABLE loans ADD COLUMN reduced_penalty_amount FLOAT DEFAULT 0",
+        "actual_repayment_date": "ALTER TABLE loans ADD COLUMN actual_repayment_date DATE NULL COMMENT '最近一次实际还款日期'",
         "product_id": "ALTER TABLE loans ADD COLUMN product_id INT NULL",
         "product_name": "ALTER TABLE loans ADD COLUMN product_name VARCHAR(120) NULL",
         "rights_title": "ALTER TABLE loans ADD COLUMN rights_title VARCHAR(120) NULL",
         "rights_desc": "ALTER TABLE loans ADD COLUMN rights_desc VARCHAR(255) NULL",
+        "rights_contact_phone": "ALTER TABLE loans ADD COLUMN rights_contact_phone VARCHAR(20) NULL COMMENT '权益联系电话'",
         "rights_price": "ALTER TABLE loans ADD COLUMN rights_price FLOAT DEFAULT 0",
         "ecard_face_value": "ALTER TABLE loans ADD COLUMN ecard_face_value FLOAT DEFAULT 0",
         "product_total_price": "ALTER TABLE loans ADD COLUMN product_total_price FLOAT DEFAULT 0",
@@ -189,6 +196,12 @@ SCHEMA_PATCHES = {
         "roles": "ALTER TABLE admins ADD COLUMN roles TEXT NULL",
         "permissions": "ALTER TABLE admins ADD COLUMN permissions TEXT NULL",
         "updated_at": "ALTER TABLE admins ADD COLUMN updated_at DATETIME NULL",
+        "active_session_id": "ALTER TABLE admins ADD COLUMN active_session_id VARCHAR(64) NULL",
+        "active_session_issued_at": "ALTER TABLE admins ADD COLUMN active_session_issued_at DATETIME NULL",
+        "active_web_session_id": "ALTER TABLE admins ADD COLUMN active_web_session_id VARCHAR(64) NULL",
+        "active_web_session_issued_at": "ALTER TABLE admins ADD COLUMN active_web_session_issued_at DATETIME NULL",
+        "active_mobile_session_id": "ALTER TABLE admins ADD COLUMN active_mobile_session_id VARCHAR(64) NULL",
+        "active_mobile_session_issued_at": "ALTER TABLE admins ADD COLUMN active_mobile_session_issued_at DATETIME NULL",
     },
     "overdue_fee_configs": {
         "daily_penalty_amount": "ALTER TABLE overdue_fee_configs ADD COLUMN daily_penalty_amount FLOAT NOT NULL DEFAULT 10",
@@ -196,6 +209,18 @@ SCHEMA_PATCHES = {
         "note": "ALTER TABLE overdue_fee_configs ADD COLUMN note VARCHAR(255) NULL",
         "created_by": "ALTER TABLE overdue_fee_configs ADD COLUMN created_by VARCHAR(50) NULL",
         "created_at": "ALTER TABLE overdue_fee_configs ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    },
+    "risk_composite_reports": {
+        "user_id": "ALTER TABLE risk_composite_reports ADD COLUMN user_id INT NULL",
+        "panorama_report_id": "ALTER TABLE risk_composite_reports ADD COLUMN panorama_report_id INT NULL",
+        "probe_a_report_id": "ALTER TABLE risk_composite_reports ADD COLUMN probe_a_report_id INT NULL",
+        "name": "ALTER TABLE risk_composite_reports ADD COLUMN name VARCHAR(255) NULL",
+        "id_card": "ALTER TABLE risk_composite_reports ADD COLUMN id_card VARCHAR(255) NULL",
+        "phone": "ALTER TABLE risk_composite_reports ADD COLUMN phone VARCHAR(255) NULL",
+        "report_json": "ALTER TABLE risk_composite_reports ADD COLUMN report_json TEXT NULL",
+        "query_time": "ALTER TABLE risk_composite_reports ADD COLUMN query_time DATETIME NULL",
+        "created_at": "ALTER TABLE risk_composite_reports ADD COLUMN created_at DATETIME NULL",
+        "updated_at": "ALTER TABLE risk_composite_reports ADD COLUMN updated_at DATETIME NULL",
     },
 }
 
@@ -288,6 +313,9 @@ def sync_legacy_schema():
                     """
                 )
             )
+            user_indexes = {idx["name"] for idx in inspector.get_indexes("users")}
+            if "ix_users_risk_list_hit" not in user_indexes:
+                connection.execute(text("ALTER TABLE users ADD INDEX ix_users_risk_list_hit (risk_list_hit)"))
 
         if "products" in existing_tables:
             product_indexes = {idx["name"] for idx in inspector.get_indexes("products")}
@@ -536,6 +564,10 @@ async def migrate_user_events_to_new_semantics():
         ("初始借款单", "初始订单"),
         ("借款单", "订单"),
         ("借款", "订单"),
+        ("首借", "首购"),
+        ("初借", "首购"),
+        ("复借", "复购"),
+        ("在贷", "履约中"),
         ("提现", "信用下单"),
         ("放款", "发卡"),
     ]

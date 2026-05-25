@@ -12,6 +12,12 @@ CREATE TABLE `admins` (
                           `permissions` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
                           `updated_at` datetime DEFAULT NULL,
                           `roles` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+                          `active_session_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                          `active_session_issued_at` datetime DEFAULT NULL,
+                          `active_web_session_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                          `active_web_session_issued_at` datetime DEFAULT NULL,
+                          `active_mobile_session_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                          `active_mobile_session_issued_at` datetime DEFAULT NULL,
                           PRIMARY KEY (`id`),
                           UNIQUE KEY `ix_admins_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -66,6 +72,29 @@ CREATE TABLE `ecard_pool` (
                               KEY `ix_ecard_pool_face_value` (`face_value`),
                               KEY `ix_ecard_pool_loan_id` (`loan_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+# 转储表 loan_ecards
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `loan_ecards`;
+
+CREATE TABLE `loan_ecards` (
+                               `id` int NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                               `loan_id` int NOT NULL COMMENT '订单ID',
+                               `ecard_pool_id` int NOT NULL COMMENT '卡池记录ID',
+                               `account` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '京东E卡卡号',
+                               `password` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '京东E卡卡密',
+                               `face_value` float NOT NULL DEFAULT '0' COMMENT 'E卡面额',
+                               `expires_at` datetime NOT NULL COMMENT 'E卡有效期',
+                               `created_at` datetime NOT NULL COMMENT '创建时间',
+                               PRIMARY KEY (`id`),
+                               KEY `ix_loan_ecards_id` (`id`),
+                               KEY `ix_loan_ecards_loan_id` (`loan_id`),
+                               KEY `ix_loan_ecards_ecard_pool_id` (`ecard_pool_id`),
+                               KEY `ix_loan_ecards_expires_at` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单E卡发放明细表';
 
 
 
@@ -166,6 +195,7 @@ CREATE TABLE `loans` (
                          `product_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `rights_title` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `rights_desc` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+                         `rights_contact_phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '权益联系电话',
                          `rights_price` float DEFAULT '0',
                          `ecard_face_value` float DEFAULT '0',
                          `product_total_price` float DEFAULT '0',
@@ -297,6 +327,7 @@ DROP TABLE IF EXISTS `risk_control_report`;
 
 CREATE TABLE `risk_control_report` (
                                        `id` int NOT NULL AUTO_INCREMENT,
+                                       `user_id` int DEFAULT NULL COMMENT '用户ID',
                                        `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                                        `id_card` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                                        `phone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -306,11 +337,42 @@ CREATE TABLE `risk_control_report` (
                                        `updated_at` datetime DEFAULT NULL,
                                        `source` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                                        PRIMARY KEY (`id`),
+                                       KEY `ix_risk_control_report_user_id` (`user_id`),
                                        KEY `ix_risk_control_report_name` (`name`),
                                        KEY `ix_risk_control_report_id` (`id`),
                                        KEY `ix_risk_control_report_phone` (`phone`),
                                        KEY `ix_risk_control_report_id_card` (`id_card`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='风控查询报告表';
+
+
+
+# 转储表 risk_composite_reports
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `risk_composite_reports`;
+
+CREATE TABLE `risk_composite_reports` (
+                                          `id` int NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                                          `user_id` int DEFAULT NULL COMMENT '用户ID',
+                                          `panorama_report_id` int DEFAULT NULL COMMENT '全景雷达报告ID',
+                                          `probe_a_report_id` int DEFAULT NULL COMMENT '探针A报告ID',
+                                          `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '姓名',
+                                          `id_card` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '身份证号',
+                                          `phone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '手机号',
+                                          `report_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '综合报告JSON快照',
+                                          `query_time` datetime DEFAULT NULL COMMENT '查询时间',
+                                          `created_at` datetime DEFAULT NULL COMMENT '创建时间',
+                                          `updated_at` datetime DEFAULT NULL COMMENT '更新时间',
+                                          PRIMARY KEY (`id`),
+                                          KEY `ix_risk_composite_reports_id` (`id`),
+                                          KEY `ix_risk_composite_reports_user_id` (`user_id`),
+                                          KEY `ix_risk_composite_reports_panorama_report_id` (`panorama_report_id`),
+                                          KEY `ix_risk_composite_reports_probe_a_report_id` (`probe_a_report_id`),
+                                          KEY `ix_risk_composite_reports_name` (`name`),
+                                          KEY `ix_risk_composite_reports_id_card` (`id_card`),
+                                          KEY `ix_risk_composite_reports_phone` (`phone`),
+                                          KEY `ix_risk_composite_reports_query_time` (`query_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='综合风险查询报告表';
 
 
 
@@ -439,8 +501,13 @@ CREATE TABLE `users` (
                          `location_street` varchar(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `location_source` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
                          `location_updated_at` datetime DEFAULT NULL,
+                         `risk_list_hit` tinyint(1) NOT NULL DEFAULT '0' COMMENT '风险名单命中状态',
+                         `risk_list_source` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '风险名单命中来源',
+                         `risk_list_reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '风险名单命中原因',
+                         `risk_list_checked_at` datetime DEFAULT NULL COMMENT '风险名单最近核查时间',
                          PRIMARY KEY (`id`),
                          UNIQUE KEY `ix_users_phone` (`phone`),
                          UNIQUE KEY `id_card_num` (`id_card_num`),
+                         KEY `ix_users_risk_list_hit` (`risk_list_hit`),
                          KEY `idx_ch_created` (`source_channel_id`,`created_at`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

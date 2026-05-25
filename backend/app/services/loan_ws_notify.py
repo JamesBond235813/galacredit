@@ -10,14 +10,14 @@ def _get_loan_snapshot_version(user_id: int) -> int:
 
 
 async def notify_loan_snapshot_changed(user_id: int):
-    """标记指定用户的贷款快照已变化。"""
+    """标记指定用户的订单快照已变化。"""
     key = int(user_id)
     _LOAN_SNAPSHOT_VERSION_BY_USER.expire()
     _LOAN_SNAPSHOT_VERSION_BY_USER[key] = _get_loan_snapshot_version(key) + 1
 
 
 async def wait_loan_snapshot_changed(user_id: int, last_version: int, timeout_seconds: float):
-    """等待用户贷款快照版本变化；超时则返回当前版本。"""
+    """等待用户订单快照版本变化；超时则返回当前版本。"""
     key = int(user_id)
     current_version = _get_loan_snapshot_version(key)
     if current_version != int(last_version):

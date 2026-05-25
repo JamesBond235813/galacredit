@@ -30,7 +30,16 @@
         <el-table-column prop="id" label="订单号" width="96" />
         <el-table-column label="客户信息" min-width="220">
           <template #default="{ row }">
-            <div>{{ row.user_name || '未实名' }}</div>
+            <div class="customer-name-row">
+              <span>{{ row.user_name || '未实名' }}</span>
+              <el-tooltip
+                v-if="row.user_risk_list_hit"
+                :content="row.user_risk_list_reason || '命中风险名单'"
+                placement="top"
+              >
+                <span class="risk-list-badge">风</span>
+              </el-tooltip>
+            </div>
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
         </el-table-column>
@@ -39,9 +48,9 @@
             <IpAuditTag @click="openIpAudit(row)" />
           </template>
         </el-table-column>
-        <el-table-column label="复借次数" width="120">
+        <el-table-column label="复购次数" width="120">
           <template #default="{ row }">
-            <div>{{ row.relend_label || '初借' }}</div>
+            <div>{{ row.relend_label || '首购' }}</div>
             <el-button
               v-if="row.latest_settled_loan"
               link
@@ -72,7 +81,7 @@
             <div class="sub-text">账单总额 {{ formatCurrency(resolvePaymentAmount(row)) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="风控报告" width="100">
+        <el-table-column label="风控报告" width="140">
           <template #default="{ row }">
             <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
           </template>
@@ -84,9 +93,9 @@
         </el-table-column>
         <el-table-column label="下单时间" min-width="150">
           <template #default="{ row }">
-            <div v-if="row.created_at" class="date-cell">
-              <div>{{ formatDate(row.created_at) }}</div>
-              <div class="sub-text">{{ formatTime(row.created_at) }}</div>
+            <div v-if="getOrderTime(row)" class="date-cell">
+              <div>{{ formatDate(getOrderTime(row)) }}</div>
+              <div class="sub-text">{{ formatTime(getOrderTime(row)) }}</div>
             </div>
             <span v-else>--</span>
           </template>
@@ -104,7 +113,7 @@
                 发卡GO
               </el-button>
               <el-button size="small" text type="danger" @click="handleRejectCard(row)">拒绝发卡</el-button>
-              <el-button size="small" text type="danger" @click="handleCloseCard(row)">关闭发卡</el-button>
+              <el-button size="small" text type="warning" @click="handleCloseCard(row)">退回待下单</el-button>
               <el-button size="small" text type="primary" @click="openDrawer(row)">查看更多</el-button>
             </div>
           </template>
@@ -139,7 +148,7 @@
             <el-descriptions-item label="信用支付金额">{{ formatCurrency(currentSummary.paymentAmount) }}</el-descriptions-item>
             <el-descriptions-item label="账期">{{ currentSummary.termDays ? `${currentSummary.termDays} 天` : '--' }}</el-descriptions-item>
             <el-descriptions-item label="预计付款日">{{ currentSummary.dueDateText }}</el-descriptions-item>
-            <el-descriptions-item label="下单时间">{{ formatDateTime(currentRow?.created_at) }}</el-descriptions-item>
+            <el-descriptions-item label="下单时间">{{ formatDateTime(getOrderTime(currentRow)) }}</el-descriptions-item>
           </el-descriptions>
         </section>
 
@@ -225,6 +234,11 @@
       :borrower-name="historyBorrowerName"
     />
     <RiskReportDialog v-model="riskDialogVisible" :loading="riskLoading" :report="riskReport" />
+    <CompositeRiskReportDialog
+      v-model="compositeRiskDialogVisible"
+      :loading="compositeRiskLoading"
+      :report="compositeRiskReport"
+    />
     <IpAuditDialog v-model="ipAuditVisible" :loading="ipAuditLoading" :items="ipAuditItems" />
   </div>
 </template>
@@ -237,7 +251,8 @@ import IdentityImagePanel from '../components/IdentityImagePanel.vue';
 import IpAuditDialog from '../components/IpAuditDialog.vue';
 import IpAuditTag from '../components/IpAuditTag.vue';
 import RiskReportDialog from '../components/RiskReportDialog.vue';
-import { blacklistUser, closeCardReissue, disburseLoan, getAdminStats, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, rejectCardLoan, updateLoan } from '../api';
+import CompositeRiskReportDialog from '../components/CompositeRiskReportDialog.vue';
+import { blacklistUser, closeCardReissue, disburseLoan, getAdminStats, getCompositeRiskReportByUser, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, rejectCardLoan, updateLoan } from '../api';
 import { formatCurrency, formatDate, formatDateTime, formatTime } from '../utils/format';
 
 const loading = ref(false);
@@ -255,6 +270,9 @@ const historyBorrowerName = ref('');
 const riskDialogVisible = ref(false);
 const riskLoading = ref(false);
 const riskReport = ref(null);
+const compositeRiskDialogVisible = ref(false);
+const compositeRiskLoading = ref(false);
+const compositeRiskReport = ref(null);
 const ipAuditVisible = ref(false);
 const ipAuditLoading = ref(false);
 const ipAuditItems = ref([]);
@@ -315,6 +333,8 @@ const visibleRepaymentAmount = computed(() =>
   tableData.value.reduce((sum, row) => sum + resolvePaymentAmount(row), 0)
 );
 
+const getOrderTime = (row) => row?.ordered_at || row?.created_at || null;
+
 const summaryCards = computed(() => [
   {
     label: '待发卡订单',
@@ -330,6 +350,11 @@ const summaryCards = computed(() => [
     label: '当前页支付总额',
     value: formatCurrency(visibleRepaymentAmount.value),
     tip: '发卡后将进入正式账单'
+  },
+  {
+    label: '卡池库存余额',
+    value: formatCurrency(stats.value.ecard_pool_available_amount || 0),
+    tip: `可用E卡 ${stats.value.ecard_pool_available_count || 0} 张`
   }
 ]);
 
@@ -416,11 +441,24 @@ const openRiskReport = async (row) => {
   riskLoading.value = true;
   riskReport.value = null;
   try {
-    riskReport.value = await getRiskReportByUser({ user_id: row.user_id });
+    riskReport.value = await getCompositeRiskReportByUser({ user_id: row.user_id });
   } catch (error) {
     riskDialogVisible.value = false;
   } finally {
     riskLoading.value = false;
+  }
+};
+
+const openCompositeRiskReport = async (row) => {
+  compositeRiskDialogVisible.value = true;
+  compositeRiskLoading.value = true;
+  compositeRiskReport.value = null;
+  try {
+    compositeRiskReport.value = await getCompositeRiskReportByUser({ user_id: row.user_id });
+  } catch (error) {
+    compositeRiskDialogVisible.value = false;
+  } finally {
+    compositeRiskLoading.value = false;
   }
 };
 
@@ -456,16 +494,16 @@ const handleRejectCard = async (row) => {
 
 const handleCloseCard = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认关闭 ${row.user_name || row.user_phone} 的发卡资格并加入黑名单？`, '关闭发卡', {
+    await ElMessageBox.confirm(`确认将 ${row.user_name || row.user_phone} 退回待下单，并清除本次错误下单商品信息？`, '退回待下单', {
       type: 'warning',
-      confirmButtonText: '确认关闭',
+      confirmButtonText: '确认退回',
       cancelButtonText: '取消'
     });
   } catch (error) {
     return;
   }
   await closeCardReissue(row.id);
-  ElMessage.success('已关闭发卡并加入黑名单');
+  ElMessage.success('已退回待下单');
   fetchData();
 };
 
@@ -596,7 +634,7 @@ onMounted(() => {
 
 .queue-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -652,6 +690,28 @@ onMounted(() => {
   margin-top: 18px;
   display: flex;
   justify-content: flex-end;
+}
+
+.customer-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 20px;
+}
+
+.risk-list-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .edit-row {

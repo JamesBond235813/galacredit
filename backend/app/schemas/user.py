@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from app.schemas.loan import LoanFundFlowSummaryResponse, LoanHistoryResponse, LoanInstallmentItemResponse
+
+EMERGENCY_CONTACT_RELATION_OPTIONS = ("配偶", "父母", "子女", "兄弟姐妹", "同事", "朋友")
 
 
 class UserBase(BaseModel):
@@ -27,6 +29,10 @@ class UserUpdate(BaseModel):
     blacklist_hit: bool = False
     blacklist_reason: Optional[str] = None
     blacklist_checked_at: Optional[datetime] = None
+    risk_list_hit: bool = False
+    risk_list_source: Optional[str] = None
+    risk_list_reason: Optional[str] = None
+    risk_list_checked_at: Optional[datetime] = None
 
 
 class UserResponse(UserBase):
@@ -60,6 +66,10 @@ class UserResponse(UserBase):
     location_risk_blocked: bool = False
     location_risk_reason: Optional[str] = None
     location_risk_at: Optional[datetime] = None
+    risk_list_hit: bool = False
+    risk_list_source: Optional[str] = None
+    risk_list_reason: Optional[str] = None
+    risk_list_checked_at: Optional[datetime] = None
     face_auth_status: Optional[str] = None
     real_name_status: Optional[str] = None
     face_auth_at: Optional[datetime] = None
@@ -108,7 +118,7 @@ class LoginRequest(BaseModel):
 class SmsLoginRequest(BaseModel):
     phone: str = Field(..., pattern=r"^\d{11}$")
     sms_code: str = Field(..., pattern=r"^\d{6}$")
-    invite_code: Optional[str] = Field(None, pattern=r"^[a-z0-9]{16}$")
+    invite_code: Optional[str] = Field(None, pattern=r"^[a-z0-9]{24,32}$")
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     accuracy: Optional[float] = None
@@ -160,6 +170,18 @@ class EmergencyContactRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     relation: str = Field(..., min_length=1, max_length=20)
     phone: str = Field(..., pattern=r"^\d{11}$")
+
+    @field_validator("relation", mode="before")
+    @classmethod
+    def normalize_relation(cls, value: str):
+        """规范化联系人关系文本。
+
+        :param value: 联系人关系
+        :return: 去除前后空格后的联系人关系
+        """
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class ApplicationSubmitRequest(BaseModel):
@@ -234,7 +256,7 @@ class UserLoanSnapshotResponse(BaseModel):
     is_extension_fee_order: bool = False
     fee_extension_ready: bool = False
     relend_count: int = 0
-    relend_label: str = "初借"
+    relend_label: str = "首购"
     latest_settled_loan: Optional[LoanHistoryResponse] = None
     installment_periods: int = 0
     installments: List[LoanInstallmentItemResponse] = Field(default_factory=list)
@@ -259,6 +281,13 @@ class UserListItemResponse(BaseModel):
     blacklist_hit: bool = False
     blacklist_reason: Optional[str] = None
     blacklist_checked_at: Optional[datetime] = None
+    location_risk_blocked: bool = False
+    location_risk_reason: Optional[str] = None
+    location_risk_at: Optional[datetime] = None
+    risk_list_hit: bool = False
+    risk_list_source: Optional[str] = None
+    risk_list_reason: Optional[str] = None
+    risk_list_checked_at: Optional[datetime] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None
     application_submitted_at: Optional[datetime] = None
@@ -281,6 +310,7 @@ class UserListItemResponse(BaseModel):
     source_channel_sales_name: Optional[str] = None
     channel_bound_at: Optional[datetime] = None
     last_channel_visit_at: Optional[datetime] = None
+    can_unlock_location_risk: bool = False
 
 
 class PaginatedUserResponse(BaseModel):
@@ -293,4 +323,5 @@ class PaginatedUserResponse(BaseModel):
 class UserDetailResponse(UserResponse):
     latest_loan: Optional[UserLoanSnapshotResponse] = None
     first_deal_loan: Optional[UserLoanSnapshotResponse] = None
+    can_unlock_location_risk: bool = False
     events: List[UserEventResponse] = Field(default_factory=list)

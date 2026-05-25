@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Admin
 from app.models.loan import Loan
+from app.models.loan_ecard import LoanEcard
 from app.models.loan_installment import LoanInstallment
 
 _CREATE_LOAN_LOCKS: dict[int, asyncio.Lock] = {}
@@ -52,8 +53,8 @@ def get_relend_count(loans, current_loan_id: Optional[int] = None) -> int:
 def get_relend_label(loans, current_loan_id: Optional[int] = None) -> str:
     relend_count = get_relend_count(loans, current_loan_id=current_loan_id)
     if relend_count <= 0:
-        return "初借"
-    return f"复借{relend_count}"
+        return "首购"
+    return f"复购{relend_count}"
 
 
 def _extract_all_scalars(execute_result):
@@ -94,6 +95,17 @@ async def get_latest_loan_async(db: AsyncSession, user_id: int) -> Optional[Loan
     if installments and not isinstance(installments[0], LoanInstallment):
         installments = list(getattr(loan, "installments", []) or [])
     loan.installments = installments
+
+    ecard_items = _extract_all_scalars(
+        await db.execute(
+            select(LoanEcard)
+            .where(LoanEcard.loan_id == loan.id)
+            .order_by(LoanEcard.id.asc())
+        )
+    )
+    if ecard_items and not isinstance(ecard_items[0], LoanEcard):
+        ecard_items = list(getattr(loan, "ecard_items", []) or [])
+    loan.ecard_items = ecard_items
 
     admin_ids = [item for item in {loan.review_admin_id, loan.collection_admin_id} if item]
     admins = _extract_all_scalars(

@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     RISK_PANORAMA_MERCHANT_NO: str = ""
     RISK_PANORAMA_ACCESS_KEY: str = ""
     RISK_PANORAMA_SECRET_KEY: str = ""
+    RISK_PROBE_A_ENABLED: bool = False
+    RISK_PROBE_C_ENABLED: bool = True
+    RISK_LEGOU_ENABLED: bool = True
+    RISK_LEGOU_BLACKLIST_URL: str = "https://api.legou1688.com/finance-center/v1/blacklist/match"
+    RISK_LEGOU_TOKEN: str = ""
+    RISK_LEGOU_TIMEOUT_SECONDS: int = 8
 
     # e签宝身份核验配置
     ESIGN_IDENTITY_ENABLED: bool = False

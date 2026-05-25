@@ -89,7 +89,7 @@ def test_withdraw_should_reject_when_sms_code_invalid(monkeypatch):
             async def execute(self, statement):
                 text_stmt = str(statement)
                 if "FROM users" in text_stmt:
-                    return _ExecuteResult(SimpleNamespace(id=9527, phone="13800000000", approved_limit=2000, id_card_num=None))
+                    return _ExecuteResult(SimpleNamespace(id=9527, phone="13800000000", approved_limit=2000))
                 return _ExecuteResult(None)
 
         async def _fake_get_or_create_latest_loan(_db, _user_id):
@@ -101,11 +101,10 @@ def test_withdraw_should_reject_when_sms_code_invalid(monkeypatch):
 
         monkeypatch.setattr(loan, "get_or_create_latest_loan", _fake_get_or_create_latest_loan)
         monkeypatch.setattr(loan, "sms_service", _FakeSmsService())
-        monkeypatch.setattr(loan, "refresh_user_blacklist_status", lambda *_args, **_kwargs: asyncio.sleep(0, result=None))
 
         try:
             await loan.withdraw(
-                req=SimpleNamespace(product_id=1, sms_code="123456", extension_source_loan_id=None),
+                req=SimpleNamespace(product_id=1, sms_code="123456"),
                 current_user=SimpleNamespace(id=9527),
                 db=_FakeDb(),
             )
@@ -113,101 +112,5 @@ def test_withdraw_should_reject_when_sms_code_invalid(monkeypatch):
         except HTTPException as exc:
             assert exc.status_code == 400
             assert "验证码" in str(exc.detail)
-
-    asyncio.run(_run())
-
-
-def test_rights_only_product_requires_extension_source_order(monkeypatch):
-    async def _run():
-        class _ExecuteResult:
-            def __init__(self, value):
-                self._value = value
-
-            def scalar_one(self):
-                return self._value
-
-            def scalar_one_or_none(self):
-                return self._value
-
-        class _FakeDb:
-            async def execute(self, statement):
-                text_stmt = str(statement)
-                if "FROM users" in text_stmt:
-                    return _ExecuteResult(SimpleNamespace(id=9527, phone="13800000000", id_card_num=None, available_credit_limit=1000))
-                if "FROM products" in text_stmt:
-                    return _ExecuteResult(
-                        SimpleNamespace(
-                            id=1,
-                            product_type="RIGHTS_ONLY",
-                            ecard_face_value=0,
-                            rights_price=600,
-                            payment_amount=600,
-                            is_active=True,
-                        )
-                    )
-                return _ExecuteResult(None)
-
-        async def _fake_get_or_create_latest_loan(_db, _user_id):
-            return SimpleNamespace(status="APPROVED")
-
-        class _FakeSmsService:
-            async def verify_code(self, phone: str, biz_type: str, code: str):
-                return True
-
-        monkeypatch.setattr(loan, "get_or_create_latest_loan", _fake_get_or_create_latest_loan)
-        monkeypatch.setattr(loan, "sms_service", _FakeSmsService())
-        monkeypatch.setattr(loan, "refresh_user_blacklist_status", lambda *_args, **_kwargs: asyncio.sleep(0, result=None))
-
-        try:
-            await loan.withdraw(
-                req=SimpleNamespace(product_id=1, sms_code="123456", extension_source_loan_id=None),
-                current_user=SimpleNamespace(id=9527),
-                db=_FakeDb(),
-            )
-            assert False, "expected HTTPException"
-        except HTTPException as exc:
-            assert exc.status_code == 400
-            assert "纯权益包只能用于已有常规订单" in str(exc.detail)
-
-    asyncio.run(_run())
-
-
-def test_rights_only_product_requires_regular_extension_source_order(monkeypatch):
-    async def _run():
-        class _ExecuteResult:
-            def __init__(self, value):
-                self._value = value
-
-            def scalar_one(self):
-                return self._value
-
-            def scalar_one_or_none(self):
-                return self._value
-
-        class _FakeDb:
-            async def execute(self, statement):
-                text_stmt = str(statement)
-                if "FROM users" in text_stmt:
-                    return _ExecuteResult(SimpleNamespace(id=9527, phone="13800000000", id_card_num=None, available_credit_limit=1000))
-                if "FROM loans" in text_stmt:
-                    return _ExecuteResult(SimpleNamespace(id=2, user_id=9527, status="DISBURSED", ecard_face_value=0, rights_price=600))
-                return _ExecuteResult(None)
-
-        async def _fake_get_or_create_latest_loan(_db, _user_id):
-            return SimpleNamespace(status="APPROVED")
-
-        monkeypatch.setattr(loan, "get_or_create_latest_loan", _fake_get_or_create_latest_loan)
-        monkeypatch.setattr(loan, "refresh_user_blacklist_status", lambda *_args, **_kwargs: asyncio.sleep(0, result=None))
-
-        try:
-            await loan.withdraw(
-                req=SimpleNamespace(product_id=1, sms_code="123456", extension_source_loan_id=2),
-                current_user=SimpleNamespace(id=9527),
-                db=_FakeDb(),
-            )
-            assert False, "expected HTTPException"
-        except HTTPException as exc:
-            assert exc.status_code == 400
-            assert "纯权益包只能用于已有常规订单" in str(exc.detail)
 
     asyncio.run(_run())

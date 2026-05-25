@@ -2,6 +2,7 @@ import asyncio
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Optional
+from uuid import uuid4
 
 import xlrd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
@@ -9,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import aliased, joinedload
 
 from app.api.deps import get_admin_by_token_async, get_current_admin_async
 from app.core.config import settings
@@ -46,6 +47,7 @@ from app.schemas.channel import (
 )
 from app.schemas.loan import (
     AdminStatsResponse,
+    ApprovedCreditSetRequest,
     AvailableCreditAdjustRequest,
     DisburseRequest,
     EcardPoolCreateRequest,
@@ -72,7 +74,7 @@ from app.schemas.loan import (
     PaginatedLoanResponse,
     PurchaseContractResponse,
 )
-from app.schemas.risk import AdminRiskReportRequest, RiskReportResponse
+from app.schemas.risk import AdminRiskReportRequest, CompositeRiskReportResponse, RiskReportResponse
 from app.schemas.user import PaginatedUserResponse, UserDetailResponse
 from app.services.audit import log_user_event_async
 from app.services.admin_permissions import (
@@ -85,6 +87,7 @@ from app.services.admin_permissions import (
     serialize_admin_permissions,
     serialize_admin_roles,
 )
+from app.services.approved_credit_expiry import expire_unused_approved_credits
 from app.services.channel_service import (
     build_channel_metrics,
     build_channel_summary,
@@ -130,11 +133,12 @@ from app.services.risk_report import (
     get_user_for_risk_report_async,
     serialize_risk_report,
 )
+from app.services.admin_session import assign_admin_session
 from app.services.loan_ws_notify import notify_loan_snapshot_changed
 from app.services.purchase_contract import serialize_purchase_contract
 from app.services.upload_storage import build_upload_url, save_product_rights_image
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
 router = APIRouter()
 
 
@@ -245,7 +249,15 @@ async def login(req: AdminLogin, db: AsyncSession = Depends(get_async_db)):
     if not admin or not verify_password(req.password, admin.password_hash):
         raise HTTPException(status_code=400, detail="用户名或密码错误")
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(subject=admin.username, expires_delta=access_token_expires)
+    session_id = uuid4().hex
+    client_type = assign_admin_session(admin, session_id, req.client_type, datetime.now())
+    await db.commit()
+    access_token = create_access_token(
+        subject=admin.username,
+        expires_delta=access_token_expires,
+        jti=session_id,
+        client_id=client_type,
+    )
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -343,6 +355,22 @@ async def get_stats(
             )
         )
     ) or 0
+    ecard_pool_available_amount = (
+        await db.scalar(
+            select(func.coalesce(func.sum(EcardPool.face_value), 0)).where(
+                EcardPool.status == "AVAILABLE",
+                EcardPool.expires_at >= tomorrow,
+            )
+        )
+    ) or 0
+    ecard_pool_available_count = (
+        await db.scalar(
+            select(func.count(EcardPool.id)).where(
+                EcardPool.status == "AVAILABLE",
+                EcardPool.expires_at >= tomorrow,
+            )
+        )
+    ) or 0
     repay_attempt_stmt = select(func.coalesce(func.sum(Loan.repay_attempt_count), 0)).where(
         or_(
             Loan.status == "DISBURSED",
@@ -368,6 +396,8 @@ async def get_stats(
         "today_disbursed_amount": float(today_disbursed_amount),
         "today_reminders": today_reminders,
         "today_collections": today_collections,
+        "ecard_pool_available_amount": float(ecard_pool_available_amount),
+        "ecard_pool_available_count": int(ecard_pool_available_count or 0),
     }
 
 
@@ -388,7 +418,6 @@ async def admin_stats_ws(websocket: WebSocket):
         if current_admin is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        admin_id = int(current_admin.id)
 
         try:
             ensure_any_admin_page_permission(current_admin, ADMIN_STATS_PERMISSION_KEYS)
@@ -401,7 +430,7 @@ async def admin_stats_ws(websocket: WebSocket):
             while True:
                 # 每次推送使用独立短会话，避免长连接复用同一事务快照导致统计读到旧数据。
                 async with AsyncSessionLocal() as loop_db:
-                    loop_admin = (await loop_db.execute(select(Admin).where(Admin.id == admin_id))).scalar_one_or_none()
+                    loop_admin = await _get_ws_admin_by_token(loop_db, token)
                     if loop_admin is None:
                         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                         return
@@ -415,19 +444,46 @@ async def admin_stats_ws(websocket: WebSocket):
 
 @router.get("/repayment-stats", response_model=RepaymentStatsResponse)
 async def get_repayment_stats(
+    due_date_preset: Optional[str] = Query(None, description="还款日快捷筛选"),
+    actual_repayment_start: Optional[date] = Query(None, description="实际还款开始日期"),
+    actual_repayment_end: Optional[date] = Query(None, description="实际还款结束日期"),
     db: AsyncSession = Depends(get_async_db),
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     ensure_any_admin_page_permission(current_admin, REPAYMENT_STATS_PERMISSION_KEYS)
-    repayment_statuses = ["DISBURSED", "OVERDUE", "SETTLED"]
+    filters = build_loan_scope_filters("REPAYMENTS")
+    if (
+        actual_repayment_start is not None
+        and actual_repayment_end is not None
+        and actual_repayment_start > actual_repayment_end
+    ):
+        raise HTTPException(status_code=400, detail="实际还款开始日期不能晚于结束日期")
+    if due_date_preset:
+        if due_date_preset not in {"TODAY", "TOMORROW"}:
+            raise HTTPException(status_code=400, detail="还款日筛选不正确")
+        today_start, tomorrow = get_today_range()
+        day_start = today_start if due_date_preset == "TODAY" else tomorrow
+        day_end = tomorrow if due_date_preset == "TODAY" else tomorrow + timedelta(days=1)
+        # 卡片统计必须与页面所选还款日区间保持一致，避免列表与摘要口径不一致。
+        filters.extend([
+            Loan.due_date >= day_start,
+            Loan.due_date < day_end,
+        ])
+    if actual_repayment_start is not None:
+        filters.append(Loan.actual_repayment_date >= actual_repayment_start)
+    if actual_repayment_end is not None:
+        filters.append(Loan.actual_repayment_date <= actual_repayment_end)
+
     loans = (
-        await db.execute(select(Loan).options(joinedload(Loan.installments)).where(Loan.status.in_(repayment_statuses)))
+        await db.execute(select(Loan).options(joinedload(Loan.installments)).where(*filters))
     ).unique().scalars().all()
 
+    receivable_order_count = len(loans)
     receivable_user_count = len({loan.user_id for loan in loans})
     receivable_amount = round(sum(calculate_total_repayment_amount(loan) for loan in loans), 2)
     received_user_count = len({loan.user_id for loan in loans if float(loan.repaid_amount or 0) > 0})
     received_amount = round(sum(float(loan.repaid_amount or 0) for loan in loans), 2)
+    other_fee_amount = round(sum(float(loan.other_fee_amount or 0) for loan in loans), 2)
     reduction_amount = round(sum(float(loan.reduction_amount or 0) for loan in loans), 2)
 
     disbursed_amount = 0.0
@@ -463,10 +519,12 @@ async def get_repayment_stats(
     repeat_borrow_rate = (float(repeat_borrow_count) / float(receivable_user_count) * 100) if receivable_user_count else 0
 
     return {
+        "receivable_order_count": int(receivable_order_count),
         "receivable_user_count": int(receivable_user_count),
         "receivable_amount": round(float(receivable_amount), 2),
         "received_user_count": int(received_user_count),
         "received_amount": round(float(received_amount), 2),
+        "other_fee_amount": round(float(other_fee_amount), 2),
         "repayment_rate": round(float(repayment_rate), 2),
         "repeat_borrow_count": int(repeat_borrow_count),
         "repeat_borrow_rate": round(float(repeat_borrow_rate), 2),
@@ -507,6 +565,11 @@ async def get_loans(
     phone: Optional[str] = Query(None, description="手机号/姓名/身份证号"),
     scope: Optional[str] = Query(None, description="业务筛选"),
     due_date_preset: Optional[str] = Query(None, description="还款日快捷筛选"),
+    actual_repayment_start: Optional[date] = Query(None, description="实际还款开始日期"),
+    actual_repayment_end: Optional[date] = Query(None, description="实际还款结束日期"),
+    review_admin_id: Optional[int] = Query(None, ge=1, description="审核员ID"),
+    relend_count: Optional[int] = Query(None, ge=0, description="复购次数"),
+    relend_min_count: Optional[int] = Query(None, ge=0, description="最小复购次数"),
     overdue_min_days: Optional[int] = Query(None, ge=1, description="最小逾期天数"),
     overdue_max_days: Optional[int] = Query(None, ge=1, description="最大逾期天数"),
     skip: int = 0,
@@ -523,12 +586,26 @@ async def get_loans(
     if due_date_preset and due_date_preset not in {"TODAY", "TOMORROW"}:
         raise HTTPException(status_code=400, detail="还款日快捷筛选参数非法")
 
+    if relend_count is not None and relend_min_count is not None:
+        raise HTTPException(status_code=400, detail="复购次数筛选参数不能同时使用")
+
     if (
         overdue_min_days is not None
         and overdue_max_days is not None
         and overdue_min_days > overdue_max_days
     ):
         raise HTTPException(status_code=400, detail="最小逾期天数不能大于最大逾期天数")
+    if (
+        actual_repayment_start is not None
+        and actual_repayment_end is not None
+        and actual_repayment_start > actual_repayment_end
+    ):
+        raise HTTPException(status_code=400, detail="实际还款开始日期不能晚于结束日期")
+
+    if scope == "REVIEWING":
+        expired_count = await expire_unused_approved_credits(db, now=datetime.now())
+        if expired_count:
+            await notify_admin_stats_changed()
 
     limit = min(max(limit, 1), 100)
     # 列表接口只读，避免请求路径执行分配写入导致与调度任务并发时出现锁等待。
@@ -538,6 +615,7 @@ async def get_loans(
         .options(
             joinedload(Loan.owner).joinedload(User.source_channel),
             joinedload(Loan.owner).joinedload(User.loans),
+            joinedload(Loan.owner).selectinload(User.events),
             joinedload(Loan.review_admin),
             joinedload(Loan.collection_admin),
         )
@@ -556,6 +634,27 @@ async def get_loans(
                 User.id_card_num.like(keyword),
             )
         )
+
+    if review_admin_id:
+        stmt = stmt.where(Loan.review_admin_id == review_admin_id)
+
+    if relend_count is not None or relend_min_count is not None:
+        prior_loan = aliased(Loan)
+        # 与列表展示口径保持一致：统计当前订单之前已结清的历史订单数。
+        relend_count_expr = (
+            select(func.count(prior_loan.id))
+            .where(
+                prior_loan.user_id == Loan.user_id,
+                prior_loan.status == "SETTLED",
+                prior_loan.id < Loan.id,
+            )
+            .correlate(Loan)
+            .scalar_subquery()
+        )
+        if relend_count is not None:
+            stmt = stmt.where(relend_count_expr == relend_count)
+        if relend_min_count is not None:
+            stmt = stmt.where(relend_count_expr >= relend_min_count)
 
     scope_filters = build_loan_scope_filters(scope)
     if scope_filters:
@@ -583,6 +682,10 @@ async def get_loans(
             Loan.due_date >= day_start,
             Loan.due_date < day_end,
         )
+    if actual_repayment_start is not None:
+        stmt = stmt.where(Loan.actual_repayment_date >= actual_repayment_start)
+    if actual_repayment_end is not None:
+        stmt = stmt.where(Loan.actual_repayment_date <= actual_repayment_end)
 
     if overdue_min_days is not None or overdue_max_days is not None:
         overdue_days_expr = get_overdue_days_expr()
@@ -614,6 +717,7 @@ async def get_loans(
 @router.get("/users", response_model=PaginatedUserResponse)
 async def get_users(
     keyword: Optional[str] = Query(None, description="手机号/姓名/身份证"),
+    location_risk_blocked: Optional[bool] = Query(None, description="是否命中位置风控锁定"),
     deal_time_start: Optional[date] = Query(None, description="成交开始日期，仅业务顾问生效"),
     deal_time_end: Optional[date] = Query(None, description="成交结束日期，仅业务顾问生效"),
     skip: int = 0,
@@ -640,6 +744,9 @@ async def get_users(
                 Channel.sales_name.like(pattern),
             )
         )
+
+    if location_risk_blocked is not None:
+        stmt = stmt.where(User.location_risk_blocked.is_(location_risk_blocked))
 
     if _is_business_consultant(current_admin):
         # 业务顾问只能查看归属到自己负责渠道的客户。
@@ -673,6 +780,9 @@ async def get_users(
         apply_business_consultant_user_summary_status(serialize_user_summary(user), current_admin)
         for user in users
     ]
+    can_unlock_location_risk = admin_has_permission(current_admin, "user-location-risk-unlock")
+    for item in items:
+        item["can_unlock_location_risk"] = can_unlock_location_risk
     return {
         "total": total,
         "page": skip // limit + 1,
@@ -731,6 +841,22 @@ async def reset_user_password(
     result = await _reset_user_password(db, current_admin, user_id, req)
     await notify_admin_stats_changed()
     return result
+
+
+@router.post("/users/{user_id}/location-risk/unlock")
+async def unlock_user_location_risk(
+    user_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """后台解除用户位置风控锁定。
+
+    :param user_id: 用户ID
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :return: 解除结果
+    """
+    return await _unlock_user_location_risk(db, current_admin, user_id)
 
 
 
@@ -795,6 +921,15 @@ async def get_risk_report(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     return await _get_risk_report(db, req,  current_admin)
+
+
+@router.post("/risk/composite-report", response_model=CompositeRiskReportResponse)
+async def get_composite_risk_report(
+    req: AdminRiskReportRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_composite_risk_report(db, req, current_admin)
 
 
 @router.get("/blacklist")
@@ -1165,6 +1300,19 @@ async def adjust_available_credit(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     result = await _adjust_available_credit(db, current_admin, loan_id, req)
+    await _notify_user_loan_snapshot_if_needed(db, loan_id)
+    await notify_admin_stats_changed()
+    return result
+
+
+@router.post("/loans/{loan_id}/approved-credit/set")
+async def set_approved_credit_limit(
+    loan_id: int,
+    req: ApprovedCreditSetRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    result = await _set_approved_credit_limit(db, current_admin, loan_id, req)
     await _notify_user_loan_snapshot_if_needed(db, loan_id)
     await notify_admin_stats_changed()
     return result

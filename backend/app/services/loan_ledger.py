@@ -21,6 +21,7 @@ TRANSACTION_TYPE_LABELS = {
     "REPAYMENT": "收款登记",
     "REDUCTION": "减免登记",
     "SETTLEMENT": "结清补录",
+    "OTHER_FEE": "其他费用",
 }
 
 
@@ -767,4 +768,34 @@ async def register_reduction_async(
     db.add(transaction)
     await db.flush()
     sync_loan_repayment_state(loan)
+    return transaction
+
+
+async def register_other_fee_async(
+    db: AsyncSession,
+    loan: Loan,
+    amount: Any,
+    operator_name: Optional[str] = None,
+    note: Optional[str] = None,
+    transaction_type: str = "OTHER_FEE",
+) -> Optional[LoanTransaction]:
+    other_fee_amount = round_money(amount)
+    if other_fee_amount <= 0:
+        return None
+
+    loan.other_fee_amount = round_money(getattr(loan, "other_fee_amount", 0) + other_fee_amount)
+    transaction = LoanTransaction(
+        loan_id=loan.id,
+        user_id=loan.user_id,
+        transaction_type=transaction_type,
+        amount=other_fee_amount,
+        principal_amount=0.0,
+        interest_amount=0.0,
+        guarantee_fee_amount=0.0,
+        penalty_amount=0.0,
+        operator_name=operator_name,
+        note=note,
+    )
+    db.add(transaction)
+    await db.flush()
     return transaction

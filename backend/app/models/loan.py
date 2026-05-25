@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Date, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -17,12 +17,14 @@ class Loan(Base):
     fee_rate = Column(Float, default=0.6)         # 综合息费率
     fee_amount = Column(Float, default=0.0)       # 综合息费金额
     term_days = Column(Integer, nullable=True)     # 后台设定
-    due_date = Column(DateTime, nullable=True)     # 后台放款时根据 term_days 计算
+    due_date = Column(DateTime, nullable=True)     # 后台发卡时根据 term_days 计算
     penalty_amount = Column(Float, default=0.0)    # 违约金
     repaid_amount = Column(Float, default=0.0)     # 已登记收款额
     reduction_amount = Column(Float, default=0.0)  # 已登记减免额
+    other_fee_amount = Column(Float, default=0.0)  # 已登记其他费用
     paid_penalty_amount = Column(Float, default=0.0)
     reduced_penalty_amount = Column(Float, default=0.0)
+    actual_repayment_date = Column(Date, nullable=True)  # 最近一次实际还款日期
     review_note = Column(String(255), nullable=True)
     approved_at = Column(DateTime, nullable=True)
     reminder_count = Column(Integer, default=0)
@@ -53,6 +55,7 @@ class Loan(Base):
     product_name = Column(String(120), nullable=True)
     rights_title = Column(String(120), nullable=True)
     rights_desc = Column(String(255), nullable=True)
+    rights_contact_phone = Column(String(20), nullable=True)
     rights_price = Column(Float, default=0.0)
     ecard_face_value = Column(Float, default=0.0)
     product_total_price = Column(Float, default=0.0)
@@ -64,7 +67,7 @@ class Loan(Base):
     order_no = Column(String(32), nullable=False, default="")
     
     created_at = Column(DateTime, default=datetime.now) # 提现申请时间
-    disbursed_at = Column(DateTime, nullable=True) # 放款时间
+    disbursed_at = Column(DateTime, nullable=True) # 发卡时间
     
     owner = relationship(
         "User",
@@ -109,5 +112,14 @@ class Loan(Base):
         primaryjoin="Loan.id == LoanTransaction.loan_id",
         foreign_keys="LoanTransaction.loan_id",
         order_by="LoanTransaction.created_at.desc()",
+        lazy="selectin",
+    )
+    ecard_items = relationship(
+        "LoanEcard",
+        back_populates="loan",
+        cascade="all, delete-orphan",
+        primaryjoin="Loan.id == LoanEcard.loan_id",
+        foreign_keys="LoanEcard.loan_id",
+        order_by="LoanEcard.id.asc()",
         lazy="selectin",
     )

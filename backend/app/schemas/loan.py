@@ -88,8 +88,12 @@ class LoanHistoryResponse(LoanBase):
     term_days: Optional[int] = None
     due_date: Optional[datetime] = None
     penalty_amount: float
+    paid_penalty_amount: float = 0
+    reduced_penalty_amount: float = 0
     repaid_amount: float = 0
     reduction_amount: float = 0
+    other_fee_amount: float = 0
+    actual_repayment_date: Optional[date] = None
     total_repayment_amount: float = 0
     remaining_repayment_amount: float = 0
     created_at: datetime
@@ -97,6 +101,16 @@ class LoanHistoryResponse(LoanBase):
 
     class Config:
         from_attributes = True
+
+
+class LoanEcardItemResponse(BaseModel):
+    id: Optional[int] = None
+    ecard_pool_id: Optional[int] = None
+    index: int = 0
+    face_value: float = 0
+    account_masked: Optional[str] = None
+    password_masked: Optional[str] = None
+    expires_at: Optional[datetime] = None
 
 
 class LoanResponse(LoanBase):
@@ -111,12 +125,18 @@ class LoanResponse(LoanBase):
     term_days: Optional[int] = None
     due_date: Optional[datetime] = None
     penalty_amount: float
+    paid_penalty_amount: float = 0
+    reduced_penalty_amount: float = 0
     repaid_amount: float = 0
     reduction_amount: float = 0
+    other_fee_amount: float = 0
+    actual_repayment_date: Optional[date] = None
     total_repayment_amount: float = 0
     remaining_repayment_amount: float = 0
     review_note: Optional[str] = None
     approved_at: Optional[datetime] = None
+    approved_credit_valid_days: int = 3
+    approved_credit_expires_at: Optional[datetime] = None
     reminder_count: int = 0
     last_reminded_at: Optional[datetime] = None
     collection_count: int = 0
@@ -147,6 +167,7 @@ class LoanResponse(LoanBase):
     product_name: Optional[str] = None
     rights_title: Optional[str] = None
     rights_desc: Optional[str] = None
+    rights_contact_phone: Optional[str] = None
     rights_price: float = 0
     ecard_face_value: float = 0
     product_total_price: float = 0
@@ -154,13 +175,15 @@ class LoanResponse(LoanBase):
     ecard_account_masked: Optional[str] = None
     ecard_password_masked: Optional[str] = None
     ecard_expires_at: Optional[datetime] = None
+    ecard_items: List[LoanEcardItemResponse] = Field(default_factory=list)
     has_issued_ecard: bool = False
     relend_count: int = 0
-    relend_label: str = "初借"
+    relend_label: str = "首购"
     latest_settled_loan: Optional[LoanHistoryResponse] = None
     installment_periods: int = 0
     installments: List[LoanInstallmentItemResponse] = Field(default_factory=list)
     fund_flow_summary: Optional[LoanFundFlowSummaryResponse] = None
+    ordered_at: Optional[datetime] = None
     created_at: datetime
     disbursed_at: Optional[datetime] = None
 
@@ -237,6 +260,8 @@ class LoanAssignmentResponse(BaseModel):
 class LoanFinanceReconcileRequest(BaseModel):
     received_amount: float = Field(0, ge=0)
     reduction_amount: float = Field(0, ge=0)
+    other_fee_amount: float = Field(0, ge=0)
+    actual_repayment_date: Optional[date] = None
     note: Optional[str] = Field(None, max_length=255)
 
 
@@ -250,6 +275,11 @@ class LoanExtensionRequest(BaseModel):
 
 class AvailableCreditAdjustRequest(BaseModel):
     amount: float = Field(..., gt=0)
+    note: Optional[str] = Field(None, max_length=255)
+
+
+class ApprovedCreditSetRequest(BaseModel):
+    credit_limit: float = Field(..., ge=0)
     note: Optional[str] = Field(None, max_length=255)
 
 
@@ -291,6 +321,13 @@ class LoanWithUserResponse(LoanResponse):
     user_real_name_status: Optional[str] = None
     user_blacklist_hit: bool = False
     user_blacklist_reason: Optional[str] = None
+    user_risk_list_hit: bool = False
+    user_risk_list_source: Optional[str] = None
+    user_risk_list_reason: Optional[str] = None
+    user_risk_list_checked_at: Optional[datetime] = None
+    user_location_risk_hit: bool = False
+    user_location_risk_keywords: List[str] = Field(default_factory=list)
+    user_location_risk_detail: Optional[str] = None
     user_source_channel_name: Optional[str] = None
     user_source_channel_sales_name: Optional[str] = None
     application_submitted_at: Optional[datetime] = None
@@ -316,10 +353,12 @@ class LoanLedgerResponse(BaseModel):
 
 
 class RepaymentStatsResponse(BaseModel):
+    receivable_order_count: int = 0
     receivable_user_count: int
     receivable_amount: float
     received_user_count: int
     received_amount: float
+    other_fee_amount: float = 0
     repayment_rate: float
     repeat_borrow_count: int
     repeat_borrow_rate: float
@@ -350,6 +389,8 @@ class AdminStatsResponse(BaseModel):
     today_disbursed_amount: float
     today_reminders: int
     today_collections: int
+    ecard_pool_available_amount: float = 0
+    ecard_pool_available_count: int = 0
 
 
 class RepayAttemptAckResponse(BaseModel):
@@ -390,14 +431,27 @@ class ProjectCashInsightResponse(BaseModel):
         sub_label: str = "今日"
         sub_value: float = 0
 
+    class InsightChartPointResponse(BaseModel):
+        date: str
+        label: str
+        value: float = 0
+
+    class InsightChartResponse(BaseModel):
+        key: str
+        title: str
+        value_type: str = "count"  # currency | count
+        points: List["ProjectCashInsightResponse.InsightChartPointResponse"] = Field(default_factory=list)
+
     total_projects: int = 0
     total_borrowers: int = 0
     total_loans: int = 0
     total_payment_amount: float = 0
     total_receipt_amount: float = 0
+    total_other_fee_amount: float = 0
     total_net_amount: float = 0
     notes: List[str] = Field(default_factory=list)
     cards: List[InsightMetricCardResponse] = Field(default_factory=list)
+    charts: List[InsightChartResponse] = Field(default_factory=list)
     items: List[ProjectCashInsightItemResponse] = Field(default_factory=list)
 
 
@@ -546,3 +600,5 @@ class PaginatedEcardPoolResponse(BaseModel):
 class EcardSecretResponse(BaseModel):
     field: str
     value: str
+    item_id: Optional[int] = None
+    index: Optional[int] = None

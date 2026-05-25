@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.user import User
 from app.services.audit import log_user_event_async
-from app.services.ip_geo import resolve_ip_geo
 from app.services.location import reverse_geocode
 
 
@@ -62,15 +61,7 @@ async def apply_login_location(
             raise ValueError("当前登录环境存在风险，请联系客服处理")
 
     location = await reverse_geocode(latitude=lat, longitude=lon)
-    if fallback_ip and not any([location.get("province"), location.get("city"), location.get("district"), location.get("address")]):
-        ip_location = await resolve_ip_geo(fallback_ip)
-        location = {
-            "address": ip_location.get("detail") or None,
-            "province": ip_location.get("province") or None,
-            "city": ip_location.get("city") or None,
-            "district": ip_location.get("district") or None,
-            "street": ip_location.get("district") or None,
-        }
+    # GPS 行政区划必须来自经纬度解析；IP 归属地由访问日志单独记录，不能冒充 GPS 地址。
     user.location_latitude = str(lat)
     user.location_longitude = str(lon)
     user.location_accuracy = str(round(float(accuracy), 2)) if accuracy is not None else None

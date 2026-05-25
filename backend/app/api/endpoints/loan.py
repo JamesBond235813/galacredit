@@ -19,11 +19,13 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.loan import Loan
+from app.models.loan_ecard import LoanEcard
 from app.models.product import Product
 from app.models.purchase_contract import PurchaseContractSignature
 from app.models.user import User
 from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanOrderSmsCodeResponse, LoanResponse, ProductItemResponse, PurchaseContractPreviewRequest, PurchaseContractResponse
 from app.services.audit import log_user_event_async
+from app.services.approved_credit_expiry import expire_unused_approved_credit_for_loan
 from app.services.blacklist_service import refresh_user_blacklist_status
 from app.services.loan_amounts import serialize_loan_snapshot
 from app.services.loan_assignment import assign_review_admin_if_needed_async
@@ -32,6 +34,7 @@ from app.services.loan_ledger import sync_loan_repayment_state
 from app.services.loan_ws_notify import notify_loan_snapshot_changed, wait_loan_snapshot_changed
 from app.services.admin_service import notify_admin_stats_changed
 from app.services.purchase_contract import PARTY_A_LEGAL_PERSON, PARTY_A_NAME, build_contract_payload, generate_contract_no, serialize_purchase_contract
+from app.services.risk_list_service import refresh_user_risk_list_status
 from app.services.sms_service import sms_service
 
 router = APIRouter()
@@ -60,6 +63,22 @@ def _is_regular_ecard_rights_loan(loan: Loan) -> bool:
     return float(getattr(loan, "ecard_face_value", 0) or 0) > 0 and float(getattr(loan, "rights_price", 0) or 0) > 0
 
 
+def _extract_product_contact_phone(product: Product) -> Optional[str]:
+    """从商品权益配置中提取联系电话。
+
+    :param product: 商品对象
+    :return: 权益联系电话
+    """
+    if not getattr(product, "rights_detail_json", None):
+        return None
+    try:
+        rights_detail = json.loads(product.rights_detail_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    contact_phone = str((rights_detail or {}).get("contact_phone") or "").strip()
+    return contact_phone or None
+
+
 async def _resolve_order_contract_context(
     db: AsyncSession,
     *,
@@ -69,6 +88,7 @@ async def _resolve_order_contract_context(
 ):
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     loan = await get_or_create_latest_loan(db, current_user.id)
+    await expire_unused_approved_credit_for_loan(db, loan)
     source_loan = None
     if extension_source_loan_id:
         source_loan = (
@@ -110,18 +130,19 @@ async def get_or_create_latest_loan(db: AsyncSession, user_id: int):
 
 
 async def get_latest_loan_snapshot_async(db: AsyncSession, user_id: int) -> Loan:
-    """获取用于返回快照的贷款对象，并预加载账单相关关系。
+    """获取用于返回快照的订单对象，并预加载账单相关关系。
 
     :param db: 异步数据库会话
     :param user_id: 用户ID
-    :return: 预加载分期关系的贷款对象
+    :return: 预加载分期关系的订单对象
     """
     loan = await get_or_create_latest_loan(db, user_id)
+    await expire_unused_approved_credit_for_loan(db, loan)
     # 这里强制预加载 installments，避免在序列化阶段触发异步懒加载导致 MissingGreenlet。
     snapshot_loan = (
         await db.execute(
             select(Loan)
-            .options(selectinload(Loan.installments), selectinload(Loan.owner))
+            .options(selectinload(Loan.installments), selectinload(Loan.owner), selectinload(Loan.ecard_items))
             .where(Loan.id == loan.id)
         )
     )
@@ -163,29 +184,46 @@ def _extract_ws_token(websocket: WebSocket) -> Optional[str]:
     return None
 
 
-@router.get("/status", response_model=LoanResponse)
+def serialize_h5_loan_snapshot(loan: Loan, include_ledger: bool = False) -> dict:
+    """序列化 H5 订单快照，并隐藏后台审批备注。
+
+    :param loan: 订单对象
+    :param include_ledger: 是否包含账单流水快照
+    :return: H5 可见的订单快照
+    """
+    payload = serialize_loan_snapshot(loan, include_ledger=include_ledger)
+    # 后台审批备注仅供管理端内部使用，H5 接口与 WebSocket 均不返回，避免调试工具可见。
+    payload.pop("review_note", None)
+    return payload
+
+
+@router.get("/status", response_model=LoanResponse, response_model_exclude={"review_note"})
 async def get_loan_status(
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
     loan = await get_latest_loan_snapshot_async(db, current_user.id)
-    return serialize_loan_snapshot(loan, include_ledger=True)
+    return serialize_h5_loan_snapshot(loan, include_ledger=True)
 
 
-@router.post("/apply", response_model=LoanResponse)
+@router.post("/apply", response_model=LoanResponse, response_model_exclude={"review_note"})
 async def apply_limit(
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
     loan = await get_or_create_latest_loan(db, current_user.id)
+    await expire_unused_approved_credit_for_loan(db, loan)
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     if await refresh_user_blacklist_status(db, db_user):
         await db.commit()
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+    await refresh_user_risk_list_status(db, db_user)
 
     if not db_user.application_submitted_at:
         raise HTTPException(status_code=400, detail="请先完成补充资料提交")
-    if loan.status not in {"INIT", "REJECTED"}:
+    if loan.status == "REJECTED":
+        raise HTTPException(status_code=400, detail="很遗憾，您当前未通过审核")
+    if loan.status != "INIT":
         raise HTTPException(status_code=400, detail="当前状态不可重新申请额度")
 
     loan.status = "REVIEWING"
@@ -204,7 +242,7 @@ async def apply_limit(
     await db.refresh(loan)
     await notify_loan_snapshot_changed(current_user.id)
     await notify_admin_stats_changed()
-    return serialize_loan_snapshot(loan)
+    return serialize_h5_loan_snapshot(loan)
 
 
 @router.post("/purchase-contract/preview", response_model=PurchaseContractResponse)
@@ -318,7 +356,7 @@ async def sign_purchase_contract(
     return serialize_purchase_contract(signature)
 
 
-@router.post("/withdraw", response_model=LoanResponse)
+@router.post("/withdraw", response_model=LoanResponse, response_model_exclude={"review_note"})
 async def withdraw(
     req: LoanOrderRequest,
     current_user: User = Depends(get_current_user_async),
@@ -326,9 +364,11 @@ async def withdraw(
 ):
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     loan = await get_or_create_latest_loan(db, current_user.id)
+    await expire_unused_approved_credit_for_loan(db, loan)
     if await refresh_user_blacklist_status(db, db_user):
         await db.commit()
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+    await refresh_user_risk_list_status(db, db_user)
     source_loan = None
     if req.extension_source_loan_id:
         source_loan = (
@@ -415,6 +455,7 @@ async def withdraw(
     order_loan.product_name = product.name
     order_loan.rights_title = product.rights_title
     order_loan.rights_desc = product.rights_desc
+    order_loan.rights_contact_phone = _extract_product_contact_phone(product)
     order_loan.rights_price = effective_rights_price
     order_loan.ecard_face_value = ecard_face_value
     order_loan.product_total_price = payment_amount
@@ -426,8 +467,10 @@ async def withdraw(
     order_loan.penalty_amount = 0
     order_loan.repaid_amount = 0
     order_loan.reduction_amount = 0
+    order_loan.other_fee_amount = 0
     order_loan.paid_penalty_amount = 0
     order_loan.reduced_penalty_amount = 0
+    order_loan.actual_repayment_date = None
     order_loan.reminder_count = 0
     order_loan.last_reminded_at = None
     order_loan.collection_count = 0
@@ -462,7 +505,7 @@ async def withdraw(
     await db.refresh(order_loan)
     await notify_loan_snapshot_changed(current_user.id)
     await notify_admin_stats_changed()
-    return serialize_loan_snapshot(order_loan)
+    return serialize_h5_loan_snapshot(order_loan)
 
 
 @router.post("/order-sms-code", response_model=LoanOrderSmsCodeResponse)
@@ -605,6 +648,8 @@ async def get_products(
 @router.get("/ecard-secret", response_model=EcardSecretResponse)
 async def get_ecard_secret(
     field: str,
+    item_id: Optional[int] = None,
+    index: Optional[int] = None,
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -613,24 +658,44 @@ async def get_ecard_secret(
     loan = await get_or_create_latest_loan(db, current_user.id)
     if loan.status not in {"DISBURSED", "OVERDUE", "SETTLED"}:
         raise HTTPException(status_code=400, detail="当前订单尚未发卡")
+    if item_id is not None or index is not None:
+        stmt = select(LoanEcard).where(LoanEcard.loan_id == loan.id).order_by(LoanEcard.id.asc())
+        if item_id is not None:
+            stmt = stmt.where(LoanEcard.id == item_id)
+            ecard_item = (await db.execute(stmt)).scalars().first()
+        else:
+            ecard_items = (await db.execute(stmt)).scalars().all()
+            ecard_item = ecard_items[index] if index is not None and 0 <= index < len(ecard_items) else None
+        if not ecard_item:
+            raise HTTPException(status_code=404, detail="未找到该张E卡")
+        value = ecard_item.account if field == "account" else ecard_item.password
+        return {"field": field, "value": value, "item_id": ecard_item.id, "index": index}
+
+    ecard_item = (
+        await db.execute(select(LoanEcard).where(LoanEcard.loan_id == loan.id).order_by(LoanEcard.id.asc()).limit(1))
+    ).scalars().first()
+    if ecard_item:
+        value = ecard_item.account if field == "account" else ecard_item.password
+        return {"field": field, "value": value, "item_id": ecard_item.id, "index": 0}
+
     value = loan.ecard_account if field == "account" else loan.ecard_password
     if not value:
         raise HTTPException(status_code=404, detail="暂无可复制卡密")
     return {"field": field, "value": value}
 
 
-@router.get("/bill", response_model=LoanResponse)
+@router.get("/bill", response_model=LoanResponse, response_model_exclude={"review_note"})
 async def get_bill(
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
     loan = await get_latest_loan_snapshot_async(db, current_user.id)
-    return serialize_loan_snapshot(loan, include_ledger=True)
+    return serialize_h5_loan_snapshot(loan, include_ledger=True)
 
 
 @router.websocket("/ws/status")
 async def loan_status_ws(websocket: WebSocket):
-    """通过 WebSocket 推送用户贷款与账单快照。
+    """通过 WebSocket 推送用户订单与账单快照。
 
     :param websocket: WebSocket 连接
     :return: None
@@ -654,7 +719,7 @@ async def loan_status_ws(websocket: WebSocket):
                 async with AsyncSessionLocal() as loop_db:
                     snapshot = await get_latest_loan_snapshot_async(loop_db, current_user_id)
                 await websocket.send_json(
-                    jsonable_encoder({"type": "loan_snapshot", "data": serialize_loan_snapshot(snapshot, include_ledger=True)})
+                    jsonable_encoder({"type": "loan_snapshot", "data": serialize_h5_loan_snapshot(snapshot, include_ledger=True)})
                 )
                 last_version = await wait_loan_snapshot_changed(current_user_id, last_version, LOAN_STATUS_WS_PUSH_SECONDS)
         except WebSocketDisconnect:

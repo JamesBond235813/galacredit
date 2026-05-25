@@ -24,6 +24,7 @@ from app.models.blacklist import BlacklistEntry
 from app.models.channel import Channel
 from app.models.ecard_pool import EcardPool
 from app.models.loan import Loan
+from app.models.loan_ecard import LoanEcard
 from app.models.loan_transaction import LoanTransaction
 from app.models.overdue_fee_config import OverdueFeeConfig
 from app.models.product import Product
@@ -49,6 +50,7 @@ from app.schemas.channel import (
 )
 from app.schemas.loan import (
     AdminStatsResponse,
+    ApprovedCreditSetRequest,
     AvailableCreditAdjustRequest,
     DisburseRequest,
     EcardPoolCreateRequest,
@@ -86,6 +88,7 @@ from app.services.admin_permissions import (
     serialize_admin_roles,
 )
 from app.services.channel_service import (
+    build_daily_channel_invite_code,
     build_channel_metrics,
     build_channel_summary,
     get_channel_by_name_async,
@@ -106,6 +109,7 @@ from app.services.loan_ledger import (
     create_disbursement_transaction_async,
     ensure_installment_records_async,
     get_loan_ledger_snapshot,
+    register_other_fee_async,
     register_reduction_async,
     register_repayment_async,
     serialize_transaction,
@@ -126,10 +130,15 @@ from app.services.loan_assignment import (
     is_collection_stage,
     list_admins_by_role_async,
 )
+from app.services.overdue_fee_config import calculate_penalty_by_repayment_date
 from app.services.risk_report import (
     get_or_create_risk_report_async,
     get_user_for_risk_report_async,
     serialize_risk_report,
+)
+from app.services.composite_risk_report import (
+    get_or_create_composite_risk_report_async,
+    serialize_composite_risk_report,
 )
 from app.services.upload_storage import build_upload_url
 from app.services.blacklist_service import (
@@ -178,6 +187,29 @@ REPAYMENT_STATS_PERMISSION_KEYS = (
 )
 
 ECARD_POOL_STATUSES = {"AVAILABLE", "ASSIGNED", "EXPIRED", "VOID"}
+
+RISK_LOCATION_KEYWORDS = tuple(
+    dict.fromkeys(
+        [
+            "潍坊",
+            "瓦房店",
+            "聊城",
+            "无锡",
+            "宜兴",
+            "日照",
+            "烟台",
+            "新疆",
+            "长沙",
+            "鹿泉区汇源街",
+            "大连",
+            "张家口",
+            "葫芦岛",
+            "内蒙古",
+        ]
+    )
+)
+RISK_LOCATION_OVERSEAS_KEYWORD = "中国大陆境外"
+MAINLAND_COUNTRY_NAMES = {"中国", "中国大陆", "中华人民共和国"}
 ADMIN_STATS_WS_PUSH_SECONDS = 5
 
 _ADMIN_STATS_VERSION = 0
@@ -266,6 +298,71 @@ def _set_available_credit(user: User, amount: float):
     user.available_credit_limit = round_money(max(float(amount or 0), 0))
 
 
+def _extract_scalar_items(execute_result):
+    """兼容真实查询结果与单元测试桩，提取标量列表。
+
+    :param execute_result: SQLAlchemy execute 返回值或测试桩
+    :return: 标量对象列表
+    """
+    scalars = execute_result.scalars()
+    if hasattr(scalars, "all"):
+        return scalars.all()
+    if hasattr(scalars, "first"):
+        first_item = scalars.first()
+        return [] if first_item is None else [first_item]
+    return []
+
+
+def _ecard_amount_cents(value: float) -> int:
+    """将E卡金额转换为分，避免浮点比较误差。
+
+    :param value: 金额
+    :return: 分单位金额
+    """
+    return int(round(round_money(value) * 100))
+
+
+def _is_better_ecard_combo(candidate: list, current: Optional[list]) -> bool:
+    """判断候选组合是否优于当前组合。
+
+    :param candidate: 候选E卡列表
+    :param current: 当前E卡列表
+    :return: 是否优于当前组合
+    """
+    if current is None:
+        return True
+    candidate_key = (len(candidate), [item.expires_at for item in candidate], [item.id for item in candidate])
+    current_key = (len(current), [item.expires_at for item in current], [item.id for item in current])
+    return candidate_key < current_key
+
+
+def _select_ecard_combo(candidates: list, target_face_value: float) -> list:
+    """从卡池候选中选择总额精确匹配的E卡组合。
+
+    :param candidates: 可用E卡候选列表
+    :param target_face_value: 目标E卡总面额
+    :return: 精确匹配的E卡组合
+    """
+    target_cents = _ecard_amount_cents(target_face_value)
+    if target_cents <= 0:
+        return []
+
+    combos: dict[int, list] = {0: []}
+    for item in candidates:
+        item_cents = _ecard_amount_cents(getattr(item, "face_value", 0))
+        if item_cents <= 0 or item_cents > target_cents:
+            continue
+        for amount, combo in list(combos.items()):
+            next_amount = amount + item_cents
+            if next_amount > target_cents:
+                continue
+            next_combo = sorted(combo + [item], key=lambda card: (card.expires_at, card.id))
+            if _is_better_ecard_combo(next_combo, combos.get(next_amount)):
+                combos[next_amount] = next_combo
+
+    return combos.get(target_cents, [])
+
+
 async def _find_ready_fee_extension_orders(db: AsyncSession, source_loan: Loan):
     result = await db.execute(
         select(Loan)
@@ -279,6 +376,27 @@ async def _find_ready_fee_extension_orders(db: AsyncSession, source_loan: Loan):
         .order_by(Loan.disbursed_at.asc(), Loan.id.asc())
     )
     return result.scalars().all()
+
+
+def _resolve_order_submit_time(loan: Loan) -> Optional[datetime]:
+    """解析订单真实下单时间。
+
+    :param loan: 订单对象
+    :return: 用户提交信用下单的时间，取不到时返回 None
+    """
+    events = getattr(getattr(loan, "owner", None), "events", None) or []
+    matched_events = [
+        event
+        for event in events
+        if getattr(event, "loan_id", None) == getattr(loan, "id", None)
+        and getattr(event, "event_type", None) == "ORDER_SUBMIT"
+        and getattr(event, "created_at", None)
+    ]
+    if not matched_events:
+        return None
+    # 同一订单理论上只有一次下单事件；若历史数据有重复，按最近一次真实提交为准。
+    return max(event.created_at for event in matched_events)
+
 
 def serialize_admin_user(admin: Admin, current_admin: Optional[Admin] = None):
     roles = parse_admin_roles(getattr(admin, "roles", None))
@@ -309,6 +427,17 @@ def resolve_roles_and_permissions(roles_input, permissions_input):
 def ensure_admin_page_permission(current_admin: Admin, permission_key: str):
     if not admin_has_permission(current_admin, permission_key):
         raise HTTPException(status_code=403, detail="无权访问当前页面")
+
+def ensure_admin_permission(current_admin: Admin, permission_key: str, detail: str = "无权执行当前操作"):
+    """校验后台用户是否拥有指定操作权限。
+
+    :param current_admin: 当前登录管理员
+    :param permission_key: 权限标识
+    :param detail: 无权限时的提示文案
+    :return: None
+    """
+    if not admin_has_permission(current_admin, permission_key):
+        raise HTTPException(status_code=403, detail=detail)
 
 def ensure_any_admin_page_permission(current_admin: Admin, permission_keys):
     if any(admin_has_permission(current_admin, item) for item in permission_keys):
@@ -366,12 +495,106 @@ def ensure_stage_access_for_admin(current_admin: Admin, loan: Loan):
 
     raise HTTPException(status_code=403, detail="当前订单未分配给你处理")
 
+
+def _append_location_text(parts: list[str], *values: Optional[str]) -> None:
+    """追加非空地址文本。
+
+    :param parts: 地址片段列表
+    :param values: 待追加的地址字段
+    :return: 无返回值
+    """
+    for value in values:
+        text = (value or "").strip()
+        if text:
+            parts.append(text)
+
+
+def _safe_loaded_events(user: Optional[User]) -> list[UserEvent]:
+    """读取已预加载的用户访问日志。
+
+    :param user: 用户对象
+    :return: 已加载的访问日志列表
+    """
+    if not user:
+        return []
+    # User.events 使用 noload，直接从 __dict__ 读取可避免列表接口触发额外查询。
+    events = getattr(user, "__dict__", {}).get("events")
+    return events or []
+
+
+def _is_overseas_country(country: Optional[str]) -> bool:
+    """判断国家字段是否属于中国大陆境外。
+
+    :param country: 国家或地区名称
+    :return: 是否命中境外风险
+    """
+    text = (country or "").strip()
+    if not text:
+        return False
+    if text in MAINLAND_COUNTRY_NAMES:
+        return False
+    return "中国" not in text or "香港" in text or "澳门" in text or "台湾" in text
+
+
+def resolve_user_location_risk(user: Optional[User]) -> dict:
+    """根据用户GPS与IP解析地址判断是否命中风险地区。
+
+    :param user: 用户对象
+    :return: 风险命中结果
+    """
+    parts: list[str] = []
+    overseas_hit = False
+
+    if user:
+        _append_location_text(
+            parts,
+            getattr(user, "location_province", None),
+            getattr(user, "location_city", None),
+            getattr(user, "location_district", None),
+            getattr(user, "location_street", None),
+            getattr(user, "location_address", None),
+            getattr(user, "id_address", None),
+        )
+
+    for event in _safe_loaded_events(user):
+        _append_location_text(
+            parts,
+            getattr(event, "ip_province", None),
+            getattr(event, "ip_city", None),
+            getattr(event, "ip_district", None),
+            getattr(event, "ip_detail", None),
+            getattr(event, "lon_lat_province", None),
+            getattr(event, "lon_lat_city", None),
+            getattr(event, "lon_lat_district", None),
+            getattr(event, "lon_lat_detail", None),
+        )
+        overseas_hit = overseas_hit or _is_overseas_country(getattr(event, "ip_country", None))
+        overseas_hit = overseas_hit or _is_overseas_country(getattr(event, "lon_lat_country", None))
+
+    combined_text = " ".join(parts)
+    keywords = [keyword for keyword in RISK_LOCATION_KEYWORDS if keyword in combined_text]
+    if overseas_hit or RISK_LOCATION_OVERSEAS_KEYWORD in combined_text:
+        keywords.append(RISK_LOCATION_OVERSEAS_KEYWORD)
+
+    unique_keywords = list(dict.fromkeys(keywords))
+    return {
+        "hit": bool(unique_keywords),
+        "keywords": unique_keywords,
+        "detail": "命中风险位置：" + "、".join(unique_keywords) if unique_keywords else "",
+    }
+
+
 def serialize_loan(loan: Loan):
     owner_loans = getattr(getattr(loan, "owner", None), "loans", None) or []
     loan.relend_count = get_relend_count(owner_loans, current_loan_id=loan.id)
     loan.relend_label = get_relend_label(owner_loans, current_loan_id=loan.id)
     loan.latest_settled_loan = get_latest_normal_settled_loan(owner_loans, current_loan_id=loan.id)
     payload = serialize_loan_snapshot(loan, include_user=True)
+    payload["ordered_at"] = _resolve_order_submit_time(loan)
+    location_risk = resolve_user_location_risk(getattr(loan, "owner", None))
+    payload["user_location_risk_hit"] = location_risk["hit"]
+    payload["user_location_risk_keywords"] = location_risk["keywords"]
+    payload["user_location_risk_detail"] = location_risk["detail"]
     payload["review_admin_id"] = loan.review_admin_id
     payload["review_admin_name"] = None
     payload["collection_admin_id"] = loan.collection_admin_id
@@ -412,6 +635,13 @@ def serialize_user_summary(user: User):
         "blacklist_hit": bool(getattr(user, "blacklist_hit", False)),
         "blacklist_reason": getattr(user, "blacklist_reason", None),
         "blacklist_checked_at": getattr(user, "blacklist_checked_at", None),
+        "location_risk_blocked": bool(getattr(user, "location_risk_blocked", False)),
+        "location_risk_reason": getattr(user, "location_risk_reason", None),
+        "location_risk_at": getattr(user, "location_risk_at", None),
+        "risk_list_hit": bool(getattr(user, "risk_list_hit", False)),
+        "risk_list_source": getattr(user, "risk_list_source", None),
+        "risk_list_reason": getattr(user, "risk_list_reason", None),
+        "risk_list_checked_at": getattr(user, "risk_list_checked_at", None),
         "created_at": user.created_at,
         "last_login_at": user.last_login_at,
         "application_submitted_at": user.application_submitted_at,
@@ -426,6 +656,7 @@ def serialize_user_summary(user: User):
         "current_guarantee_fee_amount": loan_snapshot["guarantee_fee_amount"] if loan_snapshot else None,
         "current_penalty_amount": loan_snapshot["penalty_amount"] if loan_snapshot else None,
         "current_blacklist_hit": bool(getattr(user, "blacklist_hit", False)),
+        "current_risk_list_hit": bool(getattr(user, "risk_list_hit", False)),
         "first_disbursed_at": getattr(first_deal_loan, "disbursed_at", None),
         "first_deal_amount": round_money(getattr(first_deal_loan, "product_total_price", 0)) if first_deal_loan else None,
         "latest_disbursed_at": getattr(latest_deal_loan, "disbursed_at", None),
@@ -469,6 +700,10 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
         "blacklist_hit": bool(getattr(user, "blacklist_hit", False)),
         "blacklist_reason": getattr(user, "blacklist_reason", None),
         "blacklist_checked_at": getattr(user, "blacklist_checked_at", None),
+        "risk_list_hit": bool(getattr(user, "risk_list_hit", False)),
+        "risk_list_source": getattr(user, "risk_list_source", None),
+        "risk_list_reason": getattr(user, "risk_list_reason", None),
+        "risk_list_checked_at": getattr(user, "risk_list_checked_at", None),
         "emergency_contact1_name": user.emergency_contact1_name,
         "emergency_contact1_relation": user.emergency_contact1_relation,
         "emergency_contact1_phone": user.emergency_contact1_phone,
@@ -485,6 +720,9 @@ def serialize_user_detail(user: User, events: Optional[list[UserEvent]] = None):
         "location_street": user.location_street,
         "location_source": user.location_source,
         "location_updated_at": user.location_updated_at,
+        "location_risk_blocked": bool(getattr(user, "location_risk_blocked", False)),
+        "location_risk_reason": getattr(user, "location_risk_reason", None),
+        "location_risk_at": getattr(user, "location_risk_at", None),
         "face_auth_status": user.face_auth_status,
         "face_auth_at": user.face_auth_at,
         "last_login_at": user.last_login_at,
@@ -561,6 +799,7 @@ async def _get_user_ip_audit(db: AsyncSession, current_admin: Admin, user_id: in
 def serialize_channel(channel: Channel, advisor: Optional[Admin] = None):
     payload = build_channel_metrics(channel)
     payload["invite_code"] = channel.invite_code
+    payload["daily_invite_code"] = build_daily_channel_invite_code(channel)
     payload["admin_user_id"] = channel.admin_user_id
     payload["admin_user_name"] = advisor.username if advisor else None
     return payload
@@ -761,12 +1000,89 @@ def build_loan_scope_filters(scope: Optional[str]):
 def get_overdue_days_expr():
     return func.greatest(func.datediff(func.current_date(), func.date(Loan.due_date)), 1)
 
+
+def _normalize_actual_repayment_date(value: Optional[date]) -> date:
+    """规范化实际还款日期，未填写时按当天处理。
+
+    :param value: 实际还款日期
+    :return: 规范化后的日期
+    """
+    return value or date.today()
+
+
+def split_extra_fee_for_penalty(extra_fee_amount: float, unpaid_penalty_amount: float) -> dict:
+    """将额外收款拆分为逾期费冲抵和其他费用。
+
+    :param extra_fee_amount: 本次额外收款
+    :param unpaid_penalty_amount: 当前未结清逾期费
+    :return: 拆分结果
+    """
+    penalty_paid_now = round(min(float(extra_fee_amount or 0), float(unpaid_penalty_amount or 0)), 2)
+    other_fee_amount = round(max(float(extra_fee_amount or 0) - penalty_paid_now, 0), 2)
+    return {
+        "penalty_paid_now": penalty_paid_now,
+        "other_fee_amount": other_fee_amount,
+    }
+
 def get_loan_operating_metrics(loan: Loan):
     ledger = get_loan_ledger_snapshot(loan)
     return ledger["summary"]
 
 def round_cash_amount(value: Optional[float]) -> float:
     return round(float(value or 0), 2)
+
+
+def build_recent_insight_charts(issued_loans, today_start: datetime, days: int = 7):
+    """生成洞察看板近 N 天成交和发卡趋势。
+
+    :param issued_loans: 已发卡订单集合
+    :param today_start: 今日零点
+    :param days: 统计天数
+    :return: 趋势图数据列表
+    """
+    day_starts = [today_start - timedelta(days=offset) for offset in range(days - 1, -1, -1)]
+    order_counts = {item.date(): 0 for item in day_starts}
+    ecard_amounts = {item.date(): 0.0 for item in day_starts}
+
+    for loan in issued_loans:
+        disbursed_at = getattr(loan, "disbursed_at", None)
+        if not disbursed_at:
+            continue
+        disbursed_date = disbursed_at.date()
+        if disbursed_date not in order_counts:
+            continue
+        order_counts[disbursed_date] += 1
+        ecard_amounts[disbursed_date] += float(getattr(loan, "ecard_face_value", 0) or getattr(loan, "credit_limit", 0) or 0)
+
+    points = [
+        {
+            "date": day.date().isoformat(),
+            "label": f"{day.month}/{day.day}",
+            "order_count": int(order_counts[day.date()]),
+            "ecard_amount": round_cash_amount(ecard_amounts[day.date()]),
+        }
+        for day in day_starts
+    ]
+    return [
+        {
+            "key": "daily_order_count",
+            "title": "近7天每天成交单数",
+            "value_type": "count",
+            "points": [
+                {"date": item["date"], "label": item["label"], "value": item["order_count"]}
+                for item in points
+            ],
+        },
+        {
+            "key": "daily_ecard_amount",
+            "title": "近7天每天E卡发放金额",
+            "value_type": "currency",
+            "points": [
+                {"date": item["date"], "label": item["label"], "value": item["ecard_amount"]}
+                for item in points
+            ],
+        },
+    ]
 
 async def build_project_cash_insights(db: AsyncSession, loans, today_start: datetime, tomorrow: datetime):
     ordered_statuses = {"WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"}
@@ -799,6 +1115,15 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
         await db.scalar(
             select(func.coalesce(func.sum(LoanTransaction.amount), 0)).where(
                 LoanTransaction.transaction_type.in_(["REPAYMENT", "SETTLEMENT"]),
+                LoanTransaction.created_at >= today_start,
+                LoanTransaction.created_at < tomorrow,
+            )
+        )
+    ) or 0
+    today_other_fee_amount = (
+        await db.scalar(
+            select(func.coalesce(func.sum(LoanTransaction.amount), 0)).where(
+                LoanTransaction.transaction_type == "OTHER_FEE",
                 LoanTransaction.created_at >= today_start,
                 LoanTransaction.created_at < tomorrow,
             )
@@ -837,6 +1162,7 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
     pending_normal_outstanding_amount = round_cash_amount(
         sum(calculate_remaining_repayment_amount(loan) for loan in normal_outstanding_loans)
     )
+    other_fee_amount = round_cash_amount(sum(float(loan.other_fee_amount or 0) for loan in issued_loans))
 
     cards = [
         {
@@ -873,7 +1199,7 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
         },
         {
             "key": "overdue_amount",
-            "title": "累计逾期",
+            "title": "逾期总额",
             "value": overdue_outstanding_amount,
             "value_type": "currency",
             "sub_label": "昨日累计逾期金额",
@@ -881,10 +1207,10 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
         },
         {
             "key": "issued_order_count",
-            "title": "放款单数",
+            "title": "发卡单数",
             "value": int(len(issued_loans)),
             "value_type": "count",
-            "sub_label": "今日放款单数",
+            "sub_label": "今日发卡单数",
             "sub_value": int(len(today_issued_loans)),
         },
         {
@@ -904,6 +1230,14 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
             "sub_value": round_cash_amount(today_received_amount),
         },
         {
+            "key": "other_fee_amount",
+            "title": "其他费用",
+            "value": other_fee_amount,
+            "value_type": "currency",
+            "sub_label": "今日其他费用",
+            "sub_value": round_cash_amount(today_other_fee_amount),
+        },
+        {
             "key": "receivable_amount",
             "title": "应收金额",
             "value": receivable_amount,
@@ -920,6 +1254,7 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
             "sub_value": 0,
         },
     ]
+    charts = build_recent_insight_charts(issued_loans, today_start)
 
     return {
         "total_projects": 0,
@@ -927,15 +1262,21 @@ async def build_project_cash_insights(db: AsyncSession, loans, today_start: date
         "total_loans": int(len(issued_loans)),
         "total_payment_amount": 0,
         "total_receipt_amount": round_cash_amount(sum(float(loan.repaid_amount or 0) for loan in issued_loans)),
+        "total_other_fee_amount": other_fee_amount,
         "total_net_amount": round_cash_amount(
-            sum(float(loan.repaid_amount or 0) for loan in issued_loans) - total_ecard_issued - total_rights_cost
+            sum(float(loan.repaid_amount or 0) for loan in issued_loans)
+            + other_fee_amount
+            - total_ecard_issued
+            - total_rights_cost
         ),
         "notes": [
-            "利息、融担费等科目的“付款”口径为减免/退费金额，不是用户额外打款。",
+            "服务费等科目的“付款”口径为减免/退费金额，不是用户额外打款。",
+            "其他费用为账单外额外收取金额，不参与剩余待还计算。",
             "权益成本按每份已发出权益的权益定价 × 4% 计算。",
             "应收金额为截至当前未回收的应收总额（剩余待还）。",
         ],
         "cards": cards,
+        "charts": charts,
         "items": [],
     }
 
@@ -1125,18 +1466,68 @@ async def _get_user_detail(db: AsyncSession, current_admin: Admin, user_id: int)
             .order_by(UserEvent.created_at.desc())
         )
     ).scalars().all()
-    return serialize_user_detail(user, events=events)
+    payload = serialize_user_detail(user, events=events)
+    payload["can_unlock_location_risk"] = admin_has_permission(current_admin, "user-location-risk-unlock")
+    return payload
+
+
+async def _unlock_user_location_risk(
+    db: AsyncSession,
+    current_admin: Admin,
+    user_id: int,
+):
+    """解除指定用户的位置风控锁定，但保留原有位置记录。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前登录管理员
+    :param user_id: 用户ID
+    :return: 处理结果
+    """
+    ensure_admin_page_permission(current_admin, "users")
+    ensure_admin_permission(current_admin, "user-location-risk-unlock")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 只解除当前锁定状态，保留历史GPS/IP轨迹，方便后续复核。
+    user.location_risk_blocked = False
+    user.location_risk_reason = None
+    user.location_risk_at = None
+
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=None,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_LOCATION_RISK_UNLOCK",
+        title="后台解除位置风控",
+        detail="管理员手动解除位置风控锁定，历史定位记录保留。",
+    )
+    await db.commit()
+    return {"msg": "位置风控已解除"}
 
 async def _get_risk_report(db: AsyncSession, req: AdminRiskReportRequest, current_admin: Admin):
+    """兼容旧风控查询入口，统一返回小荷包风险报告。
+
+    :param db: 异步数据库会话
+    :param req: 风控报告请求
+    :param current_admin: 当前后台用户
+    :return: 小荷包风险报告
+    """
+    return await _get_composite_risk_report(db, req, current_admin)
+
+async def _get_composite_risk_report(db: AsyncSession, req: AdminRiskReportRequest, current_admin: Admin):
+    """查询小荷包风险报告。
+
+    :param db: 异步数据库会话
+    :param req: 风控报告请求
+    :param current_admin: 当前后台用户
+    :return: 小荷包风险报告
+    """
     ensure_any_admin_page_permission(current_admin, ("users", "applications", "disbursements", "repayments", "collections", "financials"))
     user = await get_user_for_risk_report_async(db, req.user_id)
-    report = await get_or_create_risk_report_async(
-        db,
-        name=user.name,
-        id_card=user.id_card_num,
-        phone=user.phone,
-        user_id=user.id,
-    )
+    report = await get_or_create_composite_risk_report_async(db, user=user)
     latest_loan = await get_latest_loan_async(db, user.id)
     if latest_loan:
         latest_loan.risk_report_checked_at = datetime.now()
@@ -1147,13 +1538,13 @@ async def _get_risk_report(db: AsyncSession, req: AdminRiskReportRequest, curren
         loan=latest_loan,
         actor_type="ADMIN",
         operator_name=current_admin.username,
-        event_type="ADMIN_RISK_REPORT",
-        title="查询风控报告",
-        detail="后台发起全景雷达风控报告查询",
+        event_type="ADMIN_COMPOSITE_RISK_REPORT",
+        title="查询小荷包风险报告",
+        detail="后台发起小荷包风险报告查询",
     )
     await db.commit()
     await db.refresh(report)
-    return serialize_risk_report(report)
+    return serialize_composite_risk_report(report)
 
 async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optional[str], status: Optional[str], skip: int, limit: int):
     ensure_admin_page_permission(current_admin, "channels")
@@ -1458,6 +1849,13 @@ def _parse_upload_expiration(value):
             raise ValueError("有效期格式必须为 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS")
     raise ValueError("有效期格式错误")
 
+def _excel_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value)).strip()
+    return str(value).strip()
+
 def _load_excel_rows(upload_file: UploadFile):
     content = upload_file.file.read()
     upload_file.file.close()
@@ -1490,7 +1888,7 @@ async def _upload_ecard_pool_items(db: AsyncSession, file: UploadFile, current_a
     if not rows:
         raise HTTPException(status_code=400, detail="上传文件内容不能为空")
 
-    upload_accounts = [str(row[0]).strip() for row in rows if row and row[0] is not None]
+    upload_accounts = [_excel_text(row[0]) for row in rows if row and _excel_text(row[0])]
     existing_accounts = set()
     if upload_accounts:
         existing_accounts = set(
@@ -1501,8 +1899,8 @@ async def _upload_ecard_pool_items(db: AsyncSession, file: UploadFile, current_a
     seen_accounts = set()
 
     for index, row in enumerate(rows, start=2):
-        account = (row[0] or "").strip() if len(row) >= 1 else ""
-        password = (row[1] or "").strip() if len(row) >= 2 else ""
+        account = _excel_text(row[0]) if len(row) >= 1 else ""
+        password = _excel_text(row[1]) if len(row) >= 2 else ""
         face_value = row[2] if len(row) >= 3 else None
         expires_at = row[3] if len(row) >= 4 else None
 
@@ -1629,8 +2027,10 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.penalty_amount = 0
         loan.repaid_amount = 0
         loan.reduction_amount = 0
+        loan.other_fee_amount = 0
         loan.paid_penalty_amount = 0
         loan.reduced_penalty_amount = 0
+        loan.actual_repayment_date = None
         loan.reminder_count = 0
         loan.last_reminded_at = None
         loan.collection_count = 0
@@ -1643,6 +2043,7 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.product_name = None
         loan.rights_title = None
         loan.rights_desc = None
+        loan.rights_contact_phone = None
         loan.rights_price = 0
         loan.ecard_face_value = 0
         loan.product_total_price = 0
@@ -1678,8 +2079,10 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.penalty_amount = 0
         loan.repaid_amount = 0
         loan.reduction_amount = 0
+        loan.other_fee_amount = 0
         loan.paid_penalty_amount = 0
         loan.reduced_penalty_amount = 0
+        loan.actual_repayment_date = None
         loan.repay_attempt_count = 0
         loan.collection_admin_id = None
         loan.collection_transferred_at = None
@@ -1687,6 +2090,7 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         loan.product_name = None
         loan.rights_title = None
         loan.rights_desc = None
+        loan.rights_contact_phone = None
         loan.rights_price = 0
         loan.ecard_face_value = 0
         loan.product_total_price = 0
@@ -1716,7 +2120,6 @@ async def _review_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
     return serialize_loan(loan)
 
 async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanUpdateRequest):
-    ensure_admin_page_permission(current_admin, "disbursements")
     loan = (
         await db.execute(select(Loan).options(joinedload(Loan.owner), joinedload(Loan.installments)).where(Loan.id == loan_id))
     ).unique().scalar_one_or_none()
@@ -1727,9 +2130,18 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
     if not payload:
         return serialize_loan(loan)
 
+    if set(payload.keys()) <= {"review_note"}:
+        ensure_any_admin_page_permission(
+            current_admin,
+            ("users", "applications", "disbursements", "repayments", "collections", "financials"),
+        )
+    else:
+        ensure_admin_page_permission(current_admin, "disbursements")
+
     owner = loan.owner
     change_messages = []
     previous_collection_note = loan.collection_note
+    previous_review_note = loan.review_note
     fee_rate_updated = False
 
     if "status" in payload:
@@ -1755,6 +2167,7 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
             loan.product_name = None
             loan.rights_title = None
             loan.rights_desc = None
+            loan.rights_contact_phone = None
             loan.rights_price = 0
             loan.ecard_face_value = 0
             loan.product_total_price = 0
@@ -1808,7 +2221,7 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
 
     if "review_note" in payload:
         loan.review_note = payload["review_note"]
-        change_messages.append("更新审批备注")
+        change_messages.append("保存审批备注")
 
     if "collection_note" in payload:
         loan.collection_note = payload["collection_note"]
@@ -1842,6 +2255,21 @@ async def _update_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
                 operator_name=current_admin.username,
                 event_type="ADMIN_COLLECTION_NOTE",
                 title="新增催收备注",
+                detail=note_text,
+            )
+
+    if "review_note" in payload:
+        note_text = (payload.get("review_note") or "").strip()
+        previous_note = (previous_review_note or "").strip()
+        if note_text and note_text != previous_note:
+            await log_user_event_async(
+                db,
+                user=owner,
+                loan=loan,
+                actor_type="ADMIN",
+                operator_name=current_admin.username,
+                event_type="ADMIN_REVIEW_NOTE",
+                title="新增审批备注",
                 detail=note_text,
             )
 
@@ -1883,22 +2311,23 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
     today = now.date()
     tomorrow_start = datetime(now.year, now.month, now.day) + timedelta(days=1)
     ecard_face_value = round_money(loan.ecard_face_value or 0)
-    ecard_item = None
+    ecard_items = []
     if ecard_face_value > 0:
-        ecard_item = (
+        ecard_candidates = _extract_scalar_items(
             await db.execute(
                 select(EcardPool)
                 .where(
                     EcardPool.status == "AVAILABLE",
-                    EcardPool.face_value == ecard_face_value,
+                    EcardPool.face_value <= ecard_face_value,
                     EcardPool.expires_at >= tomorrow_start,
                 )
                 .order_by(EcardPool.expires_at.asc(), EcardPool.id.asc())
             )
-        ).scalars().first()
-        if ecard_item and ecard_item.expires_at.date() <= today:
-            ecard_item = None
-        if not ecard_item:
+        )
+        # 发卡允许多张E卡组合，但总面额必须与订单所需E卡金额完全一致。
+        ecard_candidates = [item for item in ecard_candidates if item.expires_at.date() > today]
+        ecard_items = _select_ecard_combo(ecard_candidates, ecard_face_value)
+        if not ecard_items:
             raise HTTPException(status_code=400, detail=f"卡池库存不足：未找到面额 {ecard_face_value:.2f} 元且有效的京东E卡")
 
     sync_loan_fee_fields(loan)
@@ -1914,18 +2343,32 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
     loan.penalty_amount = 0
     loan.repaid_amount = 0
     loan.reduction_amount = 0
+    loan.other_fee_amount = 0
     loan.paid_penalty_amount = 0
     loan.reduced_penalty_amount = 0
+    loan.actual_repayment_date = None
     loan.collection_admin_id = None
     loan.collection_transferred_at = None
 
-    if ecard_item:
-        loan.ecard_account = ecard_item.account
-        loan.ecard_password = ecard_item.password
-        loan.ecard_expires_at = ecard_item.expires_at
-        ecard_item.status = "ASSIGNED"
-        ecard_item.loan_id = loan.id
-        ecard_item.assigned_at = now
+    if ecard_items:
+        first_ecard = ecard_items[0]
+        loan.ecard_account = first_ecard.account
+        loan.ecard_password = first_ecard.password
+        loan.ecard_expires_at = first_ecard.expires_at
+        for item in ecard_items:
+            item.status = "ASSIGNED"
+            item.loan_id = loan.id
+            item.assigned_at = now
+            db.add(
+                LoanEcard(
+                    loan_id=loan.id,
+                    ecard_pool_id=item.id,
+                    account=item.account,
+                    password=item.password,
+                    face_value=round_money(item.face_value),
+                    expires_at=item.expires_at,
+                )
+            )
     else:
         loan.ecard_account = None
         loan.ecard_password = None
@@ -1954,7 +2397,7 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
             f"支付金额 {round_money(loan.product_total_price):.2f} 元；"
             f"账期 {loan.term_days} 天；"
             f"到期日 {loan.due_date.strftime('%Y-%m-%d')}；"
-            f"卡池记录 #{ecard_item.id if ecard_item else '无E卡'}。"
+            f"卡池记录 {','.join(f'#{item.id}' for item in ecard_items) if ecard_items else '无E卡'}。"
         ),
     )
 
@@ -2031,6 +2474,62 @@ async def _reissue_card_loan(db: AsyncSession, current_admin: Admin, loan_id: in
     return {"msg": "已进入待发卡", "loan": serialize_loan(loan)}
 
 
+def _return_loan_to_approved_for_reorder(loan: Loan) -> float:
+    """将待发卡/拒发卡订单退回待下单。
+
+    :param loan: 订单对象
+    :return: 恢复后的可用额度
+    """
+    approved_credit_limit = round_money(loan.approved_credit_limit or loan.credit_limit or 0)
+    owner = loan.owner
+
+    loan.status = "APPROVED"
+    loan.card_reissue_closed = False
+    loan.credit_limit = approved_credit_limit
+    loan.approved_credit_limit = approved_credit_limit
+    loan.fee_rate = DEFAULT_FEE_RATE
+    loan.fee_amount = 0
+    loan.order_discount_amount = 0
+    loan.due_date = None
+    loan.disbursed_at = None
+    loan.penalty_amount = 0
+    loan.repaid_amount = 0
+    loan.reduction_amount = 0
+    loan.other_fee_amount = 0
+    loan.paid_penalty_amount = 0
+    loan.reduced_penalty_amount = 0
+    loan.actual_repayment_date = None
+    loan.reminder_count = 0
+    loan.last_reminded_at = None
+    loan.collection_count = 0
+    loan.last_collection_at = None
+    loan.collection_note = None
+    loan.collection_admin_id = None
+    loan.collection_transferred_at = None
+    loan.repay_attempt_count = 0
+
+    # 退回待下单的本质是撤销本次错误商品选择，让用户重新选购。
+    loan.product_id = None
+    loan.product_name = None
+    loan.rights_title = None
+    loan.rights_desc = None
+    loan.rights_contact_phone = None
+    loan.rights_price = 0
+    loan.ecard_face_value = 0
+    loan.product_total_price = 0
+    loan.product_term_days = loan.term_days
+    loan.ecard_account = None
+    loan.ecard_password = None
+    loan.ecard_expires_at = None
+    loan.order_no = ""
+
+    if owner:
+        owner.approved_limit = int(approved_credit_limit)
+        _set_available_credit(owner, approved_credit_limit)
+        owner.overdue_credit_locked = False
+    return approved_credit_limit
+
+
 async def _close_card_reissue(db: AsyncSession, current_admin: Admin, loan_id: int):
     ensure_any_admin_page_permission(current_admin, ("users", "disbursements"))
     loan = (
@@ -2039,39 +2538,24 @@ async def _close_card_reissue(db: AsyncSession, current_admin: Admin, loan_id: i
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
     if loan.status not in {"WITHDRAWING", "CARD_REJECTED"}:
-        raise HTTPException(status_code=400, detail="仅待发卡/拒发卡订单支持关闭发卡")
-    loan.card_reissue_closed = True
-    loan.status = "REJECTED"
-    loan.review_note = "关闭发卡：用户不再具备发卡资格"
-    loan.credit_limit = 0
-    loan.approved_credit_limit = 0
-    loan.disbursed_at = None
-    loan.due_date = None
-    loan.ecard_account = None
-    loan.ecard_password = None
-    loan.ecard_expires_at = None
-    loan.owner.approved_limit = 0
-    _set_available_credit(loan.owner, 0)
-    await blacklist_user(
-        db,
-        loan.owner,
-        source="MANUAL",
-        reason="关闭发卡，用户不再具备发卡资格",
-        created_by=current_admin.username,
-    )
+        raise HTTPException(status_code=400, detail="仅待发卡/拒发卡订单支持退回待下单")
+    if loan.is_extension_fee_order:
+        raise HTTPException(status_code=400, detail="展期权益订单不支持退回待下单")
+    approved_credit_limit = _return_loan_to_approved_for_reorder(loan)
+    loan.review_note = "退回待下单：原下单信息有误，用户可重新选择商品下单"
     await log_user_event_async(
         db,
         user=loan.owner,
         loan=loan,
         actor_type="ADMIN",
         operator_name=current_admin.username,
-        event_type="ADMIN_CARD_REISSUE_CLOSED",
-        title="后台关闭发卡",
-        detail="订单已关闭，用户已加入黑名单。",
+        event_type="ADMIN_CARD_RETURN_TO_ORDER",
+        title="后台退回待下单",
+        detail=f"已撤销原待发卡商品信息，恢复可用额度 {approved_credit_limit:.2f} 元，用户可重新下单。",
     )
     await db.commit()
     await db.refresh(loan)
-    return {"msg": "已关闭发卡", "loan": serialize_loan(loan)}
+    return {"msg": "已退回待下单", "loan": serialize_loan(loan)}
 
 
 async def _extend_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req):
@@ -2173,6 +2657,52 @@ async def _adjust_available_credit(db: AsyncSession, current_admin: Admin, loan_
     await db.commit()
     await db.refresh(loan)
     return {"msg": "可用额度已增加", "loan": serialize_loan(loan)}
+
+
+async def _set_approved_credit_limit(db: AsyncSession, current_admin: Admin, loan_id: int, req: ApprovedCreditSetRequest):
+    """调低已审批但未下单用户的额度。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前后台用户
+    :param loan_id: 订单ID
+    :param req: 调整后额度请求体
+    :return: 调整结果
+    """
+    ensure_admin_page_permission(current_admin, "applications")
+    loan = (
+        await db.execute(select(Loan).options(joinedload(Loan.owner)).where(Loan.id == loan_id))
+    ).scalar_one_or_none()
+    if not loan:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if loan.status != "APPROVED":
+        raise HTTPException(status_code=400, detail="仅支持调整已审批且尚未下单的额度")
+
+    owner = loan.owner
+    before_limit = round_money(getattr(loan, "approved_credit_limit", 0) or getattr(loan, "credit_limit", 0) or 0)
+    next_limit = round_money(req.credit_limit)
+    if next_limit > before_limit + 1e-6:
+        raise HTTPException(status_code=400, detail="此操作仅支持调减额度，增加额度请使用增加可用额度")
+
+    # 未下单阶段没有账单金额，调减时需同步审批额度与用户可用额度，避免前后台显示不一致。
+    loan.approved_credit_limit = next_limit
+    loan.credit_limit = next_limit
+    owner.approved_limit = int(next_limit)
+    _set_available_credit(owner, next_limit)
+    owner.overdue_credit_locked = False
+
+    await log_user_event_async(
+        db,
+        user=owner,
+        loan=loan,
+        actor_type="ADMIN",
+        operator_name=current_admin.username,
+        event_type="ADMIN_APPROVED_CREDIT_SET",
+        title="后台调减授信额度",
+        detail=f"调整前 {before_limit:.2f} 元；调整后 {next_limit:.2f} 元；备注：{(req.note or '--').strip()}",
+    )
+    await db.commit()
+    await db.refresh(loan)
+    return {"msg": "审批额度已调整", "loan": serialize_loan(loan)}
 
 
 async def _update_overdue_display(db: AsyncSession, current_admin: Admin, loan_id: int, req: OverdueDisplayRequest):
@@ -2374,23 +2904,44 @@ async def _finance_reconcile_loan(
 
     received_amount = round(float(req.received_amount or 0), 2)
     reduction_amount = round(float(req.reduction_amount or 0), 2)
+    extra_fee_amount = round(float(req.other_fee_amount or 0), 2)
+    actual_repayment_date = _normalize_actual_repayment_date(req.actual_repayment_date)
     note = (req.note or "").strip()
-    if received_amount <= 0 and reduction_amount <= 0:
-        raise HTTPException(status_code=400, detail="请填写登记收款或减免金额")
+    if received_amount <= 0 and reduction_amount <= 0 and extra_fee_amount <= 0:
+        raise HTTPException(status_code=400, detail="请填写登记收款、减免金额或其他费用")
+
+    # 逾期费按“实际还款日”冻结，避免登记日晚于客户付款日时继续累加。
+    penalty_meta = await calculate_penalty_by_repayment_date(db, loan.due_date, actual_repayment_date)
+    loan.actual_repayment_date = actual_repayment_date
+    loan.penalty_amount = penalty_meta["penalty_amount"]
+
+    unpaid_penalty_amount = round(
+        max(
+            float(loan.penalty_amount or 0)
+            - float(loan.paid_penalty_amount or 0)
+            - float(loan.reduced_penalty_amount or 0),
+            0,
+        ),
+        2,
+    )
+    extra_fee_split = split_extra_fee_for_penalty(extra_fee_amount, unpaid_penalty_amount)
+    penalty_paid_now = extra_fee_split["penalty_paid_now"]
+    other_fee_amount = extra_fee_split["other_fee_amount"]
+    effective_repayment_amount = round(received_amount + penalty_paid_now, 2)
 
     total_amount = calculate_total_repayment_amount(loan)
-    next_repaid_amount = round(float(loan.repaid_amount or 0) + received_amount, 2)
+    next_repaid_amount = round(float(loan.repaid_amount or 0) + effective_repayment_amount, 2)
     next_reduction_amount = round(float(loan.reduction_amount or 0) + reduction_amount, 2)
     if next_repaid_amount + next_reduction_amount > total_amount + 1e-6:
         raise HTTPException(status_code=400, detail="收款金额与减免金额累计不能超过总还款额")
 
     await ensure_installment_records_async(db, loan)
 
-    if received_amount > 0:
+    if effective_repayment_amount > 0:
         await register_repayment_async(
             db,
             loan,
-            received_amount,
+            effective_repayment_amount,
             operator_name=current_admin.username,
             note=note or "后台登记收款",
         )
@@ -2403,6 +2954,14 @@ async def _finance_reconcile_loan(
             operator_name=current_admin.username,
             note=note or "后台登记减免",
         )
+    if other_fee_amount > 0:
+        await register_other_fee_async(
+            db,
+            loan,
+            other_fee_amount,
+            operator_name=current_admin.username,
+            note=note or "后台登记其他费用",
+        )
 
     remaining_amount = calculate_remaining_repayment_amount(loan)
     sync_loan_repayment_state(loan)
@@ -2413,10 +2972,20 @@ async def _finance_reconcile_loan(
     detail_parts = []
     if received_amount > 0:
         detail_parts.append(f"登记收款 {received_amount:.2f} 元")
+    if penalty_paid_now > 0:
+        detail_parts.append(f"额外收款冲抵逾期费 {penalty_paid_now:.2f} 元")
     if reduction_amount > 0:
         detail_parts.append(f"登记减免 {reduction_amount:.2f} 元")
+    if other_fee_amount > 0:
+        detail_parts.append(f"登记其他费用 {other_fee_amount:.2f} 元")
+    detail_parts.append(f"实际还款日 {actual_repayment_date.isoformat()}")
+    detail_parts.append(f"逾期 {penalty_meta['overdue_days']} 天")
+    detail_parts.append(f"日逾期费标准 {penalty_meta['daily_penalty_amount']:.2f} 元")
+    detail_parts.append(f"应收逾期费 {float(loan.penalty_amount or 0):.2f} 元")
     detail_parts.append(f"累计已还 {loan.repaid_amount:.2f} 元")
     detail_parts.append(f"累计减免 {loan.reduction_amount:.2f} 元")
+    detail_parts.append(f"累计已收逾期费 {float(loan.paid_penalty_amount or 0):.2f} 元")
+    detail_parts.append(f"累计其他费用 {float(loan.other_fee_amount or 0):.2f} 元")
     detail_parts.append(f"剩余待还 {remaining_amount:.2f} 元")
     if note:
         detail_parts.append(f"备注：{note}")

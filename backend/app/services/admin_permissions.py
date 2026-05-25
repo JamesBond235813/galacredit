@@ -19,7 +19,14 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "admin-users", "label": "后台用户", "route": "/admin-users"},
 ]
 
-ALL_ADMIN_PERMISSION_KEYS = [item["key"] for item in ADMIN_PAGE_OPTIONS]
+ADMIN_ACTION_PERMISSION_OPTIONS = [
+    {"key": "user-location-risk-unlock", "label": "解除位置风控", "route": None},
+]
+
+ALL_ADMIN_PERMISSION_KEYS = [
+    *[item["key"] for item in ADMIN_PAGE_OPTIONS],
+    *[item["key"] for item in ADMIN_ACTION_PERMISSION_OPTIONS],
+]
 
 ADMIN_ROLE_OPTIONS = [
     {"key": "ADMIN", "label": "管理员"},

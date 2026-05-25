@@ -52,7 +52,7 @@
     <el-card class="panel-card">
       <el-table v-loading="loading" :data="tableData" stripe>
         <el-table-column prop="id" label="订单号" width="96" />
-        <el-table-column label="借款人" min-width="220">
+        <el-table-column label="客户" min-width="220">
           <template #default="{ row }">
             <div class="borrower-name-row">
               <span>{{ row.user_name || '未实名' }}</span>
@@ -72,9 +72,9 @@
             {{ row.collection_admin_name || '--' }}
           </template>
         </el-table-column>
-        <el-table-column label="复借次数" width="120">
+        <el-table-column label="复购次数" width="120">
           <template #default="{ row }">
-            <div>{{ row.relend_label || '初借' }}</div>
+            <div>{{ row.relend_label || '首购' }}</div>
             <el-button
               v-if="row.latest_settled_loan"
               link
@@ -172,7 +172,7 @@
         <section class="detail-card">
           <h3>客户与账单信息</h3>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="借款人">{{ currentRow.user_name || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="客户">{{ currentRow.user_name || '--' }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ currentRow.user_phone || '--' }}</el-descriptions-item>
             <el-descriptions-item label="还款日">{{ formatDateTime(currentRow.due_date) }}</el-descriptions-item>
             <el-descriptions-item label="逾期天数">{{ getOverdueDays(currentRow) }}</el-descriptions-item>
@@ -426,6 +426,7 @@ const quickDayOptions = [
 ];
 
 const followEventTypes = [
+  'ADMIN_REVIEW_NOTE',
   'ADMIN_COLLECTION_NOTE',
   'ADMIN_COLLECT',
   'ADMIN_FINANCE_RECONCILE',
@@ -581,7 +582,9 @@ const getOverdueDays = (row) => {
 
 const filterFollowEvents = (events, loanId) =>
   (events || []).filter(
-    (event) => event.loan_id === loanId && followEventTypes.includes(event.event_type)
+    (event) => event.loan_id === loanId && (
+      followEventTypes.includes(event.event_type) || /备注/.test(`${event.title || ''}${event.detail || ''}`)
+    )
   );
 
 const loadLoanLedger = async (loanId) => {

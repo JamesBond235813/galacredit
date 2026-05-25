@@ -6,6 +6,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.loan import Loan
 from app.models.user import User
 from app.services.audit import log_user_event_async
+from app.services.approved_credit_expiry import expire_unused_approved_credits
 from app.services.blacklist_service import blacklist_user
 from app.services.loan_assignment import assign_collection_admins_for_overdue_loans_async
 from app.services.loan_ledger import ensure_installment_records_async, sync_loan_repayment_state
@@ -91,10 +92,20 @@ async def process_overdue_loans():
         await db.commit()
 
 
+async def process_unused_approved_credit_expiry():
+    """定时清理超过有效期且未下单的审批额度。
+
+    :return: None
+    """
+    async with AsyncSessionLocal() as db:
+        await expire_unused_approved_credits(db, now=datetime.now())
+
+
 def start_scheduler():
     if scheduler.running:
         return
 
     scheduler.add_job(process_overdue_loans, "cron", hour=0, minute=1, id="daily-overdue-check", replace_existing=True,max_instances=1)
+    scheduler.add_job(process_unused_approved_credit_expiry, "cron", hour=0, minute=1, id="daily-approved-credit-expiry", replace_existing=True,max_instances=1)
     # scheduler.add_job(process_overdue_loans, "interval", hour=1, id="debug-overdue-check", replace_existing=True)
     scheduler.start()

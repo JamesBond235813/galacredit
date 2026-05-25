@@ -36,13 +36,24 @@
             </button>
           </div>
         </el-form-item>
+        <el-form-item label="还款时间">
+          <el-date-picker
+            v-model="filters.actualRepaymentRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            clearable
+          />
+        </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="panel-card">
       <el-table v-loading="loading" :data="tableData" stripe>
         <el-table-column prop="id" label="订单号" width="96" />
-        <el-table-column label="借款人" min-width="220">
+        <el-table-column label="客户" min-width="220">
           <template #default="{ row }">
             <div class="borrower-name-row">
               <span>{{ row.user_name || '未实名' }}</span>
@@ -62,9 +73,9 @@
             {{ row.review_admin_name || '--' }}
           </template>
         </el-table-column>
-        <el-table-column label="复借次数" width="120">
+        <el-table-column label="复购次数" width="120">
           <template #default="{ row }">
-            <div>{{ row.relend_label || '初借' }}</div>
+            <div>{{ row.relend_label || '首购' }}</div>
             <el-button
               v-if="row.latest_settled_loan"
               link
@@ -108,12 +119,17 @@
         <el-table-column label="账单进度" width="188">
           <template #default="{ row }">
             <div class="progress-tags">
-              <el-tag :type="getDueProgressTagType(row)" effect="light">
-                {{ getDueProgressText(row) }}
+              <el-tag v-if="isLoanSettled(row)" type="success" effect="light">
+                已结清
               </el-tag>
-              <el-tag :type="getPaymentProgressTagType(row)" effect="light">
-                {{ getPaymentProgressText(row) }}
-              </el-tag>
+              <template v-else>
+                <el-tag :type="getDueProgressTagType(row)" effect="light">
+                  {{ getDueProgressText(row) }}
+                </el-tag>
+                <el-tag :type="getPaymentProgressTagType(row)" effect="light">
+                  {{ getPaymentProgressText(row) }}
+                </el-tag>
+              </template>
             </div>
           </template>
         </el-table-column>
@@ -164,7 +180,7 @@
         <section class="detail-card">
           <h3>客户与账单信息</h3>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="借款人">{{ currentRow.user_name || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="客户">{{ currentRow.user_name || '--' }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ currentRow.user_phone || '--' }}</el-descriptions-item>
             <el-descriptions-item label="还款日">{{ formatDateTime(currentRow.due_date) }}</el-descriptions-item>
             <el-descriptions-item label="提醒次数">{{ currentRow.reminder_count || 0 }} 次</el-descriptions-item>
@@ -339,7 +355,7 @@ import IpAuditTag from '../components/IpAuditTag.vue';
 import LoanLedgerPanel from '../components/LoanLedgerPanel.vue';
 import LoanHistoryDialog from '../components/LoanHistoryDialog.vue';
 import RiskReportDialog from '../components/RiskReportDialog.vue';
-import { ackRepayAttempt, adjustAvailableCredit, assignLoan, blacklistUser, extendLoan, getAdminStats, getLoanAssignees, getLoanLedger, getLoans, getRepaymentStats, getRiskReportByUser, getUserDetail, getUserIpAudit, remindLoan } from '../api';
+import { ackRepayAttempt, adjustAvailableCredit, assignLoan, blacklistUser, extendLoan, getLoanAssignees, getLoanLedger, getLoans, getRepaymentStats, getRiskReportByUser, getUserDetail, getUserIpAudit, remindLoan } from '../api';
 import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDate, formatDateTime, formatTime } from '../utils/format';
 
@@ -351,7 +367,6 @@ const actionLoading = ref('');
 const drawerVisible = ref(false);
 const total = ref(0);
 const tableData = ref([]);
-const stats = ref({});
 const repaymentStats = ref({});
 const currentRow = ref(null);
 const followNote = ref('');
@@ -399,6 +414,7 @@ const duePresetOptions = [
 ];
 
 const followEventTypes = [
+  'ADMIN_REVIEW_NOTE',
   'ADMIN_REMIND',
   'ADMIN_FINANCE_RECONCILE',
   'ADMIN_SETTLED',
@@ -409,30 +425,35 @@ const followEventTypes = [
 const filters = reactive({
   phone: '',
   dueDatePreset: 'ALL',
+  actualRepaymentRange: [],
   page: 1,
   size: 10
 });
 
+const selectedDueOption = computed(() =>
+  duePresetOptions.find((item) => item.value === filters.dueDatePreset) || duePresetOptions[2]
+);
+
 const summaryCards = computed(() => [
   {
-    label: '在贷订单',
-    value: `${stats.value.disbursed_loans || 0} 单`,
-    tip: '当前处于正常还款阶段的订单'
+    label: '应还订单',
+    value: `${repaymentStats.value.receivable_order_count || 0} 单`,
+    tip: `${selectedDueOption.value.label}时间区间内的应还订单`
   },
   {
-    label: '今日应还',
-    value: `${stats.value.due_today_loans || 0} 单`,
-    tip: '建议优先完成到期客户提醒'
+    label: '应还客户',
+    value: `${repaymentStats.value.receivable_user_count || 0} 人`,
+    tip: `应还金额 ${formatCurrency(repaymentStats.value.receivable_amount || 0)}`
   },
   {
     label: '实收金额',
     value: formatCurrency(repaymentStats.value.received_amount || 0),
-    tip: `减免 ${formatCurrency(repaymentStats.value.reduction_amount || 0)}`
+    tip: `减免 ${formatCurrency(repaymentStats.value.reduction_amount || 0)} · 其他费用 ${formatCurrency(repaymentStats.value.other_fee_amount || 0)}`
   },
   {
     label: '回款率',
     value: `${Number(repaymentStats.value.repayment_rate || 0).toFixed(2)}%`,
-    tip: '按全部在贷与已结清订单口径统计'
+    tip: '实收金额 / 当前区间应还款额'
   }
 ]);
 
@@ -443,9 +464,12 @@ const syncDuePresetFromRoute = () => {
 };
 
 const fetchSummaries = async () => {
-  const [statsRes, repaymentStatsRes] = await Promise.all([getAdminStats(), getRepaymentStats()]);
-  stats.value = statsRes;
-  repaymentStats.value = repaymentStatsRes;
+  const params = filters.dueDatePreset === 'ALL' ? {} : { due_date_preset: filters.dueDatePreset };
+  if (filters.actualRepaymentRange.length === 2) {
+    params.actual_repayment_start = filters.actualRepaymentRange[0];
+    params.actual_repayment_end = filters.actualRepaymentRange[1];
+  }
+  repaymentStats.value = await getRepaymentStats(params);
 };
 
 const loadReviewAssignees = async () => {
@@ -474,6 +498,10 @@ const fetchData = async () => {
     if (filters.dueDatePreset !== 'ALL') {
       params.due_date_preset = filters.dueDatePreset;
     }
+    if (filters.actualRepaymentRange.length === 2) {
+      params.actual_repayment_start = filters.actualRepaymentRange[0];
+      params.actual_repayment_end = filters.actualRepaymentRange[1];
+    }
 
     const res = await getLoans(params);
     tableData.value = res.items || [];
@@ -497,6 +525,7 @@ const applyDueFilter = (value) => {
 
 const resetFilters = () => {
   filters.phone = '';
+  filters.actualRepaymentRange = [];
   filters.page = 1;
   if (route.query.due) {
     router.replace({ path: route.path, query: {} });
@@ -513,7 +542,9 @@ const handlePageChange = (page) => {
 
 const filterFollowEvents = (events, loanId) =>
   (events || []).filter(
-    (event) => event.loan_id === loanId && followEventTypes.includes(event.event_type)
+    (event) => event.loan_id === loanId && (
+      followEventTypes.includes(event.event_type) || /备注/.test(`${event.title || ''}${event.detail || ''}`)
+    )
   );
 
 const loadLoanLedger = async (loanId) => {
@@ -719,6 +750,12 @@ const jumpToFinance = () => {
   router.push({ path: '/financials', query: { keyword: currentRow.value.user_phone } });
 };
 
+const isLoanSettled = (row) => {
+  const totalAmount = Number(row?.total_repayment_amount || 0);
+  const remainingAmount = Number(row?.remaining_repayment_amount || 0);
+  return row?.status === 'SETTLED' || (totalAmount > 0 && remainingAmount <= 1e-6);
+};
+
 const getDueProgressText = (row) => {
   if (!row?.due_date) {
     return '未到期';
@@ -759,7 +796,7 @@ const getPaymentProgressText = (row) => {
   const remainingAmount = Number(row.remaining_repayment_amount || 0);
   const paidAmount = Math.max(totalAmount - remainingAmount, 0);
 
-  if (totalAmount > 0 && remainingAmount <= 1e-6) {
+  if (isLoanSettled(row)) {
     return '已结清';
   }
   if (paidAmount > 1e-6) {

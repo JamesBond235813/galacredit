@@ -51,6 +51,7 @@ def test_admin_partial_routes_should_use_async_and_not_depend_on_sync_db():
         "/loans",
         "/users",
         "/users/source-channels",
+        "/users/{user_id}/location-risk/unlock",
         "/loans/{loan_id}/ledger",
         "/users/{user_id}",
         "/risk/report",

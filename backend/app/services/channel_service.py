@@ -1,10 +1,13 @@
+import hashlib
+import hmac
 import re
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from typing import Iterable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.channel import Channel
 from app.models.loan import Loan
 from app.models.user import User
@@ -12,9 +15,11 @@ from app.services.audit import log_user_event_async
 from app.services.loan_amounts import calculate_remaining_repayment_amount, round_money
 
 CHANNEL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
+DAILY_INVITE_CODE_PATTERN = re.compile(r"^[a-z0-9]{24,32}$")
 CHANNEL_STATUSES = {"ACTIVE", "INACTIVE"}
 APPLICATION_STATUSES = {"REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"}
 DISBURSED_STATUSES = {"DISBURSED", "OVERDUE", "SETTLED"}
+CHANNEL_DAILY_ROTATE_AT = time(0, 1, 0)
 
 
 def normalize_channel_name(value: str) -> str:
@@ -54,12 +59,70 @@ async def get_channel_by_invite_code_async(
     active_only: bool = False,
 ) -> Optional[Channel]:
     code = (invite_code or "").strip().lower()
-    if not re.fullmatch(r"^[a-z0-9]{16}$", code):
+    if not DAILY_INVITE_CODE_PATTERN.fullmatch(code):
         return None
-    query = select(Channel).where(Channel.invite_code == code)
+    channel_id = _parse_daily_invite_channel_id(code)
+    if channel_id is None:
+        return None
+    query = select(Channel).where(Channel.id == channel_id)
     if active_only:
         query = query.where(Channel.status == "ACTIVE")
-    return (await db.execute(query)).scalar_one_or_none()
+    channel = (await db.execute(query)).scalar_one_or_none()
+    if not channel:
+        return None
+    return channel if code == build_daily_channel_invite_code(channel) else None
+
+
+def build_daily_channel_invite_code(channel: Channel, now: Optional[datetime] = None) -> str:
+    """生成渠道当日有效的邀请码。
+
+    :param channel: 渠道对象
+    :param now: 当前时间，默认使用系统当前时间
+    :return: 当日动态邀请码
+    """
+    cycle_day = _resolve_channel_invite_cycle_day(now or datetime.now())
+    channel_id = int(getattr(channel, "id", 0) or 0)
+    seed = f"{channel_id}:{getattr(channel, 'invite_code', '')}:{cycle_day.isoformat()}".encode("utf-8")
+    secret = (settings.SECRET_KEY or "xiaohebao-channel-link").encode("utf-8")
+    digest = hmac.new(secret, seed, hashlib.sha256).hexdigest()
+    return f"{_to_base36(channel_id).zfill(6)}{digest[:18]}"
+
+
+def _resolve_channel_invite_cycle_day(now: datetime):
+    """按每日 00:01 切换渠道码所属日期。
+
+    :param now: 当前时间
+    :return: 渠道码业务日期
+    """
+    return (now.date() - timedelta(days=1)) if now.time() < CHANNEL_DAILY_ROTATE_AT else now.date()
+
+
+def _to_base36(value: int) -> str:
+    """将数字转换为小写 base36。
+
+    :param value: 数字
+    :return: base36 字符串
+    """
+    if value <= 0:
+        return "0"
+    alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+    output = ""
+    while value:
+        value, remainder = divmod(value, 36)
+        output = alphabet[remainder] + output
+    return output
+
+
+def _parse_daily_invite_channel_id(code: str) -> Optional[int]:
+    """从动态邀请码中解析渠道ID。
+
+    :param code: 动态邀请码
+    :return: 渠道ID，解析失败返回 None
+    """
+    try:
+        return int(code[:6], 36)
+    except ValueError:
+        return None
 
 
 async def bind_user_source_channel_async(

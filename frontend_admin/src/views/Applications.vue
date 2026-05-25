@@ -13,6 +13,21 @@
             <el-option label="未通过" value="REJECTED" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isSuperAdmin" label="审核员">
+          <el-select v-model="filters.reviewAdminId" style="width: 160px" clearable placeholder="全部">
+            <el-option label="全部" value="" />
+            <el-option v-for="item in reviewAssigneeOptions" :key="item.id" :label="item.username" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="复购次数">
+          <el-select v-model="filters.relendFilter" style="width: 150px">
+            <el-option label="全部" value="ALL" />
+            <el-option label="首购" value="0" />
+            <el-option label="复购1次" value="1" />
+            <el-option label="复购2次" value="2" />
+            <el-option label="复购3次及以上" value="3_PLUS" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -25,7 +40,23 @@
         <el-table-column prop="id" label="申请单号" width="100" />
         <el-table-column label="用户信息" min-width="220">
           <template #default="{ row }">
-            <div>{{ row.user_name || '未实名' }}</div>
+            <div class="applicant-name-row">
+              <span>{{ row.user_name || '未实名' }}</span>
+              <el-tooltip
+                v-if="row.user_location_risk_hit"
+                :content="row.user_location_risk_detail || 'GPS或IP命中风险位置'"
+                placement="top"
+              >
+                <span class="suspicious-badge">Y</span>
+              </el-tooltip>
+              <el-tooltip
+                v-if="row.user_risk_list_hit"
+                :content="row.user_risk_list_reason || '命中风险名单'"
+                placement="top"
+              >
+                <span class="risk-list-badge">风</span>
+              </el-tooltip>
+            </div>
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
         </el-table-column>
@@ -39,9 +70,9 @@
             {{ row.review_admin_name || '--' }}
           </template>
         </el-table-column>
-        <el-table-column label="复借次数" width="120">
+        <el-table-column label="复购次数" width="120">
           <template #default="{ row }">
-            <div>{{ row.relend_label || '初借' }}</div>
+            <div>{{ row.relend_label || '首购' }}</div>
             <el-button
               v-if="row.latest_settled_loan"
               link
@@ -58,7 +89,7 @@
             {{ row.user_id_card_num || '--' }}
           </template>
         </el-table-column>
-        <el-table-column label="风控查询" width="100">
+        <el-table-column label="风控查询" width="140">
           <template #default="{ row }">
             <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
           </template>
@@ -125,7 +156,23 @@
       class="applications-drawer"
     >
       <div v-if="detail" class="identity-drawer-layout">
-        <IdentityImagePanel :row="detail" />
+        <div class="application-side-panel">
+          <IdentityImagePanel :row="detail" />
+          <section class="remark-card">
+            <div class="remark-card-head">
+              <h3>备注记录</h3>
+              <span>{{ remarkEvents.length }} 条</span>
+            </div>
+            <div v-if="remarkEvents.length" class="remark-list">
+              <article v-for="event in remarkEvents" :key="event.id" class="remark-item">
+                <strong>{{ event.title }}</strong>
+                <p>{{ event.detail || '无补充说明' }}</p>
+                <div>{{ event.operator_name || event.actor_type }} · {{ formatDateTime(event.created_at) }}</div>
+              </article>
+            </div>
+            <el-empty v-else description="暂无备注记录" :image-size="72" />
+          </section>
+        </div>
         <div class="detail-stack application-detail-stack">
         <section class="detail-card detail-card-summary">
           <h3>客户资料</h3>
@@ -165,7 +212,7 @@
               <strong>{{ formatCurrency(currentRow?.available_credit_limit || 0) }}</strong>
             </article>
             <article>
-              <span>调整后可用额度</span>
+              <span>增加后可用额度</span>
               <strong>{{ formatCurrency(nextAvailableCredit) }}</strong>
             </article>
           </div>
@@ -182,9 +229,34 @@
               />
             </el-form-item>
           </el-form>
+          <el-divider />
+          <div class="credit-set-head">
+            <h4>调减审批额度</h4>
+            <span>仅适用于已审批但尚未下单的用户</span>
+          </div>
+          <el-form label-width="96px" size="small" class="approval-form">
+            <el-form-item label="调整后额度">
+              <el-input-number
+                v-model="creditSetForm.credit_limit"
+                :min="0"
+                :max="currentApprovedCredit"
+                :step="100"
+                size="small"
+              />
+            </el-form-item>
+            <el-form-item label="调减备注">
+              <el-input
+                v-model="creditSetForm.note"
+                type="textarea"
+                :rows="2"
+                placeholder="填写调减原因，例如：资料复核后降低额度"
+              />
+            </el-form-item>
+          </el-form>
           <div class="drawer-footer">
             <el-button @click="drawerVisible = false">关闭</el-button>
             <el-button type="primary" :loading="creditAdjustSaving" @click="submitCreditAdjust">确认增加额度</el-button>
+            <el-button type="warning" :loading="creditSetSaving" @click="submitCreditSet">确认调减额度</el-button>
           </div>
         </section>
 
@@ -266,6 +338,7 @@
 
           <div class="drawer-footer">
             <el-button @click="drawerVisible = false">关闭</el-button>
+            <el-button :loading="savingReviewNote" @click="saveReviewNote">保存备注</el-button>
             <el-tooltip
               :disabled="canSubmitReview || !reviewForm.approved"
               content="请注意先检查风控报告"
@@ -314,6 +387,11 @@
       :report="riskReport"
       @closed="handleRiskReportClosed"
     />
+    <CompositeRiskReportDialog
+      v-model="compositeRiskDialogVisible"
+      :loading="compositeRiskLoading"
+      :report="compositeRiskReport"
+    />
 
     <LoanHistoryDialog
       v-model="historyDialogVisible"
@@ -329,16 +407,20 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import LoanHistoryDialog from '../components/LoanHistoryDialog.vue';
 import RiskReportDialog from '../components/RiskReportDialog.vue';
+import CompositeRiskReportDialog from '../components/CompositeRiskReportDialog.vue';
 import IdentityImagePanel from '../components/IdentityImagePanel.vue';
 import IpAuditDialog from '../components/IpAuditDialog.vue';
 import IpAuditTag from '../components/IpAuditTag.vue';
-import { adjustAvailableCredit, assignLoan, blacklistUser, getLoanAssignees, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, reviewLoan } from '../api';
+import { adjustAvailableCredit, assignLoan, blacklistUser, getCompositeRiskReportByUser, getLoanAssignees, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, reviewLoan, setApprovedCreditLimit, updateLoan } from '../api';
 import { readStoredAdminProfile } from '../constants/adminPages';
+import { buildApplicationsQueryParams } from '../utils/applicationsFilters';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 
 const loading = ref(false);
 const submitting = ref(false);
+const savingReviewNote = ref(false);
 const creditAdjustSaving = ref(false);
+const creditSetSaving = ref(false);
 const tableData = ref([]);
 const total = ref(0);
 const drawerVisible = ref(false);
@@ -347,6 +429,9 @@ const detail = ref(null);
 const riskDialogVisible = ref(false);
 const riskLoading = ref(false);
 const riskReport = ref(null);
+const compositeRiskDialogVisible = ref(false);
+const compositeRiskLoading = ref(false);
+const compositeRiskReport = ref(null);
 const riskReportCheckedUserIds = ref(new Set());
 const pendingRiskReportUserId = ref(null);
 const historyDialogVisible = ref(false);
@@ -365,7 +450,9 @@ const currentAdminUsername = computed(() => adminProfile.value?.username || '');
 
 const filters = reactive({
   phone: '',
-  status: 'ALL',
+  status: 'REVIEWING',
+  reviewAdminId: '',
+  relendFilter: 'ALL',
   page: 1,
   size: 10
 });
@@ -381,8 +468,13 @@ const creditAdjustForm = reactive({
   amount: 0,
   note: ''
 });
+const creditSetForm = reactive({
+  credit_limit: 0,
+  note: ''
+});
 const amountShortcutOptions = [1500, 2000, 3000];
 const isApprovedStage = computed(() => currentRow.value?.status === 'APPROVED');
+const currentApprovedCredit = computed(() => Number(currentRow.value?.approved_credit_limit || currentRow.value?.credit_limit || 0));
 const nextAvailableCredit = computed(() => Number(currentRow.value?.available_credit_limit || 0) + Number(creditAdjustForm.amount || 0));
 const hasCurrentRiskReportViewed = computed(() => riskReportCheckedUserIds.value.has(currentRow.value?.user_id));
 const canSubmitReview = computed(() => {
@@ -392,6 +484,22 @@ const canSubmitReview = computed(() => {
   return Boolean(reviewForm.credit_limit) && !currentRow.value?.user_blacklist_hit && hasCurrentRiskReportViewed.value;
 });
 const locationEvents = computed(() => (detail.value?.events || []).filter((item) => item.lon_lat));
+const remarkEventTypes = new Set([
+  'ADMIN_REVIEW_NOTE',
+  'ADMIN_APPROVED_CREDIT_SET',
+  'ADMIN_AVAILABLE_CREDIT_ADJUSTED',
+  'ADMIN_COLLECTION_NOTE',
+  'ADMIN_REMIND',
+  'ADMIN_COLLECT',
+  'ADMIN_FINANCE_RECONCILE',
+  'ADMIN_CREDIT_ADJUST',
+  'ADMIN_EXTENSION',
+  'ADMIN_OVERDUE_DISPLAY'
+]);
+const remarkEvents = computed(() => (detail.value?.events || []).filter((event) => (
+  remarkEventTypes.has(event.event_type)
+  || /备注/.test(`${event.title || ''}${event.detail || ''}`)
+)));
 
 const isFreshRiskReportCheckedByCurrentAdmin = (row) => {
   if (!row?.risk_report_checked_at) {
@@ -423,13 +531,7 @@ const loadReviewAssignees = async () => {
 const fetchData = async () => {
   loading.value = true;
   try {
-    const res = await getLoans({
-      scope: 'REVIEWING',
-      phone: filters.phone || undefined,
-      status: filters.status === 'ALL' ? undefined : filters.status,
-      skip: (filters.page - 1) * filters.size,
-      limit: filters.size
-    });
+    const res = await getLoans(buildApplicationsQueryParams(filters, isSuperAdmin.value));
     tableData.value = res.items || [];
     const checkedIds = tableData.value
       .filter(isFreshRiskReportCheckedByCurrentAdmin)
@@ -445,7 +547,9 @@ const fetchData = async () => {
 
 const resetFilters = () => {
   filters.phone = '';
-  filters.status = 'ALL';
+  filters.status = 'REVIEWING';
+  filters.reviewAdminId = '';
+  filters.relendFilter = 'ALL';
   filters.page = 1;
   fetchData();
 };
@@ -472,6 +576,8 @@ const openDrawer = async (row) => {
   reviewForm.review_note = row.review_note || '';
   creditAdjustForm.amount = 0;
   creditAdjustForm.note = '';
+  creditSetForm.credit_limit = Number(row.approved_credit_limit || row.credit_limit || 0);
+  creditSetForm.note = '';
   if (isFreshRiskReportCheckedByCurrentAdmin(row)) {
     riskReportCheckedUserIds.value = new Set([...riskReportCheckedUserIds.value, row.user_id]);
   }
@@ -519,12 +625,25 @@ const openRiskReport = async (row) => {
   pendingRiskReportUserId.value = row.user_id;
 
   try {
-    riskReport.value = await getRiskReportByUser({ user_id: row.user_id });
+    riskReport.value = await getCompositeRiskReportByUser({ user_id: row.user_id });
   } catch (error) {
     riskDialogVisible.value = false;
     pendingRiskReportUserId.value = null;
   } finally {
     riskLoading.value = false;
+  }
+};
+
+const openCompositeRiskReport = async (row) => {
+  compositeRiskDialogVisible.value = true;
+  compositeRiskLoading.value = true;
+  compositeRiskReport.value = null;
+  try {
+    compositeRiskReport.value = await getCompositeRiskReportByUser({ user_id: row.user_id });
+  } catch (error) {
+    compositeRiskDialogVisible.value = false;
+  } finally {
+    compositeRiskLoading.value = false;
   }
 };
 
@@ -594,6 +713,34 @@ const submitReview = async () => {
   }
 };
 
+const saveReviewNote = async () => {
+  const note = (reviewForm.review_note || '').trim();
+  if (!currentRow.value?.id) {
+    return;
+  }
+  if (!note) {
+    ElMessage.warning('请先填写备注内容');
+    return;
+  }
+  savingReviewNote.value = true;
+  try {
+    const updatedLoan = await updateLoan(currentRow.value.id, { review_note: note });
+    reviewForm.review_note = note;
+    currentRow.value.review_note = updatedLoan.review_note || note;
+    const rowIndex = tableData.value.findIndex((item) => item.id === currentRow.value.id);
+    if (rowIndex >= 0) {
+      tableData.value[rowIndex] = {
+        ...tableData.value[rowIndex],
+        review_note: currentRow.value.review_note
+      };
+    }
+    detail.value = await getUserDetail(currentRow.value.user_id);
+    ElMessage.success('备注已保存');
+  } finally {
+    savingReviewNote.value = false;
+  }
+};
+
 const submitCreditAdjust = async () => {
   if (!currentRow.value?.id || Number(creditAdjustForm.amount || 0) <= 0) {
     ElMessage.warning('请填写需要增加的可用额度');
@@ -623,6 +770,43 @@ const submitCreditAdjust = async () => {
   }
 };
 
+const submitCreditSet = async () => {
+  if (!currentRow.value?.id) {
+    return;
+  }
+  const nextLimit = Number(creditSetForm.credit_limit || 0);
+  if (nextLimit > currentApprovedCredit.value) {
+    ElMessage.warning('调减额度不能高于当前审批额度');
+    return;
+  }
+  if (nextLimit === currentApprovedCredit.value) {
+    ElMessage.warning('调整后额度未变化');
+    return;
+  }
+  creditSetSaving.value = true;
+  try {
+    const result = await setApprovedCreditLimit(currentRow.value.id, {
+      credit_limit: nextLimit,
+      note: creditSetForm.note || '审核员后台调减审批额度'
+    });
+    const updatedLoan = result?.loan || {};
+    currentRow.value = {
+      ...currentRow.value,
+      ...updatedLoan,
+      user_id: currentRow.value.user_id,
+      user_name: currentRow.value.user_name,
+      user_phone: currentRow.value.user_phone,
+      user_id_card_num: currentRow.value.user_id_card_num
+    };
+    creditSetForm.credit_limit = Number(updatedLoan.approved_credit_limit || updatedLoan.credit_limit || nextLimit);
+    creditSetForm.note = '';
+    ElMessage.success('审批额度已调减');
+    await fetchData();
+  } finally {
+    creditSetSaving.value = false;
+  }
+};
+
 onMounted(() => {
   fetchData();
   loadReviewAssignees();
@@ -634,6 +818,43 @@ onMounted(() => {
   margin-top: 4px;
   color: #7f8da2;
   font-size: 12px;
+}
+
+.applicant-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 20px;
+}
+
+.suspicious-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.risk-list-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .pagination-wrap {
@@ -731,8 +952,84 @@ onMounted(() => {
 
 .application-detail-stack {
   gap: 12px;
-  max-height: calc(100vh - 96px);
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
+  padding-bottom: 16px;
+}
+
+.application-side-panel {
+  width: 320px;
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.application-side-panel :deep(.identity-image-panel) {
+  width: 100%;
+  flex: none;
+}
+
+.remark-card {
+  min-height: 220px;
+  padding: 12px;
+  border: 1px solid #e7edf6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.remark-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.remark-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #21324a;
+}
+
+.remark-card-head span {
+  color: #7a8aa1;
+  font-size: 12px;
+}
+
+.remark-list {
+  display: flex;
+  max-height: 360px;
+  overflow: auto;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.remark-item {
+  padding: 10px;
+  border: 1px solid #edf2fa;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.remark-item strong {
+  display: block;
+  color: #1d2f49;
+  font-size: 13px;
+}
+
+.remark-item p {
+  margin: 6px 0;
+  color: #40546f;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.remark-item div {
+  color: #8a98ad;
+  font-size: 12px;
 }
 
 .detail-card-summary,
@@ -795,6 +1092,24 @@ onMounted(() => {
   font-size: 18px;
 }
 
+.credit-set-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.credit-set-head h4 {
+  margin: 0;
+  color: #26364d;
+  font-size: 14px;
+}
+
+.credit-set-head span {
+  color: #8a98ad;
+  font-size: 12px;
+}
+
 .review-preview-grid {
   margin: 4px 0 14px;
 }
@@ -837,6 +1152,8 @@ onMounted(() => {
 
 :deep(.applications-drawer .el-drawer__body) {
   padding: 12px 16px 16px;
-  overflow: hidden;
+  height: calc(100vh - 56px);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 </style>

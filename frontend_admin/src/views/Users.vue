@@ -16,6 +16,13 @@
             clearable
           />
         </el-form-item>
+        <el-form-item v-if="!isBusinessConsultant" label="位置风控">
+          <el-select v-model="filters.locationRiskBlocked" style="width: 160px">
+            <el-option label="全部" value="ALL" />
+            <el-option label="仅已锁定" value="LOCKED" />
+            <el-option label="仅未锁定" value="NORMAL" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -28,7 +35,15 @@
         <el-table-column prop="id" label="用户ID" width="90" />
         <el-table-column label="用户信息" min-width="220">
           <template #default="{ row }">
-            <div>{{ row.name || '未实名' }}</div>
+            <div class="user-name-row">
+              <span>{{ row.name || '未实名' }}</span>
+              <el-tag v-if="row.location_risk_blocked" type="danger" effect="plain" size="small">
+                位置风控
+              </el-tag>
+              <el-tag v-if="row.risk_list_hit" type="warning" effect="plain" size="small">
+                风险名单
+              </el-tag>
+            </div>
             <div class="sub-text">{{ row.phone }}</div>
           </template>
         </el-table-column>
@@ -48,15 +63,23 @@
             <el-tag :type="row.blacklist_hit ? 'danger' : 'success'">{{ row.blacklist_hit ? '命中' : '未命中' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="风控报告" width="100">
+        <el-table-column label="风控报告" width="140">
           <template #default="{ row }">
             <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
           </template>
         </el-table-column>
-        <el-table-column label="风险管理" width="110">
+        <el-table-column label="风险管理" width="220">
           <template #default="{ row }">
             <el-button v-if="!row.blacklist_hit" link type="danger" @click="handleBlacklist(row)">一键拉黑</el-button>
             <el-button v-else link type="primary" @click="handleRemoveBlacklist(row)">移出黑名单</el-button>
+            <el-button
+              v-if="row.location_risk_blocked && row.can_unlock_location_risk"
+              link
+              type="warning"
+              @click="handleUnlockLocationRisk(row)"
+            >
+              解除位置风控
+            </el-button>
           </template>
         </el-table-column>
         <el-table-column label="人脸状态" width="110">
@@ -105,10 +128,10 @@
             <el-button
               v-if="row.current_loan_status === 'CARD_REJECTED'"
               link
-              type="danger"
+              type="warning"
               @click="handleCloseReissue(row)"
             >
-              关闭发卡
+              退回待下单
             </el-button>
           </template>
         </el-table-column>
@@ -167,6 +190,13 @@
         <section class="detail-card" v-if="!isBusinessConsultant">
           <h3>地理位置（授权）</h3>
           <el-descriptions :column="2" border>
+            <el-descriptions-item label="风控状态">
+              <el-tag :type="detail.location_risk_blocked ? 'danger' : 'success'">
+                {{ detail.location_risk_blocked ? '已锁定' : '正常' }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="风控时间">{{ formatDateTime(detail.location_risk_at) }}</el-descriptions-item>
+            <el-descriptions-item label="风控原因" :span="2">{{ detail.location_risk_reason || '--' }}</el-descriptions-item>
             <el-descriptions-item label="定位时间">{{ formatDateTime(detail.location_updated_at) }}</el-descriptions-item>
             <el-descriptions-item label="定位来源">{{ detail.location_source || '--' }}</el-descriptions-item>
             <el-descriptions-item label="纬度">{{ detail.location_latitude || '--' }}</el-descriptions-item>
@@ -178,6 +208,9 @@
             <el-descriptions-item label="最小行政区划" :span="2">{{ detail.location_street || '--' }}</el-descriptions-item>
             <el-descriptions-item label="地址" :span="2">{{ detail.location_address || '--' }}</el-descriptions-item>
           </el-descriptions>
+          <div v-if="detail.location_risk_blocked && detail.can_unlock_location_risk" class="location-risk-actions">
+            <el-button type="warning" plain @click="handleUnlockLocationRisk(detail, true)">解除位置风控</el-button>
+          </div>
         </section>
 
         <section class="detail-card" v-if="!isBusinessConsultant">
@@ -347,6 +380,11 @@
       </div>
     </el-dialog>
     <RiskReportDialog v-model="riskDialogVisible" :loading="riskLoading" :report="riskReport" />
+    <CompositeRiskReportDialog
+      v-model="compositeRiskDialogVisible"
+      :loading="compositeRiskLoading"
+      :report="compositeRiskReport"
+    />
     <IpAuditDialog v-model="ipAuditVisible" :loading="ipAuditLoading" :items="ipAuditItems" />
   </div>
 </template>
@@ -358,7 +396,8 @@ import IdentityImagePanel from '../components/IdentityImagePanel.vue';
 import IpAuditDialog from '../components/IpAuditDialog.vue';
 import IpAuditTag from '../components/IpAuditTag.vue';
 import RiskReportDialog from '../components/RiskReportDialog.vue';
-import { blacklistUser, closeCardReissue, createFrontUser, getLoanPurchaseContract, getRiskReportByUser, getUserDetail, getUserIpAudit, getUserSourceChannels, getUsers, reissueCardLoan, removeBlacklistUser, resetFrontUserPassword } from '../api';
+import CompositeRiskReportDialog from '../components/CompositeRiskReportDialog.vue';
+import { blacklistUser, closeCardReissue, createFrontUser, getCompositeRiskReportByUser, getLoanPurchaseContract, getRiskReportByUser, getUserDetail, getUserIpAudit, getUserSourceChannels, getUsers, reissueCardLoan, removeBlacklistUser, resetFrontUserPassword, unlockUserLocationRisk } from '../api';
 import { readStoredAdminProfile } from '../constants/adminPages';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 import { getDealColumnConfig } from '../utils/usersDealColumns';
@@ -372,6 +411,9 @@ const detail = ref(null);
 const riskDialogVisible = ref(false);
 const riskLoading = ref(false);
 const riskReport = ref(null);
+const compositeRiskDialogVisible = ref(false);
+const compositeRiskLoading = ref(false);
+const compositeRiskReport = ref(null);
 const ipAuditVisible = ref(false);
 const ipAuditLoading = ref(false);
 const ipAuditItems = ref([]);
@@ -407,7 +449,8 @@ const filters = reactive({
   keyword: '',
   page: 1,
   size: 10,
-  dealDateRange: []
+  dealDateRange: [],
+  locationRiskBlocked: 'ALL'
 });
 
 const adminProfile = readStoredAdminProfile() || {};
@@ -428,6 +471,7 @@ const fetchData = async () => {
 const resetFilters = () => {
   filters.keyword = '';
   filters.dealDateRange = [];
+  filters.locationRiskBlocked = 'ALL';
   filters.page = 1;
   fetchData();
 };
@@ -464,11 +508,28 @@ const openRiskReport = async (row) => {
   riskLoading.value = true;
   riskReport.value = null;
   try {
-    riskReport.value = await getRiskReportByUser({ user_id: userId });
+    riskReport.value = await getCompositeRiskReportByUser({ user_id: userId });
   } catch (error) {
     riskDialogVisible.value = false;
   } finally {
     riskLoading.value = false;
+  }
+};
+
+const openCompositeRiskReport = async (row) => {
+  const userId = row.user_id || row.id;
+  if (!userId) {
+    return;
+  }
+  compositeRiskDialogVisible.value = true;
+  compositeRiskLoading.value = true;
+  compositeRiskReport.value = null;
+  try {
+    compositeRiskReport.value = await getCompositeRiskReportByUser({ user_id: userId });
+  } catch (error) {
+    compositeRiskDialogVisible.value = false;
+  } finally {
+    compositeRiskLoading.value = false;
   }
 };
 
@@ -518,6 +579,24 @@ const handleRemoveBlacklist = async (row) => {
   fetchData();
 };
 
+const handleUnlockLocationRisk = async (row, refreshDetail = false) => {
+  try {
+    await ElMessageBox.confirm(`确认解除 ${row.name || row.phone} 的位置风控锁定？`, '解除位置风控', {
+      type: 'warning',
+      confirmButtonText: '确认解除',
+      cancelButtonText: '取消'
+    });
+  } catch (error) {
+    return;
+  }
+  await unlockUserLocationRisk(row.id);
+  ElMessage.success('位置风控已解除，历史定位记录保持不变');
+  await fetchData();
+  if (refreshDetail && detail.value?.id === row.id) {
+    detail.value = await getUserDetail(row.id);
+  }
+};
+
 const handleReissue = async (row) => {
   if (!row.current_loan_id) {
     return;
@@ -532,7 +611,7 @@ const handleCloseReissue = async (row) => {
     return;
   }
   await closeCardReissue(row.current_loan_id);
-  ElMessage.success('已关闭二次发卡');
+  ElMessage.success('已退回待下单');
   fetchData();
 };
 
@@ -632,6 +711,17 @@ onMounted(() => {
   margin-top: 4px;
   color: #7f8da2;
   font-size: 12px;
+}
+
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.location-risk-actions {
+  margin-top: 12px;
 }
 
 .pagination-wrap {

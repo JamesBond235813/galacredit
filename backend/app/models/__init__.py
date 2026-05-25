@@ -5,11 +5,13 @@ from app.models.loan_installment import LoanInstallment
 from app.models.loan_transaction import LoanTransaction
 from app.models.admin import Admin
 from app.models.risk_report import RiskControlReport
+from app.models.risk_composite_report import RiskCompositeReport
 from app.models.blacklist import BlacklistEntry
 from app.models.phone_binding import UserPhoneBinding
 from app.models.user_event import UserEvent
 from app.models.product import Product
 from app.models.ecard_pool import EcardPool
+from app.models.loan_ecard import LoanEcard
 from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.overdue_fee_config import OverdueFeeConfig

@@ -1,5 +1,6 @@
 from uuid import uuid4
 from datetime import datetime, timedelta
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from jose import JWTError, jwt
@@ -12,6 +13,7 @@ from app.core.security import create_access_token, create_refresh_token, verify_
 from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.user import User
+from app.models.user_event import UserEvent
 from app.schemas.channel import ChannelLandingResponse
 from app.schemas.user import (
     LoginRequest,
@@ -32,7 +34,9 @@ from app.services.sms_service import sms_service
 from app.services.slider_captcha import SliderCaptchaManager
 from app.services.audit import log_user_event_async
 from app.services.blacklist_service import refresh_user_blacklist_status
+from app.services.ip_geo import resolve_ip_geo
 from app.services.login_location_risk import apply_login_location
+from app.services.risk_list_service import refresh_user_risk_list_status
 from app.services.channel_service import (
     bind_user_source_channel_async,
     get_channel_by_invite_code_async,
@@ -67,6 +71,9 @@ slider_captcha_manager = SliderCaptchaManager(
     height=settings.CAPTCHA_SLIDER_HEIGHT,
     block_size=settings.CAPTCHA_SLIDER_BLOCK_SIZE,
 )
+
+_sms_code_audit_cache: Dict[str, dict] = {}
+_SMS_CODE_AUDIT_CACHE_SECONDS = 600
 
 
 def _build_login_frozen_message(remain_minutes: int) -> str:
@@ -142,8 +149,137 @@ async def _save_token_pair(
     )
 
 
+def _trim_auth_audit_cache(now: datetime) -> None:
+    """清理过期的验证码审查缓存。
+
+    :param now: 当前时间
+    :return: None
+    """
+    expired_phones = [
+        phone
+        for phone, item in _sms_code_audit_cache.items()
+        if (now - item.get("created_at", now)).total_seconds() > _SMS_CODE_AUDIT_CACHE_SECONDS
+    ]
+    for phone in expired_phones:
+        _sms_code_audit_cache.pop(phone, None)
+
+
+async def _build_ip_geo_payload(ip: str) -> dict:
+    """构建 IP 审查字段。
+
+    :param ip: 客户端 IP
+    :return: IP 与归属地字段
+    """
+    geo = await resolve_ip_geo(ip)
+    return {
+        "ip": ip or "",
+        "ip_country": geo.get("country", ""),
+        "ip_province": geo.get("province", ""),
+        "ip_city": geo.get("city", ""),
+        "ip_district": geo.get("district", ""),
+        "ip_detail": geo.get("detail", ""),
+    }
+
+
+def _record_auth_ip_event(
+    db: AsyncSession,
+    user: User,
+    event_type: str,
+    title: str,
+    detail: str,
+    ip_payload: dict,
+    created_at: Optional[datetime] = None,
+) -> None:
+    """写入认证链路 IP 审查事件。
+
+    :param db: 异步数据库会话
+    :param user: 用户对象
+    :param event_type: 事件类型
+    :param title: 事件标题
+    :param detail: 事件详情
+    :param ip_payload: IP 与归属地字段
+    :param created_at: 事件发生时间
+    :return: None
+    """
+    db.add(
+        UserEvent(
+            user_id=user.id,
+            loan_id=None,
+            actor_type="USER",
+            event_type=event_type,
+            title=title,
+            detail=detail,
+            ip=ip_payload.get("ip", ""),
+            ip_country=ip_payload.get("ip_country", ""),
+            ip_province=ip_payload.get("ip_province", ""),
+            ip_city=ip_payload.get("ip_city", ""),
+            ip_district=ip_payload.get("ip_district", ""),
+            ip_detail=ip_payload.get("ip_detail", ""),
+            created_at=created_at or datetime.now(),
+        )
+    )
+
+
+async def _remember_sms_code_audit(db: AsyncSession, phone: str, ip: str, created_at: datetime) -> None:
+    """记录或暂存验证码发送 IP 审查事件。
+
+    :param db: 异步数据库会话
+    :param phone: 手机号
+    :param ip: 客户端 IP
+    :param created_at: 验证码发送时间
+    :return: None
+    """
+    _trim_auth_audit_cache(created_at)
+    ip_payload = await _build_ip_geo_payload(ip)
+    detail = "页面：登录；空间：短信验证码；操作：发送验证码成功；接口：POST /api/auth/send-code"
+    user = (await db.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+    logged = False
+    if user is not None:
+        _record_auth_ip_event(
+            db=db,
+            user=user,
+            event_type="SMS_CODE_SEND",
+            title="发送短信验证码",
+            detail=detail,
+            ip_payload=ip_payload,
+            created_at=created_at,
+        )
+        logged = True
+    # 登录前新用户尚无 user_id，先暂存，短信登录创建用户后再补写到用户审查日志。
+    _sms_code_audit_cache[phone] = {
+        "ip_payload": ip_payload,
+        "created_at": created_at,
+        "detail": detail,
+        "logged": logged,
+    }
+
+
+def _bind_pending_sms_code_audit(db: AsyncSession, user: User, now: datetime) -> None:
+    """将登录前暂存的验证码发送事件绑定到用户。
+
+    :param db: 异步数据库会话
+    :param user: 用户对象
+    :param now: 当前时间
+    :return: None
+    """
+    _trim_auth_audit_cache(now)
+    pending = _sms_code_audit_cache.get(user.phone)
+    if not pending or pending.get("logged"):
+        return
+    _record_auth_ip_event(
+        db=db,
+        user=user,
+        event_type="SMS_CODE_SEND",
+        title="发送短信验证码",
+        detail=pending.get("detail", ""),
+        ip_payload=pending.get("ip_payload", {}),
+        created_at=pending.get("created_at") or now,
+    )
+    pending["logged"] = True
+
+
 @router.post("/send-code")
-async def send_code(req: SendCodeRequest, request: Request):
+async def send_code(req: SendCodeRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
     """下发短信验证码（支持 mock 模式）。
 
     :param req: 下发短信请求体
@@ -162,6 +298,8 @@ async def send_code(req: SendCodeRequest, request: Request):
     sms_ok, cooldown_seconds, message = await sms_service.send_code(phone=req.phone, biz_type="LOGIN")
     if not sms_ok:
         raise HTTPException(status_code=400, detail=message)
+    await _remember_sms_code_audit(db, req.phone, client_ip, datetime.now())
+    await db.commit()
     return {"msg": "验证码发送成功", "cooldown_seconds": cooldown_seconds}
 
 
@@ -188,6 +326,20 @@ async def verify_slider_captcha(req: SliderCaptchaVerifyRequest):
 @router.get("/channels/{channel_name}", response_model=ChannelLandingResponse)
 async def get_channel_entry(channel_name: str, db: AsyncSession = Depends(get_async_db)):
     channel = await get_channel_by_name_async(db, channel_name, active_only=True)
+    if not channel:
+        raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
+    return serialize_channel_landing(channel)
+
+
+@router.get("/channel-invites/{invite_code}", response_model=ChannelLandingResponse)
+async def get_channel_invite_entry(invite_code: str, db: AsyncSession = Depends(get_async_db)):
+    """校验每日动态渠道码。
+
+    :param invite_code: 每日动态渠道码
+    :param db: 异步数据库会话
+    :return: 渠道落地页信息
+    """
+    channel = await get_channel_by_invite_code_async(db, invite_code, active_only=True)
     if not channel:
         raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
     return serialize_channel_landing(channel)
@@ -237,6 +389,7 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
             raise HTTPException(status_code=403, detail=str(exc)) from exc
     user.last_login_at = now
     await refresh_user_blacklist_status(db, user)
+    await refresh_user_risk_list_status(db, user)
     attribution_status = (
         await bind_user_source_channel_async(db, user=user, channel=channel, loan=None)
         if channel
@@ -273,8 +426,10 @@ async def sms_login(req: SmsLoginRequest, request: Request, db: AsyncSession = D
 
     user = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
     channel = None
-    if user is None and req.invite_code:
+    if req.invite_code:
         channel = await get_channel_by_invite_code_async(db, req.invite_code, active_only=True)
+        if not channel:
+            raise HTTPException(status_code=400, detail="渠道链接不存在或已停用")
 
     if user is None:
         user = User(phone=req.phone, last_login_at=now)
@@ -300,6 +455,21 @@ async def sms_login(req: SmsLoginRequest, request: Request, db: AsyncSession = D
             raise HTTPException(status_code=403, detail=str(exc)) from exc
     user.last_login_at = now
     await refresh_user_blacklist_status(db, user)
+    await refresh_user_risk_list_status(db, user)
+    _bind_pending_sms_code_audit(db, user, now)
+    login_ip_payload = await _build_ip_geo_payload(resolve_client_ip(request, default_ip=""))
+    _record_auth_ip_event(
+        db=db,
+        user=user,
+        event_type="SMS_LOGIN",
+        title="短信验证码登录",
+        detail=(
+            "页面：登录；空间：短信验证码；操作：短信验证码登录成功；接口：POST /api/auth/sms-login；"
+            f"新注册用户：{'是' if '新注册用户' in detail else '否'}"
+        ),
+        ip_payload=login_ip_payload,
+        created_at=now,
+    )
 
     await log_user_event_async(
         db,

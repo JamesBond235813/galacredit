@@ -26,6 +26,7 @@ class AdminResponse(AdminBase):
 class AdminLogin(BaseModel):
     username: str
     password: str
+    client_type: Optional[str] = Field(default="WEB")
 
 
 class AdminTokenResponse(BaseModel):

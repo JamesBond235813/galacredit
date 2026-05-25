@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="全景雷达风控报告"
+    title=""
     width="1100px"
     top="2vh"
     append-to-body
@@ -10,41 +10,42 @@
     @closed="emit('closed')"
   >
     <div v-loading="loading" class="risk-report-shell">
-      <template v-if="normalizedReport">
+      <template v-if="payload">
         <section class="risk-hero">
-          <div class="risk-hero-main">
-            <span class="risk-eyebrow">Panorama Risk</span>
-            <h3>全景雷达风控报告</h3>
-            <p>按 `crm_songshu` 的风控报告结构复刻，展示申请行为、放款还款行为和当前授信画像。</p>
-          </div>
-          <div class="risk-hero-side">
-            <div class="hero-metric">
-              <span>申请准入分</span>
-              <strong>{{ displayValue(applyDetail, 'A22160001') }}</strong>
+          <div class="risk-hero-top">
+            <div class="risk-hero-main">
+              <span class="risk-eyebrow">Xiaohebao Risk</span>
+              <h3>小荷包风险报告</h3>
+              <p>合并全景雷达与探针C数据，展示客户申请行为、履约付款行为及外部履约探查结果。</p>
             </div>
-            <div class="hero-metric">
-              <span>贷款行为分</span>
-              <strong>{{ displayValue(behaviorDetail, 'B22170001') }}</strong>
+            <div class="risk-hero-side">
+              <div class="hero-metric">
+                <span>申请准入分</span>
+                <strong>{{ displayValue(applyDetail, 'A22160001') }}</strong>
+              </div>
+              <div class="hero-metric">
+                <span>信用行为分</span>
+                <strong>{{ displayValue(behaviorDetail, 'B22170001') }}</strong>
+              </div>
             </div>
           </div>
-        </section>
-
-        <section class="summary-card">
-          <div class="summary-item">
-            <label>姓名</label>
-            <span>{{ normalizedReport.name || '--' }}</span>
-          </div>
-          <div class="summary-item">
-            <label>身份证号</label>
-            <span>{{ normalizedReport.idCard || '--' }}</span>
-          </div>
-          <div class="summary-item">
-            <label>手机号</label>
-            <span>{{ normalizedReport.phone || '--' }}</span>
-          </div>
-          <div class="summary-item">
-            <label>报告时间</label>
-            <span>{{ formatDateTime(normalizedReport.queryTime) }}</span>
+          <div class="hero-profile-grid">
+            <div class="hero-profile-item">
+              <label>客户姓名</label>
+              <span>{{ profile.name || normalizedReport.name || '--' }}</span>
+            </div>
+            <div class="hero-profile-item">
+              <label>身份证号</label>
+              <span>{{ profile.id_card || normalizedReport.id_card || '--' }}</span>
+            </div>
+            <div class="hero-profile-item">
+              <label>手机号</label>
+              <span>{{ profile.phone || normalizedReport.phone || '--' }}</span>
+            </div>
+            <div class="hero-profile-item">
+              <label>报告时间</label>
+              <span>{{ formatDateTime(normalizedReport.query_time || payload.query_time) }}</span>
+            </div>
           </div>
         </section>
 
@@ -78,7 +79,7 @@
                 <td>{{ displayValue(applyDetail, 'A22160007') }}</td>
                 <th>近6个月机构总查询笔数</th>
                 <td>{{ displayValue(applyDetail, 'A22160010') }}</td>
-                <th>申请命中网络贷款类机构数</th>
+                <th>申请命中网络信用服务类机构数</th>
                 <td>{{ displayValue(applyDetail, 'A22160005') }}</td>
               </tr>
             </tbody>
@@ -88,27 +89,27 @@
         <section class="report-section">
           <div class="section-head">
             <div>
-              <h4>放款还款详情</h4>
-              <p>贷款行为置信度：{{ displayValue(behaviorDetail, 'B22170051') }}</p>
+              <h4>履约付款详情</h4>
+              <p>信用行为置信度：{{ displayValue(behaviorDetail, 'B22170051') }}</p>
             </div>
           </div>
 
           <table class="report-table">
             <tbody>
               <tr>
-                <th>贷款行为分</th>
+                <th>信用行为分</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170001') }}</td>
-                <th>最近一次放款时间</th>
+                <th>最近一次服务发放时间</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170054') }}</td>
-                <th>贷款已结清订单数</th>
+                <th>已结清订单数</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170052') }}</td>
               </tr>
               <tr>
-                <th>信用贷款时长</th>
+                <th>信用服务时长</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170053') }}</td>
                 <th>最近一次履约距今天数</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170050') }}</td>
-                <th>正常还款订单占贷款总订单数比例</th>
+                <th>正常付款订单占总订单数比例</th>
                 <td class="emphasis danger">{{ displayValue(behaviorDetail, 'B22170034') }}</td>
               </tr>
             </tbody>
@@ -119,10 +120,10 @@
               <tr>
                 <th>行为时间</th>
                 <th>机构数</th>
-                <th>贷款笔数</th>
-                <th>贷款总金额</th>
-                <th>履约贷款总金额</th>
-                <th>履约贷款数</th>
+                <th>订单笔数</th>
+                <th>订单总金额</th>
+                <th>履约订单总金额</th>
+                <th>履约订单数</th>
                 <th>失败扣款数</th>
               </tr>
             </thead>
@@ -143,7 +144,7 @@
             <table class="report-table">
               <thead>
                 <tr>
-                  <th>近12个月贷款金额</th>
+                  <th>近12个月订单金额</th>
                   <th>1K及以下</th>
                   <th>1K-3K</th>
                   <th>3K-10K</th>
@@ -152,7 +153,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <th>贷款笔数</th>
+                  <th>订单笔数</th>
                   <td>{{ displayValue(behaviorDetail, 'B22170012', '0') }}</td>
                   <td>{{ displayValue(behaviorDetail, 'B22170013', '0') }}</td>
                   <td>{{ displayValue(behaviorDetail, 'B22170014', '0') }}</td>
@@ -164,10 +165,10 @@
             <table class="report-table">
               <thead>
                 <tr>
-                  <th>近12个月消金类贷款机构数</th>
-                  <th>近24个月消金类贷款机构数</th>
-                  <th>近12个月网贷类贷款机构数</th>
-                  <th>近24个月网贷类贷款机构数</th>
+                  <th>近12个月消费信用类机构数</th>
+                  <th>近24个月消费信用类机构数</th>
+                  <th>近12个月线上信用类机构数</th>
+                  <th>近24个月线上信用类机构数</th>
                 </tr>
               </thead>
               <tbody>
@@ -184,25 +185,25 @@
           <table class="report-table">
             <tbody>
               <tr>
-                <th>近6个月M0+逾期贷款笔数</th>
+                <th>近6个月M0+逾期订单笔数</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170025') }}</td>
-                <th>近6个月M1+逾期贷款笔数</th>
+                <th>近6个月M1+逾期订单笔数</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170028') }}</td>
                 <th>近6个月累计逾期金额</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170031') }}</td>
               </tr>
               <tr>
-                <th>近12个月M0+逾期贷款笔数</th>
+                <th>近12个月M0+逾期订单笔数</th>
                 <td class="emphasis danger">{{ displayValue(behaviorDetail, 'B22170026') }}</td>
-                <th>近12个月M1+逾期贷款笔数</th>
+                <th>近12个月M1+逾期订单笔数</th>
                 <td class="emphasis danger">{{ displayValue(behaviorDetail, 'B22170029') }}</td>
                 <th>近12个月累计逾期金额</th>
                 <td class="emphasis danger">{{ displayValue(behaviorDetail, 'B22170032') }}</td>
               </tr>
               <tr>
-                <th>近24个月M0+逾期贷款笔数</th>
+                <th>近24个月M0+逾期订单笔数</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170027') }}</td>
-                <th>近24个月M1+逾期贷款笔数</th>
+                <th>近24个月M1+逾期订单笔数</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170030') }}</td>
                 <th>近24个月累计逾期金额</th>
                 <td>{{ displayValue(behaviorDetail, 'B22170033') }}</td>
@@ -214,43 +215,43 @@
         <section class="report-section">
           <div class="section-head">
             <div>
-              <h4>信用详情</h4>
-              <p>当前机构授信能力与建议额度画像</p>
+              <h4>探针C信息</h4>
+              <p>展示探针C返回的履约与逾期概况。</p>
             </div>
           </div>
           <table class="report-table">
             <tbody>
               <tr>
-                <th>网贷建议授信额度</th>
-                <td>{{ displayValue(currentDetail, 'C22180001', '0') }}</td>
-                <th>网贷额度置信度</th>
-                <td class="emphasis danger">{{ displayValue(currentDetail, 'C22180002', '0') }}</td>
-                <th>网络贷款类机构数</th>
-                <td>{{ displayValue(currentDetail, 'C22180003', '0') }}</td>
+                <th>探查结果</th>
+                <td>{{ probeC.result_label || '--' }}</td>
+                <th>最大逾期金额</th>
+                <td>{{ probeData.max_overdue_amt || '--' }}</td>
+                <th>最长逾期天数</th>
+                <td>{{ probeData.max_overdue_days || '--' }}</td>
               </tr>
               <tr>
-                <th>网络贷款类产品数</th>
-                <td>{{ displayValue(currentDetail, 'C22180004', '0') }}</td>
-                <th>网络贷款机构最大授信额度</th>
-                <td>{{ displayValue(currentDetail, 'C22180005', '0') }}</td>
-                <th>网络贷款机构平均授信额度</th>
-                <td>{{ displayValue(currentDetail, 'C22180006', '0') }}</td>
+                <th>最近逾期时间</th>
+                <td>{{ probeData.latest_overdue_time || '--' }}</td>
+                <th>当前逾期机构数</th>
+                <td>{{ probeData.currently_overdue || '--' }}</td>
+                <th>当前履约机构数</th>
+                <td>{{ probeData.currently_performance || '--' }}</td>
               </tr>
               <tr>
-                <th>消金贷款类机构数</th>
-                <td>{{ displayValue(currentDetail, 'C22180007', '0') }}</td>
-                <th>消金贷款类产品数</th>
-                <td>{{ displayValue(currentDetail, 'C22180008', '0') }}</td>
-                <th>消金贷款类机构最大授信额度</th>
-                <td>{{ displayValue(currentDetail, 'C22180009', '0') }}</td>
+                <th>异常还款机构数</th>
+                <td>{{ probeData.acc_exc || '--' }}</td>
+                <th>睡眠机构数</th>
+                <td>{{ probeData.acc_sleep || '--' }}</td>
+                <th>报告来源</th>
+                <td>{{ probeC.source || '--' }}</td>
               </tr>
               <tr>
-                <th>消金贷款类机构平均授信额度</th>
-                <td>{{ displayValue(currentDetail, 'C22180010', '0') }}</td>
-                <th>消金建议授信额度</th>
-                <td>{{ displayValue(currentDetail, 'C22180011', '0') }}</td>
-                <th>消金额度置信度</th>
-                <td class="emphasis danger">{{ displayValue(currentDetail, 'C22180012', '0') }}</td>
+                <th>最大履约金额</th>
+                <td>{{ probeData.max_performance_amt || '--' }}</td>
+                <th>最近履约时间</th>
+                <td>{{ probeData.latest_performance_time || '--' }}</td>
+                <th>履约笔数</th>
+                <td>{{ probeData.count_performance || '--' }}</td>
               </tr>
             </tbody>
           </table>
@@ -258,7 +259,7 @@
       </template>
 
       <div v-else class="empty-wrap">
-        <el-empty description="暂无风控报告数据" />
+        <el-empty description="暂无小荷包风险报告数据" />
       </div>
     </div>
   </el-dialog>
@@ -298,44 +299,30 @@ const behaviorTimeRows = [
   { label: '近24个月', keys: ['B22170020', 'B22170006', 'B22170011', 'B22170044', 'B22170049', 'B22170039'] }
 ];
 
-const normalizedReport = computed(() => {
-  if (!props.report) {
+const normalizedReport = computed(() => props.report || {});
+const payload = computed(() => parsePayload(normalizedReport.value.report_json || normalizedReport.value.reportJson));
+const profile = computed(() => payload.value?.user_profile || {});
+const panoramaPayload = computed(() => payload.value?.panorama?.payload || {});
+const panoramaData = computed(() => panoramaPayload.value?.data || {});
+const applyDetail = computed(() => panoramaData.value?.apply_report_detail || panoramaPayload.value?.apply_report_detail || {});
+const behaviorDetail = computed(() => panoramaData.value?.behavior_report_detail || panoramaPayload.value?.behavior_report_detail || {});
+const probeC = computed(() => payload.value?.probe_c || {});
+const probeData = computed(() => probeC.value?.payload?.data || {});
+
+const parsePayload = (value) => {
+  if (!value) {
     return null;
   }
-
-  let reportDetail =
-    props.report.reportJson ??
-    props.report.report_json ??
-    props.report.data?.reportJson ??
-    props.report.data?.report_json ??
-    props.report.data ??
-    props.report;
-
-  if (typeof reportDetail === 'string') {
-    try {
-      reportDetail = JSON.parse(reportDetail);
-    } catch (error) {
-      return null;
-    }
+  if (typeof value === 'object') {
+    return value;
   }
-
-  const reportData = reportDetail?.data ?? {};
-  return {
-    ...reportDetail,
-    ...reportData,
-    apply_report_detail: reportDetail?.apply_report_detail ?? reportData?.apply_report_detail ?? {},
-    behavior_report_detail: reportDetail?.behavior_report_detail ?? reportData?.behavior_report_detail ?? {},
-    current_report_detail: reportDetail?.current_report_detail ?? reportData?.current_report_detail ?? {},
-    name: props.report.name ?? props.report.user_name ?? '',
-    idCard: props.report.idCard ?? props.report.id_card ?? props.report.user_id_card_num ?? '',
-    phone: props.report.phone ?? props.report.user_phone ?? '',
-    queryTime: props.report.queryTime ?? props.report.query_time ?? reportDetail?.queryTime ?? reportDetail?.query_time
-  };
-});
-
-const applyDetail = computed(() => normalizedReport.value?.apply_report_detail ?? {});
-const behaviorDetail = computed(() => normalizedReport.value?.behavior_report_detail ?? {});
-const currentDetail = computed(() => normalizedReport.value?.current_report_detail ?? {});
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+};
 
 const displayValue = (source, key, fallback = '--') => {
   const value = source?.[key];
@@ -355,9 +342,8 @@ const displayValue = (source, key, fallback = '--') => {
 }
 
 .risk-hero {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  gap: 18px;
   padding: 20px 22px;
   border-radius: 20px;
   background:
@@ -366,8 +352,15 @@ const displayValue = (source, key, fallback = '--') => {
   color: #ffffff;
 }
 
+.risk-hero-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
 .risk-hero-main {
   flex: 1;
+  min-width: 0;
 }
 
 .risk-eyebrow {
@@ -420,30 +413,30 @@ const displayValue = (source, key, fallback = '--') => {
   line-height: 1;
 }
 
-.summary-card {
+.hero-profile-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 18px;
 }
 
-.summary-item {
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: #f7faff;
-  border: 1px solid rgba(44, 114, 229, 0.09);
+.hero-profile-item {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
-.summary-item label {
+.hero-profile-item label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
   font-size: 12px;
-  color: #7b8ca6;
+  color: rgba(255, 255, 255, 0.72);
 }
 
-.summary-item span {
+.hero-profile-item span {
   display: block;
-  color: #24364d;
+  color: #ffffff;
   font-weight: 600;
   word-break: break-all;
 }
@@ -528,12 +521,11 @@ const displayValue = (source, key, fallback = '--') => {
 }
 
 @media (max-width: 1200px) {
-  .risk-hero,
-  .summary-card {
+  .risk-hero {
     grid-template-columns: 1fr;
   }
 
-  .risk-hero {
+  .risk-hero-top {
     flex-direction: column;
   }
 
@@ -541,13 +533,13 @@ const displayValue = (source, key, fallback = '--') => {
     min-width: 0;
   }
 
-  .summary-card {
+  .hero-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 768px) {
-  .summary-card {
+  .hero-profile-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -559,11 +551,15 @@ const displayValue = (source, key, fallback = '--') => {
 
 :deep(.risk-dialog .el-dialog__header) {
   margin-right: 0;
-  padding: 22px 24px 12px;
+  padding: 10px 24px 0;
+}
+
+:deep(.risk-dialog .el-dialog__title) {
+  display: none;
 }
 
 :deep(.risk-dialog .el-dialog__body) {
-  padding: 8px 24px 24px;
+  padding: 10px 24px 24px;
   background: #f4f7fb;
 }
 </style>

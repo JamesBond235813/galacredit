@@ -1,0 +1,19 @@
+{
+  "name": "xiaohebao-android-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 2003",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 2102",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
+    "vite": "^8.0.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

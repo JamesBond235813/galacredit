@@ -8,6 +8,7 @@ from app.core.database import get_async_db
 from app.models.user import User
 from app.models.admin import Admin
 from app.models.oauth_token import OAuthToken
+from app.services.admin_session import is_admin_session_valid, normalize_admin_client_type
 
 # H5端使用 Bearer Token 发送在 Authorization header 中
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -103,13 +104,18 @@ async def get_admin_by_token_async(db: AsyncSession, token: str) -> Admin:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        session_id: str = payload.get("jti")
+        token_type: str = payload.get("typ")
+        client_type: str = normalize_admin_client_type(payload.get("cid"))
+        if username is None or session_id is None or token_type != "access":
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
     admin = (await db.execute(select(Admin).where(Admin.username == username))).scalar_one_or_none()
     if admin is None:
+        raise credentials_exception
+    if not is_admin_session_valid(admin, session_id, client_type):
         raise credentials_exception
     return admin
 

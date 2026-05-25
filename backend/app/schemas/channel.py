@@ -77,6 +77,7 @@ class ChannelItemResponse(BaseModel):
     id: int
     channel_name: str
     invite_code: str
+    daily_invite_code: str
     sales_name: str
     status: str
     note: Optional[str] = None
