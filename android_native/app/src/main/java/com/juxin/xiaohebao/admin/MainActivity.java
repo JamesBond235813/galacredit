@@ -75,10 +75,11 @@ public class MainActivity extends Activity {
     private void showLogin() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
+        scroll.setBackground(stripeBackground());
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(24), dp(72), dp(24), dp(32));
+        root.setPadding(dp(22), dp(70), dp(22), dp(32));
         scroll.addView(root, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
@@ -90,15 +91,21 @@ public class MainActivity extends Activity {
         title.setText("小荷包移动工作台");
         title.setTextSize(28);
         title.setTextColor(Ui.TEXT);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dp(12), 0, dp(28));
+        title.setPadding(0, dp(12), 0, dp(6));
         root.addView(title, matchWrap());
+
+        TextView subtitle = text("Stripe 风格 · 玻璃拟态 · 移动审批", 13, Ui.MUTED, Typeface.BOLD);
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(0, 0, 0, dp(28));
+        root.addView(subtitle, matchWrap());
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
-        card.setBackground(cardDrawable());
-        card.setElevation(dp(3));
+        card.setPadding(dp(20), dp(20), dp(20), dp(20));
+        card.setBackground(glassCardDrawable());
+        card.setElevation(dp(10));
         root.addView(card, matchWrap());
 
         EditText username = input("账号");
@@ -141,7 +148,7 @@ public class MainActivity extends Activity {
         detailOpen = false;
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setBackgroundColor(0xffffffff);
+        page.setBackground(stripeBackground());
         setContentView(page);
 
         LinearLayout header = new LinearLayout(this);
@@ -169,7 +176,7 @@ public class MainActivity extends Activity {
         LinearLayout fixed = new LinearLayout(this);
         fixed.setOrientation(LinearLayout.VERTICAL);
         fixed.setPadding(dp(16), 0, dp(16), dp(6));
-        fixed.setBackgroundColor(0xffffffff);
+        fixed.setBackground(softPanelDrawable());
         page.addView(fixed, matchWrap());
         addSummaryStrip(fixed);
         addSearchControls(fixed);
@@ -220,10 +227,10 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(roundRect(Color.rgb(248, 251, 255), dp(8), Ui.BORDER));
-        card.setElevation(dp(2));
+        card.setBackground(tintGlassDrawable(Color.argb(168, 255, 255, 255)));
+        card.setElevation(dp(8));
         TextView labelView = text(label, 12, Ui.MUTED, Typeface.NORMAL);
-        TextView valueView = text(value, 22, Ui.TEXT, Typeface.BOLD);
+        TextView valueView = text(value, 23, Ui.TEXT, Typeface.BOLD);
         valueView.setPadding(0, dp(6), 0, 0);
         card.addView(labelView);
         card.addView(valueView);
@@ -446,8 +453,9 @@ public class MainActivity extends Activity {
         }
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackgroundResource(getResources().getIdentifier("card_bg", "drawable", getPackageName()));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(glassCardDrawable());
+        card.setElevation(dp(7));
         LinearLayout.LayoutParams lp = matchWrap();
         lp.setMargins(0, 0, 0, dp(12));
         content.addView(card, lp);
@@ -477,8 +485,9 @@ public class MainActivity extends Activity {
     private void addApplicationCard(LinearLayout content, JSONObject item) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackgroundResource(getResources().getIdentifier("card_bg", "drawable", getPackageName()));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(glassCardDrawable());
+        card.setElevation(dp(7));
         LinearLayout.LayoutParams lp = matchWrap();
         lp.setMargins(0, 0, 0, dp(12));
         content.addView(card, lp);
@@ -548,7 +557,7 @@ public class MainActivity extends Activity {
         JSONObject user = detailUser(item);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setBackgroundColor(0xffffffff);
+        page.setBackground(stripeBackground());
         setContentView(page);
 
         LinearLayout header = row();
@@ -588,9 +597,9 @@ public class MainActivity extends Activity {
         content.addView(heading);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(14), dp(10), dp(14), dp(10));
-        box.setBackgroundResource(getResources().getIdentifier("card_bg", "drawable", getPackageName()));
-        box.setElevation(dp(2));
+        box.setPadding(dp(16), dp(12), dp(16), dp(12));
+        box.setBackground(glassCardDrawable());
+        box.setElevation(dp(7));
         for (String[] row : rows) {
             LinearLayout line = row();
             line.setPadding(0, dp(5), 0, dp(5));
@@ -630,7 +639,8 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(6), dp(6), dp(6), dp(6));
-        box.setBackground(roundRect(Color.rgb(248, 251, 255), dp(8), Ui.BORDER));
+        box.setBackground(tintGlassDrawable(Color.argb(188, 248, 250, 255)));
+        box.setElevation(dp(4));
         View media;
         if (isBlank(url) || "null".equalsIgnoreCase(url)) {
             TextView empty = text("暂无", 13, Ui.MUTED, Typeface.NORMAL);
@@ -639,7 +649,7 @@ public class MainActivity extends Activity {
         } else {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setBackgroundColor(Color.rgb(241, 243, 244));
+            image.setBackgroundColor(Color.rgb(232, 238, 255));
             media = image;
             loadImage(image, url);
             box.setClickable(true);
@@ -726,7 +736,8 @@ public class MainActivity extends Activity {
         LinearLayout dock = new LinearLayout(this);
         dock.setOrientation(LinearLayout.VERTICAL);
         dock.setPadding(dp(16), dp(12), dp(16), dp(12));
-        dock.setBackgroundColor(0xffffffff);
+        dock.setBackground(softPanelDrawable());
+        dock.setElevation(dp(10));
         TextView title = text("可执行操作", 14, Ui.TEXT, Typeface.BOLD);
         dock.addView(title);
         LinearLayout row = null;
@@ -867,7 +878,8 @@ public class MainActivity extends Activity {
         LinearLayout preview = new LinearLayout(this);
         preview.setOrientation(LinearLayout.VERTICAL);
         preview.setPadding(dp(12), dp(10), dp(12), dp(10));
-        preview.setBackground(roundRect(Color.rgb(248, 251, 255), dp(10), Ui.BORDER));
+        preview.setBackground(tintGlassDrawable(Color.argb(188, 248, 250, 255)));
+        preview.setElevation(dp(4));
         preview.addView(previewRow("平账后已还款额", receivedPreview));
         preview.addView(previewRow("平账后减免金额", reductionPreview));
         preview.addView(previewRow("平账后其他费用", otherFeePreview));
@@ -1079,16 +1091,17 @@ public class MainActivity extends Activity {
     private void addTabs(LinearLayout page) {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setPadding(dp(8), dp(6), dp(8), dp(6));
-        tabs.setBackgroundColor(0xffffffff);
-        tabs.setElevation(dp(6));
+        tabs.setPadding(dp(10), dp(8), dp(10), dp(8));
+        tabs.setBackground(softPanelDrawable());
+        tabs.setElevation(dp(12));
         page.addView(tabs, matchWrap());
         for (String[] tab : visibleTabs()) {
-            TextView button = text(tabIcon(tab[0]) + "\n" + tab[1], 12, tab[0].equals(activeTab) ? Ui.BLUE : Ui.MUTED, Typeface.NORMAL);
+            boolean active = tab[0].equals(activeTab);
+            TextView button = text(tabIcon(tab[0]) + "\n" + tab[1], 12, active ? 0xffffffff : Ui.MUTED, active ? Typeface.BOLD : Typeface.NORMAL);
             button.setGravity(Gravity.CENTER);
             button.setClickable(true);
-            button.setBackgroundColor(0x00000000);
-            tabs.addView(button, new LinearLayout.LayoutParams(0, dp(58), 1));
+            button.setBackground(active ? gradientRect(new int[]{Ui.BLUE, Ui.INDIGO}, dp(18), GradientDrawable.Orientation.LEFT_RIGHT) : roundRect(0x00000000, dp(18), 0));
+            tabs.addView(button, new LinearLayout.LayoutParams(0, dp(56), 1));
             button.setOnClickListener(v -> { activeTab = tab[0]; keyword = ""; showWorkspace(); });
         }
     }
@@ -1629,9 +1642,11 @@ public class MainActivity extends Activity {
         EditText input = new EditText(this);
         input.setHint(hint);
         input.setTextSize(16);
+        input.setTextColor(Ui.TEXT);
+        input.setHintTextColor(Color.argb(150, 100, 116, 139));
         input.setSingleLine(false);
         input.setBackgroundResource(getResources().getIdentifier("input_bg", "drawable", getPackageName()));
-        input.setPadding(dp(12), 0, dp(12), 0);
+        input.setPadding(dp(14), 0, dp(14), 0);
         return input;
     }
 
@@ -1640,7 +1655,9 @@ public class MainActivity extends Activity {
         button.setText(text);
         button.setTextColor(0xffffffff);
         button.setTextSize(16);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setBackgroundResource(getResources().getIdentifier("primary_button", "drawable", getPackageName()));
+        button.setElevation(dp(6));
         return button;
     }
 
@@ -1649,7 +1666,8 @@ public class MainActivity extends Activity {
         button.setText(text);
         button.setTextColor(Ui.BLUE);
         button.setTextSize(14);
-        button.setBackground(roundRect(Color.rgb(232, 240, 254), dp(8), 0));
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setBackground(tintGlassDrawable(Color.argb(205, 238, 242, 255)));
         return button;
     }
 
@@ -1658,7 +1676,8 @@ public class MainActivity extends Activity {
         button.setText(text);
         button.setTextColor(Ui.RED);
         button.setTextSize(14);
-        button.setBackground(roundRect(Color.rgb(252, 232, 230), dp(8), 0));
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setBackground(tintGlassDrawable(Color.argb(220, 255, 236, 239)));
         return button;
     }
 
@@ -1667,8 +1686,8 @@ public class MainActivity extends Activity {
         button.setText(text);
         button.setTextColor(Ui.BLUE);
         button.setTextSize(16);
-        button.setBackground(roundRect(0xffffffff, dp(999), 0));
-        button.setElevation(dp(4));
+        button.setBackground(tintGlassDrawable(Color.argb(226, 255, 255, 255)));
+        button.setElevation(dp(7));
         return button;
     }
 
@@ -1676,7 +1695,7 @@ public class MainActivity extends Activity {
         Button button = circleButton(text);
         button.setTextColor(0xffffffff);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setBackground(roundRect(Ui.BLUE, dp(999), 0));
+        button.setBackground(gradientRect(new int[]{Ui.BLUE, Ui.INDIGO}, dp(999), GradientDrawable.Orientation.LEFT_RIGHT));
         return button;
     }
 
@@ -1684,7 +1703,8 @@ public class MainActivity extends Activity {
         Button button = new Button(this);
         button.setText(text);
         button.setTextColor(active ? 0xffffffff : Ui.BLUE);
-        button.setBackground(active ? roundRect(Ui.BLUE, dp(8), 0) : roundRect(0xffffffff, dp(8), Ui.BORDER));
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setBackground(active ? gradientRect(new int[]{Ui.BLUE, Ui.INDIGO}, dp(15), GradientDrawable.Orientation.LEFT_RIGHT) : tintGlassDrawable(Color.argb(188, 255, 255, 255)));
         return button;
     }
 
@@ -1713,7 +1733,40 @@ public class MainActivity extends Activity {
     }
 
     private GradientDrawable cardDrawable() {
-        return roundRect(0xffffffff, dp(8), Ui.BORDER);
+        return glassCardDrawable();
+    }
+
+    private GradientDrawable stripeBackground() {
+        return gradientRect(
+            new int[]{Color.rgb(247, 250, 255), Color.rgb(235, 244, 255), Color.rgb(246, 237, 255)},
+            0,
+            GradientDrawable.Orientation.TL_BR
+        );
+    }
+
+    private GradientDrawable glassCardDrawable() {
+        return glassDrawable(Ui.GLASS, dp(22), Color.argb(112, 255, 255, 255));
+    }
+
+    private GradientDrawable softPanelDrawable() {
+        return glassDrawable(Ui.GLASS_SOFT, dp(24), Color.argb(80, 255, 255, 255));
+    }
+
+    private GradientDrawable tintGlassDrawable(int color) {
+        return glassDrawable(color, dp(18), Color.argb(90, 255, 255, 255));
+    }
+
+    private GradientDrawable glassDrawable(int color, int radius, int strokeColor) {
+        GradientDrawable drawable = roundRect(color, radius, strokeColor);
+        drawable.setDither(true);
+        return drawable;
+    }
+
+    private GradientDrawable gradientRect(int[] colors, int radius, GradientDrawable.Orientation orientation) {
+        GradientDrawable drawable = new GradientDrawable(orientation, colors);
+        drawable.setCornerRadius(radius);
+        drawable.setDither(true);
+        return drawable;
     }
 
     private GradientDrawable roundRect(int color, int radius, int strokeColor) {
