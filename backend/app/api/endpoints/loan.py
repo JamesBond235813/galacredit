@@ -63,6 +63,43 @@ def _is_regular_ecard_rights_loan(loan: Loan) -> bool:
     return float(getattr(loan, "ecard_face_value", 0) or 0) > 0 and float(getattr(loan, "rights_price", 0) or 0) > 0
 
 
+async def _record_ecard_secret_copy(
+    db: AsyncSession,
+    *,
+    user: User,
+    loan: Loan,
+    field: str,
+    loan_ecard_id: Optional[int] = None,
+    ecard_pool_id: Optional[int] = None,
+    index: Optional[int] = None,
+) -> None:
+    """记录用户在H5端复制/查看E卡卡密的动作。
+
+    :param db: 异步数据库会话
+    :param user: 当前用户
+    :param loan: 当前订单
+    :param field: 复制字段，account 或 password
+    :param loan_ecard_id: 订单E卡明细ID
+    :param ecard_pool_id: 卡池记录ID
+    :param index: 前端传入的卡片序号
+    :return: None
+    """
+    await log_user_event_async(
+        db,
+        user=user,
+        loan=loan,
+        event_type="USER_ECARD_SECRET_COPIED",
+        title="用户复制E卡卡密",
+        detail=(
+            f"field={field}；"
+            f"loan_ecard_id={loan_ecard_id or ''}；"
+            f"ecard_pool_id={ecard_pool_id or ''}；"
+            f"index={index if index is not None else ''}"
+        ),
+    )
+    await db.commit()
+
+
 def _extract_product_contact_phone(product: Product) -> Optional[str]:
     """从商品权益配置中提取联系电话。
 
@@ -669,6 +706,15 @@ async def get_ecard_secret(
         if not ecard_item:
             raise HTTPException(status_code=404, detail="未找到该张E卡")
         value = ecard_item.account if field == "account" else ecard_item.password
+        await _record_ecard_secret_copy(
+            db,
+            user=current_user,
+            loan=loan,
+            field=field,
+            loan_ecard_id=ecard_item.id,
+            ecard_pool_id=ecard_item.ecard_pool_id,
+            index=index,
+        )
         return {"field": field, "value": value, "item_id": ecard_item.id, "index": index}
 
     ecard_item = (
@@ -676,11 +722,21 @@ async def get_ecard_secret(
     ).scalars().first()
     if ecard_item:
         value = ecard_item.account if field == "account" else ecard_item.password
+        await _record_ecard_secret_copy(
+            db,
+            user=current_user,
+            loan=loan,
+            field=field,
+            loan_ecard_id=ecard_item.id,
+            ecard_pool_id=ecard_item.ecard_pool_id,
+            index=0,
+        )
         return {"field": field, "value": value, "item_id": ecard_item.id, "index": 0}
 
     value = loan.ecard_account if field == "account" else loan.ecard_password
     if not value:
         raise HTTPException(status_code=404, detail="暂无可复制卡密")
+    await _record_ecard_secret_copy(db, user=current_user, loan=loan, field=field)
     return {"field": field, "value": value}
 
 

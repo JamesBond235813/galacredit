@@ -7,15 +7,19 @@ import android.view.View;
 import android.widget.TextView;
 
 final class Ui {
-    static final int BLUE = Color.rgb(99, 91, 255);
-    static final int INDIGO = Color.rgb(67, 56, 202);
-    static final int CYAN = Color.rgb(0, 212, 255);
-    static final int MINT = Color.rgb(0, 214, 143);
-    static final int TEXT = Color.rgb(18, 24, 38);
-    static final int MUTED = Color.rgb(100, 116, 139);
-    static final int BORDER = Color.argb(90, 148, 163, 184);
-    static final int GLASS = Color.argb(226, 255, 255, 255);
-    static final int GLASS_SOFT = Color.argb(178, 255, 255, 255);
+    static final int BLUE = Color.rgb(26, 115, 232);
+    static final int INDIGO = Color.rgb(66, 133, 244);
+    static final int VIOLET = Color.rgb(103, 58, 183);
+    static final int SKY = Color.rgb(66, 133, 244);
+    static final int CYAN = Color.rgb(66, 133, 244);
+    static final int MINT = Color.rgb(52, 168, 83);
+    static final int TEXT = Color.rgb(32, 33, 36);
+    static final int MUTED = Color.rgb(95, 99, 104);
+    static final int SLATE = Color.rgb(60, 64, 67);
+    static final int BORDER = Color.rgb(218, 220, 224);
+    static final int GLASS = Color.rgb(255, 255, 255);
+    static final int GLASS_SOFT = Color.rgb(255, 255, 255);
+    static final int GLASS_TINT = Color.rgb(255, 255, 255);
     static final int RED = Color.rgb(220, 38, 38);
     static final int ORANGE = Color.rgb(245, 158, 11);
 

@@ -358,6 +358,12 @@ class RepaymentStatsResponse(BaseModel):
     receivable_amount: float
     received_user_count: int
     received_amount: float
+    due_today_user_count: int = 0
+    due_today_amount: float = 0
+    today_actual_repayment_user_count: int = 0
+    today_actual_repayment_amount: float = 0
+    overdue_user_count: int = 0
+    overdue_amount: float = 0
     other_fee_amount: float = 0
     repayment_rate: float
     repeat_borrow_count: int
@@ -570,10 +576,25 @@ class EcardPoolItemResponse(BaseModel):
     expires_at: datetime
     status: str
     loan_id: Optional[int] = None
+    recipient_phone: Optional[str] = None
+    secret_copied_at: Optional[datetime] = None
     note: Optional[str] = None
     assigned_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+
+class EcardPoolStatsResponse(BaseModel):
+    pool_total_count: int = 0
+    pool_total_amount: float = 0
+    cumulative_assigned_count: int = 0
+    cumulative_assigned_amount: float = 0
+    available_count: int = 0
+    available_amount: float = 0
+    today_stock_in_count: int = 0
+    today_stock_in_amount: float = 0
+    today_assigned_count: int = 0
+    today_assigned_amount: float = 0
 
 
 class EcardPoolCreateRequest(BaseModel):
@@ -594,6 +615,7 @@ class PaginatedEcardPoolResponse(BaseModel):
     total: int
     page: int
     size: int
+    stats: EcardPoolStatsResponse = Field(default_factory=EcardPoolStatsResponse)
     items: List[EcardPoolItemResponse]
 
 

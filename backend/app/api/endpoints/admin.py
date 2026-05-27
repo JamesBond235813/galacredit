@@ -477,6 +477,33 @@ async def get_repayment_stats(
     loans = (
         await db.execute(select(Loan).options(joinedload(Loan.installments)).where(*filters))
     ).unique().scalars().all()
+    today_start, tomorrow = get_today_range()
+    due_today_loans = [
+        loan
+        for loan in loans
+        if loan.status == "DISBURSED" and loan.due_date and today_start <= loan.due_date < tomorrow
+    ]
+    due_today_user_count = len({loan.user_id for loan in due_today_loans})
+    due_today_amount = round(sum(calculate_total_repayment_amount(loan) for loan in due_today_loans), 2)
+    today_actual_repayment_loans = [
+        loan
+        for loan in loans
+        if getattr(loan, "actual_repayment_date", None) == today_start.date()
+    ]
+    today_actual_repayment_user_count = len({loan.user_id for loan in today_actual_repayment_loans})
+    today_actual_repayment_amount = round(
+        sum(float(loan.repaid_amount or 0) for loan in today_actual_repayment_loans),
+        2,
+    )
+    overdue_loans = (
+        await db.execute(
+            select(Loan)
+            .options(joinedload(Loan.installments))
+            .where(*build_loan_scope_filters("OVERDUE"))
+        )
+    ).unique().scalars().all()
+    overdue_user_count = len({loan.user_id for loan in overdue_loans})
+    overdue_amount = round(sum(calculate_remaining_repayment_amount(loan) for loan in overdue_loans), 2)
 
     receivable_order_count = len(loans)
     receivable_user_count = len({loan.user_id for loan in loans})
@@ -524,6 +551,12 @@ async def get_repayment_stats(
         "receivable_amount": round(float(receivable_amount), 2),
         "received_user_count": int(received_user_count),
         "received_amount": round(float(received_amount), 2),
+        "due_today_user_count": int(due_today_user_count),
+        "due_today_amount": round(float(due_today_amount), 2),
+        "today_actual_repayment_user_count": int(today_actual_repayment_user_count),
+        "today_actual_repayment_amount": round(float(today_actual_repayment_amount), 2),
+        "overdue_user_count": int(overdue_user_count),
+        "overdue_amount": round(float(overdue_amount), 2),
         "other_fee_amount": round(float(other_fee_amount), 2),
         "repayment_rate": round(float(repayment_rate), 2),
         "repeat_borrow_count": int(repeat_borrow_count),

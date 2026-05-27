@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Optional
@@ -913,6 +914,8 @@ def serialize_product(product: Product):
     }
 
 def serialize_ecard_pool_item(item: EcardPool):
+    recipient_phone = getattr(item, "recipient_phone", None)
+    secret_copied_at = getattr(item, "secret_copied_at", None)
     return {
         "id": item.id,
         "account": mask_secret(item.account, left=4, right=4),
@@ -921,11 +924,126 @@ def serialize_ecard_pool_item(item: EcardPool):
         "expires_at": item.expires_at,
         "status": item.status,
         "loan_id": item.loan_id,
+        "recipient_phone": recipient_phone,
+        "secret_copied_at": secret_copied_at,
         "note": item.note,
         "assigned_at": item.assigned_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
+
+def _extract_ecard_pool_id_from_copy_detail(detail: Optional[str]) -> Optional[int]:
+    """从用户复制卡密事件详情中提取卡池ID。
+
+    :param detail: 用户事件详情
+    :return: 卡池ID，无法解析时返回 None
+    """
+    match = re.search(r"(?:^|；)ecard_pool_id=(\d+)(?:；|$)", detail or "")
+    return int(match.group(1)) if match else None
+
+async def _build_ecard_pool_stats(db: AsyncSession) -> dict:
+    """构建卡池管理页顶部统计卡片数据。
+
+    :param db: 异步数据库会话
+    :return: 卡池统计字典
+    """
+    today_start, tomorrow = get_today_range()
+    total_count, total_amount = (
+        await db.execute(select(func.count(EcardPool.id), func.coalesce(func.sum(EcardPool.face_value), 0)))
+    ).one()
+    cumulative_assigned_count, cumulative_assigned_amount = (
+        await db.execute(
+            select(func.count(EcardPool.id), func.coalesce(func.sum(EcardPool.face_value), 0)).where(
+                EcardPool.assigned_at.isnot(None),
+            )
+        )
+    ).one()
+    available_count, available_amount = (
+        await db.execute(
+            select(func.count(EcardPool.id), func.coalesce(func.sum(EcardPool.face_value), 0)).where(
+                EcardPool.status == "AVAILABLE",
+                EcardPool.expires_at >= tomorrow,
+            )
+        )
+    ).one()
+    today_stock_in_count, today_stock_in_amount = (
+        await db.execute(
+            select(func.count(EcardPool.id), func.coalesce(func.sum(EcardPool.face_value), 0)).where(
+                EcardPool.created_at >= today_start,
+                EcardPool.created_at < tomorrow,
+            )
+        )
+    ).one()
+    today_assigned_count, today_assigned_amount = (
+        await db.execute(
+            select(func.count(EcardPool.id), func.coalesce(func.sum(EcardPool.face_value), 0)).where(
+                EcardPool.assigned_at >= today_start,
+                EcardPool.assigned_at < tomorrow,
+            )
+        )
+    ).one()
+    return {
+        "pool_total_count": int(total_count or 0),
+        "pool_total_amount": round_money(total_amount),
+        "cumulative_assigned_count": int(cumulative_assigned_count or 0),
+        "cumulative_assigned_amount": round_money(cumulative_assigned_amount),
+        "available_count": int(available_count or 0),
+        "available_amount": round_money(available_amount),
+        "today_stock_in_count": int(today_stock_in_count or 0),
+        "today_stock_in_amount": round_money(today_stock_in_amount),
+        "today_assigned_count": int(today_assigned_count or 0),
+        "today_assigned_amount": round_money(today_assigned_amount),
+    }
+
+async def _attach_ecard_pool_display_fields(db: AsyncSession, items: list[EcardPool]) -> None:
+    """给卡池列表项补充领取人手机号和首次复制密码时间。
+
+    :param db: 异步数据库会话
+    :param items: 当前页卡池列表
+    :return: None
+    """
+    if not items:
+        return
+
+    loan_ids = [item.loan_id for item in items if item.loan_id]
+    if loan_ids:
+        owner_rows = (
+            await db.execute(
+                select(Loan.id, User.phone)
+                .join(User, User.id == Loan.user_id)
+                .where(Loan.id.in_(loan_ids))
+            )
+        ).all()
+        phone_by_loan_id = {loan_id: phone for loan_id, phone in owner_rows}
+    else:
+        phone_by_loan_id = {}
+
+    pool_ids = [item.id for item in items]
+    copy_filters = [
+        UserEvent.event_type == "USER_ECARD_SECRET_COPIED",
+        UserEvent.detail.like("%field=password%"),
+        UserEvent.detail.like("%ecard_pool_id=%"),
+    ]
+    if loan_ids:
+        # 复制事件与订单绑定，先按当前页订单收窄范围，避免卡池列表扫描过多用户事件。
+        copy_filters.append(UserEvent.loan_id.in_(loan_ids))
+    copy_rows = (
+        await db.execute(
+            select(UserEvent.detail, UserEvent.created_at)
+            .where(*copy_filters)
+            .order_by(UserEvent.created_at.asc())
+        )
+    ).all()
+    pool_id_set = set(pool_ids)
+    copied_at_by_pool_id = {}
+    for detail, created_at in copy_rows:
+        pool_id = _extract_ecard_pool_id_from_copy_detail(detail)
+        if pool_id in pool_id_set and pool_id not in copied_at_by_pool_id:
+            copied_at_by_pool_id[pool_id] = created_at
+
+    for item in items:
+        item.recipient_phone = phone_by_loan_id.get(item.loan_id)
+        item.secret_copied_at = copied_at_by_pool_id.get(item.id)
 
 def apply_loan_scope(query, scope: Optional[str]):
     overdue_days_expr = func.datediff(func.current_date(), func.date(Loan.due_date))
@@ -1804,10 +1922,12 @@ async def _get_ecard_pool(db: AsyncSession, current_admin: Admin, keyword: Optio
     items = (
         await db.execute(stmt.order_by(EcardPool.expires_at.asc(), EcardPool.id.desc()).offset(skip).limit(limit))
     ).scalars().all()
+    await _attach_ecard_pool_display_fields(db, items)
     return {
         "total": total,
         "page": skip // limit + 1,
         "size": limit,
+        "stats": await _build_ecard_pool_stats(db),
         "items": [serialize_ecard_pool_item(item) for item in items],
     }
 
