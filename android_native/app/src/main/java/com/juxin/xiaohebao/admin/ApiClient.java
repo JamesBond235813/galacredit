@@ -3,6 +3,7 @@ package com.juxin.xiaohebao.admin;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -52,6 +53,10 @@ final class ApiClient {
         return request("GET", path, params, null);
     }
 
+    JSONArray getArray(String path, Map<String, String> params) throws Exception {
+        return requestArray("GET", path, params, null);
+    }
+
     JSONObject post(String path, JSONObject body) throws Exception {
         return request("POST", path, null, body == null ? new JSONObject() : body);
     }
@@ -61,6 +66,16 @@ final class ApiClient {
     }
 
     private JSONObject request(String method, String path, Map<String, String> params, JSONObject body) throws Exception {
+        String text = requestText(method, path, params, body);
+        return text.isEmpty() ? new JSONObject() : new JSONObject(text);
+    }
+
+    private JSONArray requestArray(String method, String path, Map<String, String> params, JSONObject body) throws Exception {
+        String text = requestText(method, path, params, body);
+        return text.isEmpty() ? new JSONArray() : new JSONArray(text);
+    }
+
+    private String requestText(String method, String path, Map<String, String> params, JSONObject body) throws Exception {
         URL url = new URL(API_BASE + path + query(params));
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod(method);
@@ -82,12 +97,12 @@ final class ApiClient {
 
         int code = conn.getResponseCode();
         String text = read(code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream());
-        JSONObject result = text.isEmpty() ? new JSONObject() : new JSONObject(text);
         if (code < 200 || code >= 300) {
+            JSONObject result = text.isEmpty() ? new JSONObject() : new JSONObject(text);
             String message = result.optString("msg", result.optString("detail", "请求失败：" + code));
             throw new ApiException(code, message);
         }
-        return result;
+        return text;
     }
 
     private static String query(Map<String, String> params) throws Exception {

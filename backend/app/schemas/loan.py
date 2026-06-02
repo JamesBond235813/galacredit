@@ -360,10 +360,17 @@ class RepaymentStatsResponse(BaseModel):
     received_amount: float
     due_today_user_count: int = 0
     due_today_amount: float = 0
+    due_today_actual_repayment_user_count: int = 0
+    due_today_actual_repayment_amount: float = 0
     today_actual_repayment_user_count: int = 0
     today_actual_repayment_amount: float = 0
+    overdue_order_count: int = 0
     overdue_user_count: int = 0
     overdue_amount: float = 0
+    pending_repayment_user_count: int = 0
+    pending_repayment_amount: float = 0
+    settled_user_count: int = 0
+    partial_repaid_unsettled_user_count: int = 0
     other_fee_amount: float = 0
     repayment_rate: float
     repeat_borrow_count: int

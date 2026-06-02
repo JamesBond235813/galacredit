@@ -1,0 +1,55 @@
+name: XiaoHeBaoIOS
+options:
+  bundleIdPrefix: com.juxin
+settings:
+  base:
+    SWIFT_VERSION: 5.10
+    IPHONEOS_DEPLOYMENT_TARGET: 18.0
+    TARGETED_DEVICE_FAMILY: 1
+    PRODUCT_NAME: XiaoHeBaoIOS
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+targets:
+  XiaoHeBaoIOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Sources
+    resources:
+      - path: Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.juxin.xiaohebao.ios
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: 小荷包
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.business
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_XHBApiBase: $(XHB_API_BASE)
+        INFOPLIST_KEY_XHBAppFlavor: $(XHB_APP_FLAVOR)
+    scheme:
+      testTargets:
+        - XiaoHeBaoIOSTests
+  XiaoHeBaoIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    hostApplication: XiaoHeBaoIOS
+    sources:
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_NAME: XiaoHeBaoIOSTests
+        PRODUCT_MODULE_NAME: XiaoHeBaoIOSTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.juxin.xiaohebao.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: XiaoHeBaoIOS

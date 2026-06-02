@@ -19,10 +19,10 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="fetchData">查询</el-button>
+          <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
-        <el-form-item label="还款日">
+        <el-form-item label="应还款快捷">
           <div class="quick-tag-row">
             <button
               v-for="item in duePresetOptions"
@@ -36,7 +36,21 @@
             </button>
           </div>
         </el-form-item>
-        <el-form-item label="还款时间">
+        <el-form-item label="应还款时间">
+          <el-date-picker
+            v-model="filters.dueDateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleDueDateSearch">查询</el-button>
+        </el-form-item>
+        <el-form-item label="实际还款时间">
           <el-date-picker
             v-model="filters.actualRepaymentRange"
             type="daterange"
@@ -46,6 +60,9 @@
             value-format="YYYY-MM-DD"
             clearable
           />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleActualRepaymentSearch">查询</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -107,13 +124,18 @@
             {{ formatCurrency(row.remaining_repayment_amount) }}
           </template>
         </el-table-column>
-        <el-table-column label="还款日" min-width="150">
+        <el-table-column label="应还款时间" min-width="150">
           <template #default="{ row }">
             <div v-if="row.due_date" class="date-cell">
               <div>{{ formatDate(row.due_date) }}</div>
               <div class="sub-text">{{ formatTime(row.due_date) }}</div>
             </div>
             <span v-else>--</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="实际还款时间" min-width="150">
+          <template #default="{ row }">
+            {{ formatDate(row.actual_repayment_date) }}
           </template>
         </el-table-column>
         <el-table-column label="账单进度" width="188">
@@ -182,7 +204,8 @@
           <el-descriptions :column="2" border>
             <el-descriptions-item label="客户">{{ currentRow.user_name || '--' }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ currentRow.user_phone || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="还款日">{{ formatDateTime(currentRow.due_date) }}</el-descriptions-item>
+            <el-descriptions-item label="应还款时间">{{ formatDateTime(currentRow.due_date) }}</el-descriptions-item>
+            <el-descriptions-item label="实际还款时间">{{ formatDate(currentRow.actual_repayment_date) }}</el-descriptions-item>
             <el-descriptions-item label="提醒次数">{{ currentRow.reminder_count || 0 }} 次</el-descriptions-item>
           </el-descriptions>
         </section>
@@ -425,20 +448,34 @@ const followEventTypes = [
 const filters = reactive({
   phone: '',
   dueDatePreset: 'ALL',
+  dueDateRange: [],
   actualRepaymentRange: [],
   page: 1,
   size: 10
 });
+const activeFilterScope = ref('due');
 
 const selectedDueOption = computed(() =>
   duePresetOptions.find((item) => item.value === filters.dueDatePreset) || duePresetOptions[2]
 );
+const activeSummaryLabel = computed(() => {
+  if (activeFilterScope.value === 'actualRepayment') {
+    return '实际还款时间区间';
+  }
+  if (activeFilterScope.value === 'dueRange') {
+    return '应还款时间区间';
+  }
+  if (activeFilterScope.value === 'keyword') {
+    return '当前搜索结果';
+  }
+  return `${selectedDueOption.value.label}时间区间`;
+});
 
 const summaryCards = computed(() => [
   {
     label: '应还订单',
     value: `${repaymentStats.value.receivable_order_count || 0} 单`,
-    tip: `${selectedDueOption.value.label}时间区间内的应还订单`
+    tip: `${activeSummaryLabel.value}内的应还订单`
   },
   {
     label: '应还客户',
@@ -463,13 +500,57 @@ const syncDuePresetFromRoute = () => {
   filters.page = 1;
 };
 
-const fetchSummaries = async () => {
-  const params = filters.dueDatePreset === 'ALL' ? {} : { due_date_preset: filters.dueDatePreset };
-  if (filters.actualRepaymentRange.length === 2) {
-    params.actual_repayment_start = filters.actualRepaymentRange[0];
-    params.actual_repayment_end = filters.actualRepaymentRange[1];
+const buildRepaymentFilterParams = (scope = activeFilterScope.value) => {
+  const params = {};
+  if (scope === 'keyword') {
+    params.phone = filters.phone || undefined;
+    return params;
   }
+  if (scope === 'actualRepayment') {
+    if (filters.actualRepaymentRange.length === 2) {
+      params.actual_repayment_start = filters.actualRepaymentRange[0];
+      params.actual_repayment_end = filters.actualRepaymentRange[1];
+    }
+    return params;
+  }
+  if (scope === 'dueRange') {
+    if (filters.dueDateRange.length === 2) {
+      params.due_date_start = filters.dueDateRange[0];
+      params.due_date_end = filters.dueDateRange[1];
+    }
+    return params;
+  }
+  if (filters.dueDatePreset !== 'ALL') {
+    params.due_date_preset = filters.dueDatePreset;
+  }
+  return params;
+};
+
+const fetchSummaries = async () => {
+  const params = buildRepaymentFilterParams();
+  delete params.phone;
   repaymentStats.value = await getRepaymentStats(params);
+};
+
+const ensureActualRepaymentRange = () => {
+  if (filters.actualRepaymentRange.length === 2) {
+    return true;
+  }
+  ElMessage.warning('请先选择实际还款时间区间');
+  return false;
+};
+
+const ensureDueDateRange = () => {
+  if (filters.dueDateRange.length === 2) {
+    return true;
+  }
+  ElMessage.warning('请先选择应还款时间区间');
+  return false;
+};
+
+const applyQueryScope = (scope) => {
+  activeFilterScope.value = scope;
+  filters.page = 1;
 };
 
 const loadReviewAssignees = async () => {
@@ -490,18 +571,10 @@ const fetchData = async () => {
     await fetchSummaries();
     const params = {
       scope: 'REPAYMENTS',
-      phone: filters.phone || undefined,
+      ...buildRepaymentFilterParams(),
       skip: (filters.page - 1) * filters.size,
       limit: filters.size
     };
-
-    if (filters.dueDatePreset !== 'ALL') {
-      params.due_date_preset = filters.dueDatePreset;
-    }
-    if (filters.actualRepaymentRange.length === 2) {
-      params.actual_repayment_start = filters.actualRepaymentRange[0];
-      params.actual_repayment_end = filters.actualRepaymentRange[1];
-    }
 
     const res = await getLoans(params);
     tableData.value = res.items || [];
@@ -512,11 +585,28 @@ const fetchData = async () => {
 };
 
 const handleSearch = () => {
-  filters.page = 1;
+  applyQueryScope('keyword');
+  fetchData();
+};
+
+const handleActualRepaymentSearch = () => {
+  if (!ensureActualRepaymentRange()) {
+    return;
+  }
+  applyQueryScope('actualRepayment');
+  fetchData();
+};
+
+const handleDueDateSearch = () => {
+  if (!ensureDueDateRange()) {
+    return;
+  }
+  applyQueryScope('dueRange');
   fetchData();
 };
 
 const applyDueFilter = (value) => {
+  activeFilterScope.value = 'due';
   filters.dueDatePreset = value;
   filters.page = 1;
   const query = value === 'ALL' ? {} : { due: value };
@@ -524,7 +614,9 @@ const applyDueFilter = (value) => {
 };
 
 const resetFilters = () => {
+  activeFilterScope.value = 'due';
   filters.phone = '';
+  filters.dueDateRange = [];
   filters.actualRepaymentRange = [];
   filters.page = 1;
   if (route.query.due) {

@@ -445,6 +445,8 @@ async def admin_stats_ws(websocket: WebSocket):
 @router.get("/repayment-stats", response_model=RepaymentStatsResponse)
 async def get_repayment_stats(
     due_date_preset: Optional[str] = Query(None, description="还款日快捷筛选"),
+    due_date_start: Optional[date] = Query(None, description="应还款开始日期"),
+    due_date_end: Optional[date] = Query(None, description="应还款结束日期"),
     actual_repayment_start: Optional[date] = Query(None, description="实际还款开始日期"),
     actual_repayment_end: Optional[date] = Query(None, description="实际还款结束日期"),
     db: AsyncSession = Depends(get_async_db),
@@ -452,6 +454,12 @@ async def get_repayment_stats(
 ):
     ensure_any_admin_page_permission(current_admin, REPAYMENT_STATS_PERMISSION_KEYS)
     filters = build_loan_scope_filters("REPAYMENTS")
+    if (
+        due_date_start is not None
+        and due_date_end is not None
+        and due_date_start > due_date_end
+    ):
+        raise HTTPException(status_code=400, detail="应还款开始日期不能晚于结束日期")
     if (
         actual_repayment_start is not None
         and actual_repayment_end is not None
@@ -469,6 +477,10 @@ async def get_repayment_stats(
             Loan.due_date >= day_start,
             Loan.due_date < day_end,
         ])
+    if due_date_start is not None:
+        filters.append(Loan.due_date >= datetime.combine(due_date_start, datetime.min.time()))
+    if due_date_end is not None:
+        filters.append(Loan.due_date < datetime.combine(due_date_end + timedelta(days=1), datetime.min.time()))
     if actual_repayment_start is not None:
         filters.append(Loan.actual_repayment_date >= actual_repayment_start)
     if actual_repayment_end is not None:
@@ -481,10 +493,20 @@ async def get_repayment_stats(
     due_today_loans = [
         loan
         for loan in loans
-        if loan.status == "DISBURSED" and loan.due_date and today_start <= loan.due_date < tomorrow
+        if loan.due_date and today_start <= loan.due_date < tomorrow
     ]
     due_today_user_count = len({loan.user_id for loan in due_today_loans})
     due_today_amount = round(sum(calculate_total_repayment_amount(loan) for loan in due_today_loans), 2)
+    due_today_actual_repayment_loans = [
+        loan
+        for loan in due_today_loans
+        if getattr(loan, "actual_repayment_date", None) == today_start.date()
+    ]
+    due_today_actual_repayment_user_count = len({loan.user_id for loan in due_today_actual_repayment_loans})
+    due_today_actual_repayment_amount = round(
+        sum(float(loan.repaid_amount or 0) for loan in due_today_actual_repayment_loans),
+        2,
+    )
     today_actual_repayment_loans = [
         loan
         for loan in loans
@@ -495,15 +517,53 @@ async def get_repayment_stats(
         sum(float(loan.repaid_amount or 0) for loan in today_actual_repayment_loans),
         2,
     )
+    # 回款页只统计尚未转入催收阶段的逾期订单；超过 14 天的订单由催收页承接。
+    overdue_filters = build_loan_scope_filters("REPAYMENTS") + [
+        Loan.status == "OVERDUE",
+        Loan.due_date.isnot(None),
+    ]
+    if due_date_start is not None:
+        overdue_filters.append(Loan.due_date >= datetime.combine(due_date_start, datetime.min.time()))
+    if due_date_end is not None:
+        overdue_filters.append(Loan.due_date < datetime.combine(due_date_end + timedelta(days=1), datetime.min.time()))
     overdue_loans = (
         await db.execute(
             select(Loan)
             .options(joinedload(Loan.installments))
-            .where(*build_loan_scope_filters("OVERDUE"))
+            .where(*overdue_filters)
         )
     ).unique().scalars().all()
+    overdue_order_count = len(overdue_loans)
     overdue_user_count = len({loan.user_id for loan in overdue_loans})
     overdue_amount = round(sum(calculate_remaining_repayment_amount(loan) for loan in overdue_loans), 2)
+
+    pending_repayment_loans = [
+        loan
+        for loan in loans
+        if (
+            loan.status == "DISBURSED"
+            and loan.due_date
+            and loan.due_date >= tomorrow
+            and calculate_remaining_repayment_amount(loan) > 0
+        )
+    ]
+    pending_repayment_user_count = len({loan.user_id for loan in pending_repayment_loans})
+    pending_repayment_amount = round(
+        sum(calculate_remaining_repayment_amount(loan) for loan in pending_repayment_loans),
+        2,
+    )
+    settled_loans = [loan for loan in loans if loan.status == "SETTLED"]
+    partial_repaid_unsettled_loans = [
+        loan
+        for loan in loans
+        if (
+            loan.status != "SETTLED"
+            and float(loan.repaid_amount or 0) > 0
+            and calculate_remaining_repayment_amount(loan) > 0
+        )
+    ]
+    settled_user_count = len({loan.user_id for loan in settled_loans})
+    partial_repaid_unsettled_user_count = len({loan.user_id for loan in partial_repaid_unsettled_loans})
 
     receivable_order_count = len(loans)
     receivable_user_count = len({loan.user_id for loan in loans})
@@ -553,10 +613,17 @@ async def get_repayment_stats(
         "received_amount": round(float(received_amount), 2),
         "due_today_user_count": int(due_today_user_count),
         "due_today_amount": round(float(due_today_amount), 2),
+        "due_today_actual_repayment_user_count": int(due_today_actual_repayment_user_count),
+        "due_today_actual_repayment_amount": round(float(due_today_actual_repayment_amount), 2),
         "today_actual_repayment_user_count": int(today_actual_repayment_user_count),
         "today_actual_repayment_amount": round(float(today_actual_repayment_amount), 2),
+        "overdue_order_count": int(overdue_order_count),
         "overdue_user_count": int(overdue_user_count),
         "overdue_amount": round(float(overdue_amount), 2),
+        "pending_repayment_user_count": int(pending_repayment_user_count),
+        "pending_repayment_amount": round(float(pending_repayment_amount), 2),
+        "settled_user_count": int(settled_user_count),
+        "partial_repaid_unsettled_user_count": int(partial_repaid_unsettled_user_count),
         "other_fee_amount": round(float(other_fee_amount), 2),
         "repayment_rate": round(float(repayment_rate), 2),
         "repeat_borrow_count": int(repeat_borrow_count),
@@ -598,6 +665,8 @@ async def get_loans(
     phone: Optional[str] = Query(None, description="手机号/姓名/身份证号"),
     scope: Optional[str] = Query(None, description="业务筛选"),
     due_date_preset: Optional[str] = Query(None, description="还款日快捷筛选"),
+    due_date_start: Optional[date] = Query(None, description="应还款开始日期"),
+    due_date_end: Optional[date] = Query(None, description="应还款结束日期"),
     actual_repayment_start: Optional[date] = Query(None, description="实际还款开始日期"),
     actual_repayment_end: Optional[date] = Query(None, description="实际还款结束日期"),
     review_admin_id: Optional[int] = Query(None, ge=1, description="审核员ID"),
@@ -628,6 +697,12 @@ async def get_loans(
         and overdue_min_days > overdue_max_days
     ):
         raise HTTPException(status_code=400, detail="最小逾期天数不能大于最大逾期天数")
+    if (
+        due_date_start is not None
+        and due_date_end is not None
+        and due_date_start > due_date_end
+    ):
+        raise HTTPException(status_code=400, detail="应还款开始日期不能晚于结束日期")
     if (
         actual_repayment_start is not None
         and actual_repayment_end is not None
@@ -715,6 +790,10 @@ async def get_loans(
             Loan.due_date >= day_start,
             Loan.due_date < day_end,
         )
+    if due_date_start is not None:
+        stmt = stmt.where(Loan.due_date >= datetime.combine(due_date_start, datetime.min.time()))
+    if due_date_end is not None:
+        stmt = stmt.where(Loan.due_date < datetime.combine(due_date_end + timedelta(days=1), datetime.min.time()))
     if actual_repayment_start is not None:
         stmt = stmt.where(Loan.actual_repayment_date >= actual_repayment_start)
     if actual_repayment_end is not None:

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app.schemas.user import UserDetailResponse
 from app.services import admin_service
 
 
@@ -164,6 +165,71 @@ def test_serialize_user_detail_should_include_first_deal_loan():
 
     assert payload["first_deal_loan"]["id"] == 2
     assert payload["first_deal_loan"]["status"] == "DISBURSED"
+
+
+def test_serialize_user_detail_should_normalize_empty_event_location_fields():
+    user = SimpleNamespace(
+        id=1,
+        phone="13812345678",
+        name="测试",
+        id_card_num="330301199901011234",
+        id_address=None,
+        id_expiry=None,
+        approved_limit=1000,
+        emergency_contact1_name=None,
+        emergency_contact1_relation=None,
+        emergency_contact1_phone=None,
+        emergency_contact2_name=None,
+        emergency_contact2_relation=None,
+        emergency_contact2_phone=None,
+        location_latitude=None,
+        location_longitude=None,
+        location_accuracy=None,
+        location_address=None,
+        location_province=None,
+        location_city=None,
+        location_district=None,
+        location_street=None,
+        location_source=None,
+        location_updated_at=None,
+        face_auth_status="PASS",
+        face_auth_at=None,
+        last_login_at=None,
+        ocr_submitted_at=None,
+        application_submitted_at=None,
+        source_channel=None,
+        channel_bound_at=None,
+        last_channel_visit_at=None,
+        created_at=datetime(2026, 1, 1),
+        loans=[],
+    )
+    event = SimpleNamespace(
+        id=1,
+        loan_id=None,
+        actor_type="USER",
+        operator_name=None,
+        event_type="LOCATION_REPARSE",
+        title="GPS解析",
+        detail=None,
+        ip=None,
+        ip_country=None,
+        ip_province=None,
+        ip_city=None,
+        ip_district=None,
+        ip_detail=None,
+        lon_lat=None,
+        lon_lat_province=None,
+        lon_lat_city=None,
+        lon_lat_district=None,
+        lon_lat_detail=None,
+        created_at=datetime(2026, 6, 1, 10, 32, 0),
+    )
+
+    payload = admin_service.serialize_user_detail(user, events=[event])
+    response = UserDetailResponse.model_validate(payload)
+
+    assert response.events[0].ip_detail == ""
+    assert response.events[0].lon_lat_detail == ""
 
 
 def test_apply_business_consultant_user_summary_status_should_set_first_borrow_for_only_consultant():

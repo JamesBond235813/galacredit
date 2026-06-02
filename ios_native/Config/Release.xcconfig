@@ -1,0 +1,2 @@
+XHB_API_BASE = https:/$()/xhbadmin.juxin.pro/api
+XHB_APP_FLAVOR = prod

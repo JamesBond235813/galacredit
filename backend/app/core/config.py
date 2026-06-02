@@ -129,6 +129,18 @@ class Settings(BaseSettings):
     IP138_API_URL: str = "https://api.ip138.com/ipdata/"
     LOGIN_DISTANCE_RISK_HOURS: int = 4
     LOGIN_DISTANCE_RISK_KM: float = 30.0
+    LOCATION_GEOCODE_PROVIDER: str = "nominatim"
+    LOCATION_GEOCODE_API_URL: str = ""
+    LOCATION_GEOCODE_APP_KEY: str = ""
+    LOCATION_GEOCODE_APP_SECRET: str = ""
+    LOCATION_GEOCODE_APP_CODE: str = ""
+    LOCATION_GEOCODE_TIMEOUT_SECONDS: int = 3
+    LOCATION_GEOCODE_HTTP_METHOD: str = "GET"
+    LOCATION_GEOCODE_LOCATION_PARAM: str = ""
+    LOCATION_GEOCODE_LAT_PARAM: str = "lat"
+    LOCATION_GEOCODE_LNG_PARAM: str = "lng"
+    LOCATION_GEOCODE_COORD_TYPE_PARAM: str = ""
+    LOCATION_GEOCODE_COORD_TYPE: str = ""
 
     LOG_DIR: str = "logs"
     LOG_APP_FILE: str = "app.log"

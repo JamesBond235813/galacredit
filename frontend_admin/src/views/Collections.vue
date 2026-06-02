@@ -22,6 +22,34 @@
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
+        <el-form-item label="应还款时间">
+          <el-date-picker
+            v-model="filters.dueDateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleDueDateSearch">查询</el-button>
+        </el-form-item>
+        <el-form-item label="实际还款时间">
+          <el-date-picker
+            v-model="filters.actualRepaymentRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleActualRepaymentSearch">查询</el-button>
+        </el-form-item>
         <el-form-item label="逾期天数">
           <div class="overdue-filter-box">
             <div class="range-row">
@@ -116,13 +144,18 @@
             {{ formatCurrency(row.penalty_amount) }}
           </template>
         </el-table-column>
-        <el-table-column label="还款日" min-width="150">
+        <el-table-column label="应还款时间" min-width="150">
           <template #default="{ row }">
             <div v-if="row.due_date" class="date-cell">
               <div>{{ formatDate(row.due_date) }}</div>
               <div class="sub-text">{{ formatTime(row.due_date) }}</div>
             </div>
             <span v-else>--</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="实际还款时间" min-width="150">
+          <template #default="{ row }">
+            {{ formatDate(row.actual_repayment_date) }}
           </template>
         </el-table-column>
         <el-table-column label="催收记录" min-width="138">
@@ -174,7 +207,8 @@
           <el-descriptions :column="2" border>
             <el-descriptions-item label="客户">{{ currentRow.user_name || '--' }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ currentRow.user_phone || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="还款日">{{ formatDateTime(currentRow.due_date) }}</el-descriptions-item>
+            <el-descriptions-item label="应还款时间">{{ formatDateTime(currentRow.due_date) }}</el-descriptions-item>
+            <el-descriptions-item label="实际还款时间">{{ formatDate(currentRow.actual_repayment_date) }}</el-descriptions-item>
             <el-descriptions-item label="逾期天数">{{ getOverdueDays(currentRow) }}</el-descriptions-item>
           </el-descriptions>
         </section>
@@ -436,6 +470,8 @@ const followEventTypes = [
 
 const filters = reactive({
   phone: '',
+  dueDateRange: [],
+  actualRepaymentRange: [],
   overdueMinDays: null,
   overdueMaxDays: null,
   page: 1,
@@ -526,6 +562,14 @@ const fetchData = async () => {
     if (filters.overdueMaxDays !== null) {
       params.overdue_max_days = Number(filters.overdueMaxDays);
     }
+    if (filters.dueDateRange.length === 2) {
+      params.due_date_start = filters.dueDateRange[0];
+      params.due_date_end = filters.dueDateRange[1];
+    }
+    if (filters.actualRepaymentRange.length === 2) {
+      params.actual_repayment_start = filters.actualRepaymentRange[0];
+      params.actual_repayment_end = filters.actualRepaymentRange[1];
+    }
 
     const res = await getLoans(params);
     tableData.value = res.items || [];
@@ -538,10 +582,44 @@ const fetchData = async () => {
 
 const resetFilters = () => {
   filters.phone = '';
+  filters.dueDateRange = [];
+  filters.actualRepaymentRange = [];
   filters.overdueMinDays = null;
   filters.overdueMaxDays = null;
   filters.page = 1;
   activeQuickDay.value = 'ALL';
+  fetchData();
+};
+
+const ensureDueDateRange = () => {
+  if (filters.dueDateRange.length === 2) {
+    return true;
+  }
+  ElMessage.warning('请先选择应还款时间区间');
+  return false;
+};
+
+const ensureActualRepaymentRange = () => {
+  if (filters.actualRepaymentRange.length === 2) {
+    return true;
+  }
+  ElMessage.warning('请先选择实际还款时间区间');
+  return false;
+};
+
+const handleDueDateSearch = () => {
+  if (!ensureDueDateRange()) {
+    return;
+  }
+  filters.page = 1;
+  fetchData();
+};
+
+const handleActualRepaymentSearch = () => {
+  if (!ensureActualRepaymentRange()) {
+    return;
+  }
+  filters.page = 1;
   fetchData();
 };
 

@@ -3,9 +3,14 @@ package com.juxin.xiaohebao.admin;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
+import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.SpannableString;
@@ -25,6 +30,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -33,8 +39,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.text.NumberFormat;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -46,7 +59,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService worker = Executors.newFixedThreadPool(4);
     private final Handler main = new Handler(Looper.getMainLooper());
     private ApiClient api;
     private JSONObject admin;
@@ -64,16 +77,255 @@ public class MainActivity extends Activity {
     private String repaymentStartDate = "";
     private String repaymentEndDate = "";
     private boolean detailOpen = false;
+    private File pendingUpdateApk;
+    private boolean updateDialogVisible = false;
+    private int promptedUpdateVersionCode = 0;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         api = new ApiClient(this);
+        continueStartup();
+        main.postDelayed(this::checkAppUpdate, 800);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingUpdateApk != null && canInstallDownloadedApk()) {
+            File apk = pendingUpdateApk;
+            pendingUpdateApk = null;
+            installApk(apk);
+        } else {
+            main.postDelayed(this::checkAppUpdate, 800);
+        }
+    }
+
+    private void continueStartup() {
         if (api.token().isEmpty()) {
             showLogin();
         } else {
             loadMe();
         }
+    }
+
+    private void checkAppUpdate() {
+        worker.execute(() -> {
+            try {
+                JSONObject update = fetchUpdateInfo();
+                int versionCode = update.optInt("versionCode", 0);
+                if (versionCode > currentVersionCode() && versionCode != promptedUpdateVersionCode && !updateDialogVisible) {
+                    promptedUpdateVersionCode = versionCode;
+                    main.post(() -> showUpdateDialog(update));
+                }
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private JSONObject fetchUpdateInfo() throws Exception {
+        URL url = new URL(AppConfig.ASSET_BASE + "/download/android-version.json?t=" + System.currentTimeMillis());
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(8000);
+        conn.setReadTimeout(8000);
+        conn.setRequestProperty("Accept", "application/json");
+        int code = conn.getResponseCode();
+        if (code < 200 || code >= 300) {
+            throw new IllegalStateException("版本检查失败");
+        }
+        return new JSONObject(readText(conn.getInputStream()));
+    }
+
+    private String readText(InputStream input) throws Exception {
+        StringBuilder builder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                builder.append(line);
+            }
+        }
+        return builder.toString();
+    }
+
+    private int currentVersionCode() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return versionCodeOf(info);
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private int versionCodeOf(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= 28) {
+            return (int) info.getLongVersionCode();
+        }
+        return info.versionCode;
+    }
+
+    private void showUpdateDialog(JSONObject update) {
+        boolean force = update.optBoolean("force", false);
+        String versionName = update.optString("versionName", "");
+        String notes = update.optString("notes", "发现新版小荷包管理端，请更新后继续使用。");
+        updateDialogVisible = true;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+            .setTitle(isBlank(versionName) ? "发现新版本" : "发现新版本 " + versionName)
+            .setMessage(notes)
+            .setPositiveButton("升级", (dialog, which) -> downloadAndInstall(update));
+        if (!force) {
+            builder.setNegativeButton("稍后", null);
+        }
+        AlertDialog dialog = builder.create();
+        dialog.setCancelable(!force);
+        dialog.setOnDismissListener(d -> updateDialogVisible = false);
+        dialog.show();
+    }
+
+    private void downloadAndInstall(JSONObject update) {
+        String apkUrl = update.optString("apkUrl", AppConfig.ASSET_BASE + "/download/xiaohebao.apk");
+        int expectedVersionCode = update.optInt("versionCode", 0);
+        String expectedSha256 = update.optString("sha256", "");
+        LinearLayout panel = dialogPanel();
+        TextView message = text("正在下载升级包，请保持网络连接稳定。", 13, Ui.MUTED, Typeface.NORMAL);
+        message.setSingleLine(false);
+        TextView percent = text("0%", 22, Ui.BLUE, Typeface.BOLD);
+        percent.setGravity(Gravity.CENTER);
+        ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100);
+        bar.setProgress(0);
+        panel.addView(message);
+        panel.addView(space(14));
+        panel.addView(bar, matchHeight(18));
+        panel.addView(space(10));
+        panel.addView(percent, matchWrap());
+        AlertDialog progress = buildGlassDialog("正在升级", panel);
+        progress.setCancelable(false);
+        progress.show();
+        worker.execute(() -> {
+            try {
+                File apk = downloadApk(apkUrl, expectedVersionCode, expectedSha256, bar, percent);
+                main.post(() -> {
+                    progress.dismiss();
+                    installApk(apk);
+                });
+            } catch (Exception error) {
+                main.post(() -> {
+                    progress.dismiss();
+                    toast(error.getMessage() == null ? "更新下载失败" : error.getMessage());
+                    if (!update.optBoolean("force", false)) continueStartup();
+                });
+            }
+        });
+    }
+
+    private File downloadApk(String apkUrl, int expectedVersionCode, String expectedSha256, ProgressBar progress, TextView percentText) throws Exception {
+        URL url = validateUpdateUrl(apkUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(30000);
+        int code = conn.getResponseCode();
+        if (code < 200 || code >= 300) {
+            throw new IllegalStateException("下载失败：" + code);
+        }
+        File dir = new File(getCacheDir(), "xhb-updates");
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new IllegalStateException("无法创建更新目录");
+        }
+        File apk = new File(dir, "xiaohebao-update-" + Math.max(expectedVersionCode, currentVersionCode() + 1) + ".apk");
+        int total = conn.getContentLength();
+        if (total <= 0) {
+            main.post(() -> {
+                progress.setIndeterminate(true);
+                percentText.setText("下载中");
+            });
+        }
+        byte[] buffer = new byte[8192];
+        int downloaded = 0;
+        try (InputStream input = conn.getInputStream(); FileOutputStream output = new FileOutputStream(apk)) {
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+                downloaded += read;
+                if (total > 0) {
+                    int percent = Math.min(100, Math.round(downloaded * 100f / total));
+                    main.post(() -> {
+                        progress.setProgress(percent);
+                        percentText.setText(percent + "%");
+                    });
+                }
+            }
+        }
+        validateDownloadedApk(apk, expectedVersionCode);
+        String actualSha256 = sha256(apk);
+        if (!isBlank(expectedSha256) && !expectedSha256.equalsIgnoreCase(actualSha256)) {
+            throw new IllegalStateException("升级包校验失败，请稍后重试");
+        }
+        main.post(() -> {
+            progress.setIndeterminate(false);
+            progress.setProgress(100);
+            percentText.setText("100%");
+        });
+        return apk;
+    }
+
+    private URL validateUpdateUrl(String apkUrl) throws Exception {
+        URL url = new URL(apkUrl);
+        URL assetBase = new URL(AppConfig.ASSET_BASE);
+        if (!"https".equalsIgnoreCase(url.getProtocol()) || !assetBase.getHost().equalsIgnoreCase(url.getHost())) {
+            throw new IllegalStateException("升级包来源不可信");
+        }
+        return url;
+    }
+
+    private void validateDownloadedApk(File apk, int expectedVersionCode) {
+        PackageInfo info = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+        if (info == null || !getPackageName().equals(info.packageName)) {
+            throw new IllegalStateException("升级包不是小荷包管理端");
+        }
+        int apkVersionCode = versionCodeOf(info);
+        if (expectedVersionCode > 0 && apkVersionCode != expectedVersionCode) {
+            throw new IllegalStateException("升级包版本与版本清单不一致");
+        }
+        if (apkVersionCode <= currentVersionCode()) {
+            throw new IllegalStateException("升级包版本未高于当前版本");
+        }
+    }
+
+    private String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[8192];
+        try (InputStream input = new java.io.FileInputStream(file)) {
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+        }
+        StringBuilder builder = new StringBuilder();
+        for (byte value : digest.digest()) {
+            builder.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        }
+        return builder.toString();
+    }
+
+    private void installApk(File apk) {
+        if (!canInstallDownloadedApk()) {
+            pendingUpdateApk = apk;
+            toast("请先允许小荷包安装应用更新");
+            Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+            settings.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(settings);
+            return;
+        }
+        Uri uri = Uri.parse("content://" + ApkInstallProvider.AUTHORITY + "/" + apk.getName());
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, "application/vnd.android.package-archive");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+    }
+
+    private boolean canInstallDownloadedApk() {
+        return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
     }
 
     private void showLogin() {
@@ -86,6 +338,7 @@ public class MainActivity extends Activity {
         root.setPadding(dp(22), dp(70), dp(22), dp(32));
         scroll.addView(root, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
+        main.postDelayed(this::checkAppUpdate, 600);
 
         ImageView logo = new ImageView(this);
         logo.setImageResource(getResources().getIdentifier("ic_launcher", "drawable", getPackageName()));
@@ -100,7 +353,7 @@ public class MainActivity extends Activity {
         title.setPadding(0, dp(12), 0, dp(6));
         root.addView(title, matchWrap());
 
-        TextView subtitle = text("Google Cloud 风格 · 移动审批", 13, Ui.MUTED, Typeface.NORMAL);
+        TextView subtitle = text("移动审批 · 运营管理", 13, Ui.MUTED, Typeface.NORMAL);
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setPadding(0, 0, 0, dp(24));
         root.addView(subtitle, matchWrap());
@@ -154,6 +407,7 @@ public class MainActivity extends Activity {
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackground(stripeBackground());
         setContentView(page);
+        main.postDelayed(this::checkAppUpdate, 600);
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -165,7 +419,7 @@ public class MainActivity extends Activity {
         titleBox.setOrientation(LinearLayout.VERTICAL);
         TextView brand = text("小荷包", 13, Ui.MUTED, 1);
         TextView title = text(tabTitle(activeTab), 28, Ui.TEXT, 1);
-        TextView subtitle = text("Google Cloud style workspace", 11, Ui.MUTED, Typeface.NORMAL);
+        TextView subtitle = text("运营管理工作台", 11, Ui.MUTED, Typeface.NORMAL);
         titleBox.addView(brand);
         titleBox.addView(title);
         titleBox.addView(subtitle);
@@ -222,7 +476,9 @@ public class MainActivity extends Activity {
         worker.execute(() -> {
             try {
                 JSONObject stats = api.get("/admin/stats", null);
-                JSONObject repayment = ("repayments".equals(activeTab) || "finance".equals(activeTab)) ? api.get("/admin/repayment-stats", null) : new JSONObject();
+                JSONObject repayment = ("repayments".equals(activeTab) || "finance".equals(activeTab))
+                    ? api.get("/admin/repayment-stats", repaymentStatsQuery())
+                    : new JSONObject();
                 statsCache = stats;
                 repaymentStatsCache = repayment;
                 main.post(() -> updateSummaryValues(leftValue, rightValue, leftTip, rightTip, stats, repayment));
@@ -253,13 +509,13 @@ public class MainActivity extends Activity {
 
     private String[] summaryLabels() {
         if ("applications".equals(activeTab)) return new String[]{"待审批", "今日申请", "需要核验资料", "当天提交"};
-        if ("cards".equals(activeTab)) return new String[]{"待发卡", "今日发卡额", "等待卡池匹配", "已发放面值"};
+        if ("cards".equals(activeTab)) return new String[]{"待发卡", "可用卡池", "等待发卡订单", "可用张数/金额"};
         if ("repayments".equals(activeTab)) {
-            if ("OVERDUE".equals(repaymentOverdueFilter)) return new String[]{"累计逾期人数", "累计逾期金额", "截止当前仍处于逾期", "截止当前未结清逾期金额"};
-            if ("NOT_OVERDUE".equals(repaymentOverdueFilter)) return new String[]{"今日到期客户", "今日到期金额", "实际还款人数", "实际还款金额"};
-            return new String[]{"今日到期", "逾期订单", "当日应跟进", "催收优先处理"};
+            if ("OVERDUE".equals(repaymentOverdueFilter)) return new String[]{"累计逾期人数", "累计逾期金额", "未转催收逾期客户", "未转催收逾期金额"};
+            if ("NOT_OVERDUE".equals(repaymentOverdueFilter)) return new String[]{"待回款人数", "待回总金额", "未到期且应回款非零", "未到期待回金额"};
+            return new String[]{"今日回款进度", "今日回款金额", "实际/应回款人数", "实际/应回款金额"};
         }
-        if ("finance".equals(activeTab)) return new String[]{"列表订单", "已收金额", "可财务处理", "财务累计确认"};
+        if ("finance".equals(activeTab)) return new String[]{"累计结清/部分结清订单", "已收金额", "用户数", "累计登记收款"};
         return new String[]{"总档案", "今日新增", "全部注册客户", "今天进入系统"};
     }
 
@@ -271,37 +527,57 @@ public class MainActivity extends Activity {
             rightTip.setText("当天提交");
         } else if ("cards".equals(activeTab)) {
             left.setText(String.valueOf(stats.optInt("withdrawing_loans", 0)));
-            right.setText(formatMoney(stats.optDouble("today_disbursed_amount", 0)));
-            leftTip.setText("等待卡池匹配");
-            rightTip.setText("已发放面值");
+            right.setText(String.valueOf(stats.optInt("ecard_pool_available_count", 0)));
+            leftTip.setText("等待发卡订单");
+            rightTip.setText("可用卡池金额 " + formatMoney(stats.optDouble("ecard_pool_available_amount", 0)));
         } else if ("repayments".equals(activeTab)) {
             if ("OVERDUE".equals(repaymentOverdueFilter)) {
                 left.setText(String.valueOf(repayment.optInt("overdue_user_count", 0)));
                 right.setText(formatMoney(repayment.optDouble("overdue_amount", 0)));
-                leftTip.setText("截止此时仍处于逾期");
-                rightTip.setText("截止此时未结清逾期金额");
+                leftTip.setText("未转催收逾期客户");
+                rightTip.setText("未转催收逾期金额");
             } else if ("NOT_OVERDUE".equals(repaymentOverdueFilter)) {
-                left.setText(String.valueOf(repayment.optInt("due_today_user_count", 0)));
-                right.setText(formatMoney(repayment.optDouble("due_today_amount", 0)));
-                leftTip.setText("实际还款人数 " + repayment.optInt("today_actual_repayment_user_count", 0));
-                rightTip.setText("实际还款金额 " + formatMoney(repayment.optDouble("today_actual_repayment_amount", 0)));
+                left.setText(String.valueOf(repayment.optInt("pending_repayment_user_count", 0)));
+                right.setText(formatMoney(repayment.optDouble("pending_repayment_amount", 0)));
+                leftTip.setText("未到期且应回款非零");
+                rightTip.setText("未到期待回金额");
             } else {
-                left.setText(String.valueOf(stats.optInt("due_today_loans", 0)));
-                right.setText(String.valueOf(stats.optInt("overdue_loans", 0)));
-                leftTip.setText("当日应跟进");
-                rightTip.setText("催收优先处理");
+                setDueTodayProgress(left, leftTip, repayment);
+                right.setText(dueTodayAmountProgressText(repayment));
+                rightTip.setText("实际/应回款金额");
             }
         } else if ("finance".equals(activeTab)) {
-            left.setText("--");
+            left.setText(repayment.optInt("settled_user_count", 0) + "/" + repayment.optInt("partial_repaid_unsettled_user_count", 0));
             right.setText(formatMoney(repayment.optDouble("received_amount", 0)));
-            leftTip.setText("可财务处理");
-            rightTip.setText("财务累计确认");
+            leftTip.setText("用户数");
+            rightTip.setText("其他费用 " + formatMoney(repayment.optDouble("other_fee_amount", 0)));
         } else {
             left.setText(String.valueOf(stats.optInt("total_users", 0)));
             right.setText(String.valueOf(stats.optInt("today_new_users", 0)));
             leftTip.setText("全部注册客户");
             rightTip.setText("今天进入系统");
         }
+    }
+
+    private void setDueTodayProgress(TextView value, TextView tip, JSONObject repayment) {
+        int dueTodayUsers = repayment.optInt("due_today_user_count", 0);
+        int paidDueTodayUsers = repayment.optInt(
+            "due_today_actual_repayment_user_count",
+            repayment.optInt("today_actual_repayment_user_count", 0)
+        );
+        value.setText(paidDueTodayUsers + "/" + dueTodayUsers);
+        tip.setText("实际/应回款人数");
+    }
+
+    private double dueTodayActualRepaymentAmount(JSONObject repayment) {
+        return repayment.optDouble(
+            "due_today_actual_repayment_amount",
+            repayment.optDouble("today_actual_repayment_amount", 0)
+        );
+    }
+
+    private String dueTodayAmountProgressText(JSONObject repayment) {
+        return formatMoney(dueTodayActualRepaymentAmount(repayment)) + "/" + formatMoney(repayment.optDouble("due_today_amount", 0));
     }
 
     private void addSearchControls(LinearLayout content) {
@@ -316,13 +592,15 @@ public class MainActivity extends Activity {
             addDateRangeSearch(content);
             addOverdueFilter(content, repaymentOverdueFilter, value -> {
                 repaymentOverdueFilter = value;
-                segmentScope = "OVERDUE".equals(value) ? "OVERDUE" : "REPAYMENTS";
+                segmentScope = "REPAYMENTS";
+                clearPageCache();
                 showWorkspace();
             });
         } else if ("finance".equals(activeTab)) {
             addKeywordSearch(content, "搜索手机号 / 姓名 / 身份证");
             addOverdueFilter(content, financeOverdueFilter, value -> {
                 financeOverdueFilter = value;
+                clearPageCache();
                 showWorkspace();
             });
         }
@@ -366,6 +644,7 @@ public class MainActivity extends Activity {
         query.setOnClickListener(v -> {
             repaymentStartDate = start.getText().toString().trim();
             repaymentEndDate = end.getText().toString().trim();
+            clearPageCache();
             showWorkspace();
         });
     }
@@ -432,10 +711,11 @@ public class MainActivity extends Activity {
             q.put("scope", scopeForTab(activeTab));
             if ("applications".equals(activeTab) && !"ALL".equals(applicationStatusFilter)) q.put("status", applicationStatusFilter);
             applyOverdueQuery(q);
+            applyDueDateQuery(q);
             if (!keyword.isEmpty()) q.put("phone", keyword);
             JSONObject result = api.get("/admin/loans", q);
             if ("applications".equals(activeTab)) enrichApplicationItems(result);
-            return "repayments".equals(activeTab) ? filterByRepaymentDate(result) : result;
+            return result;
         }, result -> {
             content.removeView(loading);
             listCache.put(cacheKey, result);
@@ -517,8 +797,10 @@ public class MainActivity extends Activity {
         card.addView(space(6));
         card.addView(sub);
         card.addView(grid);
-        card.addView(space(6));
-        card.addView(hint);
+        if (!isBlank(hint.getText().toString())) {
+            card.addView(space(6));
+            card.addView(hint);
+        }
         card.setOnClickListener(v -> openDetail(item));
     }
 
@@ -618,7 +900,7 @@ public class MainActivity extends Activity {
         nameRow.addView(text(displayName(item), 22, Ui.TEXT, Typeface.BOLD), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         addRiskTags(nameRow, user, true);
         titleBox.addView(nameRow);
-        titleBox.addView(text(subtitle(item), 13, Ui.MUTED, Typeface.NORMAL));
+        addDetailSubtitle(titleBox, item);
         header.addView(back, square(44));
         header.addView(titleBox, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         page.addView(header, matchWrap());
@@ -627,7 +909,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(16), 0, dp(16), dp(248));
+        content.setPadding(dp(16), 0, dp(16), dp(18));
         scroll.setClipToPadding(false);
         scroll.addView(content);
         page.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
@@ -640,6 +922,26 @@ public class MainActivity extends Activity {
         addInfoSection(content, "IP记录", ipRows(user));
         addInfoSection(content, "订单状态及审核批注", orderAuditRows(item));
         addActionDock(page, item);
+    }
+
+    private void addDetailSubtitle(LinearLayout titleBox, JSONObject item) {
+        if (!"applications".equals(activeTab)) {
+            titleBox.addView(text(subtitle(item), 13, Ui.MUTED, Typeface.NORMAL));
+            return;
+        }
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        TextView channel = text("渠道：" + channelText(item), 13, Ui.MUTED, Typeface.NORMAL);
+        TextView reviewer = text("审核员：" + reviewerName(item), 13, Ui.BLUE, Typeface.BOLD);
+        reviewer.setGravity(Gravity.CENTER);
+        reviewer.setPadding(dp(10), dp(4), dp(10), dp(4));
+        reviewer.setBackground(roundRect(Color.argb(130, 232, 240, 254), dp(999), Ui.BORDER));
+        if (hasAny("ADMIN")) {
+            reviewer.setOnClickListener(v -> showReviewerAssignDialog(item));
+        }
+        line.addView(channel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        line.addView(reviewer, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        titleBox.addView(line);
     }
 
     private void addInfoSection(LinearLayout content, String title, String[][] rows) {
@@ -743,31 +1045,33 @@ public class MainActivity extends Activity {
         card.setBackground(gcpCardDrawable());
         card.setElevation(dp(3));
 
-        LinearLayout titleRow = row();
-        titleRow.setGravity(Gravity.TOP);
-        LinearLayout titleBox = new LinearLayout(this);
-        titleBox.setOrientation(LinearLayout.VERTICAL);
-        titleBox.addView(text("小荷包风险报告", 16, Ui.TEXT, Typeface.BOLD));
-        TextView titleTip = text("数据化视图，适合移动端快速审核与复查。", 12, Ui.MUTED, Typeface.NORMAL);
-        titleTip.setPadding(0, dp(4), 0, 0);
-        titleBox.addView(titleTip);
-        titleRow.addView(titleBox, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        titleRow.addView(riskBadge(riskSummaryBadge(systemRisk, behaviorDetail, probeC), riskSummaryBadgeColor(systemRisk, behaviorDetail, probeC)));
-        card.addView(titleRow);
+        JSONObject latestOrder = payload.optJSONObject("latest_order");
+        if (latestOrder == null) latestOrder = new JSONObject();
 
-        card.addView(space(12));
-        LinearLayout metricRow = row();
-        metricRow.setGravity(Gravity.TOP);
-        LinearLayout scoreBox = riskMetricHighlightBox("申请准入分", riskMetricValue(applyDetail, "A22160001"), "近 1 个月准入画像");
-        metricRow.addView(scoreBox, new LinearLayout.LayoutParams(0, dp(144), 0.42f));
-        metricRow.addView(space(10));
-        LinearLayout metrics = new LinearLayout(this);
-        metrics.setOrientation(LinearLayout.VERTICAL);
-        metrics.addView(riskMetricLine("信用行为分", riskMetricValue(behaviorDetail, "B22170001")));
-        metrics.addView(riskMetricLine("探针结果", valueOr(probeC.optString("result_label", ""))));
-        metrics.addView(riskMetricLine("报告时间", dateTimeText(report.optString("query_time", payload.optString("query_time", "")))));
-        metricRow.addView(metrics, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.58f));
-        card.addView(metricRow);
+        LinearLayout firstRow = row();
+        firstRow.setGravity(Gravity.TOP);
+        firstRow.addView(riskMiniMetric("报告时间", dateTimeText(report.optString("query_time", payload.optString("query_time", "")))), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        firstRow.addView(space(8));
+        firstRow.addView(riskMiniMetric("报告评估结论", riskSummaryBadge(systemRisk, behaviorDetail, probeC)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(firstRow);
+
+        card.addView(space(10));
+        LinearLayout scoreRow = row();
+        scoreRow.setGravity(Gravity.TOP);
+        scoreRow.addView(riskScoreMetric("申请准入分", riskMetricValue(applyDetail, "A22160001")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        scoreRow.addView(space(8));
+        scoreRow.addView(riskScoreMetric("信用行为分", riskMetricValue(behaviorDetail, "B22170001")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(scoreRow);
+
+        card.addView(space(10));
+        LinearLayout serviceRow = row();
+        serviceRow.setGravity(Gravity.TOP);
+        serviceRow.addView(riskMiniMetric("最近放款", latestDisbursementText(latestOrder, behaviorDetail)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        serviceRow.addView(space(8));
+        serviceRow.addView(riskMiniMetric("探查结果", valueOr(probeC.optString("result_label", ""))), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        serviceRow.addView(space(8));
+        serviceRow.addView(riskMiniMetric("正常还款比例", riskMetricValue(behaviorDetail, "B22170034")), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(serviceRow);
 
         card.addView(space(12));
         card.addView(text("风险维度", 14, Ui.TEXT, Typeface.BOLD));
@@ -801,18 +1105,40 @@ public class MainActivity extends Activity {
         }
         card.addView(reasonsBox);
 
-        card.addView(space(12));
-        Button toggle = actionButton("展开完整报告");
-        LinearLayout detailArea = buildRiskDetailArea(payload, report, systemRisk, applyDetail, behaviorDetail, probeC, probeData);
-        detailArea.setVisibility(View.GONE);
-        toggle.setOnClickListener(v -> {
-            boolean expanding = detailArea.getVisibility() != View.VISIBLE;
-            detailArea.setVisibility(expanding ? View.VISIBLE : View.GONE);
-            toggle.setText(expanding ? "收起完整报告" : "展开完整报告");
-        });
-        card.addView(toggle, matchHeight(42));
-        card.addView(detailArea, matchWrap());
         return card;
+    }
+
+    private LinearLayout riskMiniMetric(String label, String value) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setBackground(roundRect(Color.rgb(249, 250, 252), dp(16), Ui.BORDER));
+        TextView labelView = text(label, 11, Ui.MUTED, Typeface.NORMAL);
+        TextView valueView = text(valueOr(value), 13, Ui.TEXT, Typeface.BOLD);
+        valueView.setPadding(0, dp(5), 0, 0);
+        valueView.setSingleLine(false);
+        box.addView(labelView);
+        box.addView(valueView);
+        return box;
+    }
+
+    private LinearLayout riskScoreMetric(String label, String value) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(14), dp(16), dp(14));
+        box.setBackground(roundRect(Color.rgb(236, 244, 255), dp(18), 0));
+        TextView labelView = text(label, 12, Ui.MUTED, Typeface.NORMAL);
+        TextView valueView = text(valueOr(value), 26, Ui.VIOLET, Typeface.BOLD);
+        valueView.setPadding(0, dp(6), 0, 0);
+        box.addView(labelView);
+        box.addView(valueView);
+        return box;
+    }
+
+    private String latestDisbursementText(JSONObject latestOrder, JSONObject behaviorDetail) {
+        String disbursedAt = latestOrder.optString("disbursed_at", "");
+        if (!isBlank(disbursedAt)) return dateTimeText(disbursedAt);
+        return riskMetricValue(behaviorDetail, "B22170054");
     }
 
     private LinearLayout riskMetricHighlightBox(String label, String value, String tip) {
@@ -1313,6 +1639,13 @@ public class MainActivity extends Activity {
         LinearLayout row = null;
         int index = 0;
         List<String[]> availableActions = actionsForCurrentTab(item);
+        if (availableActions.isEmpty()) {
+            TextView empty = text("当前状态暂无可执行操作", 13, Ui.MUTED, Typeface.NORMAL);
+            empty.setPadding(0, dp(8), 0, 0);
+            dock.addView(empty);
+            page.addView(dock, matchWrap());
+            return;
+        }
         for (String[] action : availableActions) {
             if (index % 2 == 0) {
                 row = row();
@@ -1402,7 +1735,7 @@ public class MainActivity extends Activity {
             return;
         }
         if ("unlock-location".equals(action)) {
-            showNoteActionDialog(action, item, "解除位置风控", "解除说明", "管理员确认解除位置风控", "note");
+            showNoteActionDialog(action, item, "解除位移风控", "解除说明", "管理员确认解除4小时位移风控", "note");
             return;
         }
         if ("ack".equals(action) || "settle".equals(action) || "refresh".equals(action) || "reissue-card".equals(action) || "close-reissue".equals(action)) {
@@ -1474,29 +1807,45 @@ public class MainActivity extends Activity {
 
     private void showExtendDialog(JSONObject item) {
         LinearLayout panel = dialogPanel();
-        EditText type = input("FREE 或 FEE");
+        final String[] extensionType = {"FREE"};
         EditText days = input("展期天数");
         EditText reduction = input("减免金额");
         EditText note = input("展期备注");
         days.setInputType(InputType.TYPE_CLASS_NUMBER);
         reduction.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         note.setMinLines(3);
-        type.setText("FREE");
         days.setText(defaultValue("extend", item));
         reduction.setText("0");
         note.setText("安卓端账单展期");
-        panel.addView(fieldBox("展期类型", type));
+        LinearLayout typeRow = row();
+        Button free = segment("免费展期", true);
+        Button fee = segment("付费展期", false);
+        typeRow.addView(free, new LinearLayout.LayoutParams(0, dp(44), 1));
+        typeRow.addView(space(8));
+        typeRow.addView(fee, new LinearLayout.LayoutParams(0, dp(44), 1));
+        free.setOnClickListener(v -> {
+            extensionType[0] = "FREE";
+            setSegmentActive(free, true);
+            setSegmentActive(fee, false);
+            note.setText("安卓端免费展期");
+        });
+        fee.setOnClickListener(v -> {
+            extensionType[0] = "FEE";
+            setSegmentActive(free, false);
+            setSegmentActive(fee, true);
+            note.setText("安卓端付费展期");
+        });
+        panel.addView(text("展期类型", 13, Ui.MUTED, Typeface.BOLD));
+        panel.addView(space(6));
+        panel.addView(typeRow, matchHeight(44));
+        panel.addView(space(12));
         panel.addView(fieldBox("展期天数", days));
         panel.addView(fieldBox("减免金额", reduction));
         panel.addView(fieldBox("备注", note));
         AlertDialog dialog = buildGlassDialog("账单展期", panel);
         panel.addView(dialogButtons("取消", "确认展期", dialog, () -> {
-            String extensionType = type.getText().toString().trim().toUpperCase(Locale.ROOT);
-            if (!"FREE".equals(extensionType) && !"FEE".equals(extensionType)) {
-                throw new IllegalArgumentException("展期类型只能填写 FREE 或 FEE");
-            }
             JSONObject body = new JSONObject();
-            body.put("extension_type", extensionType);
+            body.put("extension_type", extensionType[0]);
             body.put("days", (int) numberOr(days.getText().toString(), 3));
             body.put("reduction_amount", numberOr(reduction.getText().toString(), 0));
             body.put("note", note.getText().toString().trim());
@@ -1560,15 +1909,105 @@ public class MainActivity extends Activity {
         showNoteSubmitDialog("审批备注", "审批意见", item.optString("review_note", ""), body -> confirmAction("save-note", item, body));
     }
 
+    private void showReviewerAssignDialog(JSONObject item) {
+        run("加载审核员...", () -> {
+            Map<String, String> params = new LinkedHashMap<>();
+            params.put("stage", "review");
+            JSONArray assignees = api.getArray("/admin/loan-assignees", params);
+            JSONObject result = new JSONObject();
+            result.put("items", assignees);
+            return result;
+        }, result -> renderReviewerAssignDialog(item, result.optJSONArray("items")));
+    }
+
+    private void renderReviewerAssignDialog(JSONObject item, JSONArray assignees) {
+        LinearLayout panel = dialogPanel();
+        TextView tip = text("先选择审核员，再点击确定完成转单。", 13, Ui.MUTED, Typeface.NORMAL);
+        tip.setSingleLine(false);
+        panel.addView(tip);
+        panel.addView(space(8));
+        AlertDialog dialog = buildGlassDialog("选择审核员", panel);
+        if (assignees == null || assignees.length() == 0) {
+            panel.addView(text("暂无可分配审核员", 14, Ui.MUTED, Typeface.NORMAL));
+        } else {
+            final int[] selectedId = new int[]{item.optInt("review_admin_id", 0)};
+            final String[] selectedName = new String[]{item.optString("review_admin_name", "")};
+            List<Button> buttons = new ArrayList<>();
+            for (int i = 0; i < assignees.length(); i++) {
+                JSONObject assignee = assignees.optJSONObject(i);
+                if (assignee == null) continue;
+                int adminId = assignee.optInt("id", 0);
+                String username = assignee.optString("username", "");
+                Button row = actionButton((adminId == selectedId[0] ? "已选 · " : "") + valueOr(username));
+                LinearLayout.LayoutParams lp = matchHeight(44);
+                lp.setMargins(0, 0, 0, dp(8));
+                panel.addView(row, lp);
+                buttons.add(row);
+                row.setOnClickListener(v -> {
+                    selectedId[0] = adminId;
+                    selectedName[0] = username;
+                    for (int j = 0; j < buttons.size(); j++) {
+                        Button button = buttons.get(j);
+                        JSONObject target = assignees.optJSONObject(j);
+                        if (target == null) continue;
+                        boolean selected = target.optInt("id", 0) == selectedId[0];
+                        button.setText((selected ? "已选 · " : "") + valueOr(target.optString("username", "")));
+                    }
+                });
+            }
+            LinearLayout actions = row();
+            Button cancel = dangerButton("取消");
+            Button submit = primaryButton("确定");
+            actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(44), 1));
+            actions.addView(space(8));
+            actions.addView(submit, new LinearLayout.LayoutParams(0, dp(44), 1));
+            panel.addView(actions);
+            cancel.setOnClickListener(v -> dialog.dismiss());
+            submit.setOnClickListener(v -> assignReviewer(item, selectedId[0], selectedName[0], dialog));
+        }
+        dialog.show();
+    }
+
+    private void assignReviewer(JSONObject item, int adminId, String username, AlertDialog dialog) {
+        if (adminId <= 0) {
+            toast("审核员无效");
+            return;
+        }
+        JSONObject body = new JSONObject();
+        try {
+            body.put("stage", "review");
+            body.put("admin_id", adminId);
+        } catch (Exception ignored) {
+            toast("转单参数生成失败");
+            return;
+        }
+        int loanId = item.optInt("id", item.optInt("current_loan_id", 0));
+        run("转单中...", () -> api.post("/admin/loans/" + loanId + "/assign", body), result -> {
+            try {
+                item.put("review_admin_id", result.optInt("assignee_id", adminId));
+                item.put("review_admin_name", result.optString("assignee_name", username));
+            } catch (Exception ignored) {
+            }
+            clearPageCache();
+            dialog.dismiss();
+            toast("转单完成");
+            showDetail(item);
+        });
+    }
+
     private void showReconcileDialog(JSONObject item) {
         LinearLayout panel = dialogPanel();
         EditText received = input("登记收款");
         EditText reduction = input("减免金额");
         EditText otherFee = input("其他费用");
+        EditText actualDate = input("实际还款日期");
         EditText note = input("平账说明");
         received.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         reduction.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         otherFee.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        actualDate.setSingleLine(true);
+        actualDate.setText(defaultActualRepaymentDate(item));
+        bindDatePicker(actualDate);
         note.setMinLines(3);
         received.setText(String.valueOf(item.optDouble("remaining_repayment_amount", 0)));
         reduction.setText(String.valueOf(item.optDouble("reduction_amount", 0)));
@@ -1577,6 +2016,7 @@ public class MainActivity extends Activity {
         panel.addView(fieldBox("登记收款", received));
         panel.addView(fieldBox("减免金额", reduction));
         panel.addView(fieldBox("其他费用", otherFee));
+        panel.addView(fieldBox("实际还款日期", actualDate));
         panel.addView(fieldBox("备注", note));
 
         TextView receivedPreview = text("", 13, Ui.TEXT, Typeface.BOLD);
@@ -1619,11 +2059,29 @@ public class MainActivity extends Activity {
             body.put("received_amount", numberOr(received.getText().toString(), 0));
             body.put("reduction_amount", numberOr(reduction.getText().toString(), 0));
             body.put("other_fee_amount", numberOr(otherFee.getText().toString(), 0));
+            body.put("actual_repayment_date", actualDate.getText().toString().trim());
             body.put("note", note.getText().toString().trim().isEmpty() ? "安卓端登记平账" : note.getText().toString().trim());
             confirmAction("reconcile", item, body);
         }));
         dialog.setOnShowListener(d -> render.run());
         dialog.show();
+    }
+
+    private String defaultActualRepaymentDate(JSONObject item) {
+        String value = item.optString("actual_repayment_date", "");
+        if (!isBlank(value) && value.length() >= 10) return value.substring(0, 10);
+        return todayDateText();
+    }
+
+    private String todayDateText() {
+        Calendar calendar = Calendar.getInstance();
+        return String.format(
+            Locale.ROOT,
+            "%04d-%02d-%02d",
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH) + 1,
+            calendar.get(Calendar.DAY_OF_MONTH)
+        );
     }
 
     private void showNoteSubmitDialog(String title, String label, String initialValue, DialogSubmit submit) {
@@ -1744,6 +2202,19 @@ public class MainActivity extends Activity {
         run("处理中...", () -> {
             int loanId = item.optInt("id", item.optInt("current_loan_id"));
             int userId = item.optInt("user_id", item.optInt("owner_id", item.optInt("id")));
+            String status = actionStatus(item);
+            if ("disburse".equals(action) && !"WITHDRAWING".equals(status)) {
+                throw new IllegalArgumentException("当前订单状态不是待发卡，请刷新后再处理");
+            }
+            if ("reject-card".equals(action) && !"WITHDRAWING".equals(status)) {
+                throw new IllegalArgumentException("当前订单状态不是待发卡，不能拒绝发卡");
+            }
+            if ("reissue-card".equals(action) && !"CARD_REJECTED".equals(status)) {
+                throw new IllegalArgumentException("仅拒发卡订单支持二次发卡");
+            }
+            if ("close-reissue".equals(action) && !("WITHDRAWING".equals(status) || "CARD_REJECTED".equals(status))) {
+                throw new IllegalArgumentException("当前订单无需退回待下单");
+            }
             if ("approve".equals(action)) api.post("/admin/loans/" + loanId + "/review", body);
             else if ("reject".equals(action)) api.post("/admin/loans/" + loanId + "/review", body);
             else if ("disburse".equals(action)) api.post("/admin/loans/" + loanId + "/disburse", body);
@@ -1772,37 +2243,70 @@ public class MainActivity extends Activity {
 
     private List<String[]> actionsForCurrentTab(JSONObject item) {
         List<String[]> actions = new ArrayList<>();
+        String status = actionStatus(item);
         if ("profiles".equals(activeTab)) {
-            actions.add(new String[]{"refresh", "刷新档案"});
-            if (item.optBoolean("location_risk_blocked") && item.optBoolean("can_unlock_location_risk")) actions.add(new String[]{"unlock-location", "解除位置风控"});
-            actions.add(new String[]{item.optBoolean("blacklist_hit") ? "remove-blacklist" : "blacklist", item.optBoolean("blacklist_hit") ? "移出黑名单" : "一键拉黑"});
-            if (item.optInt("current_loan_id", 0) > 0) actions.add(new String[]{"reissue-card", "开启二次发卡"});
-            if (item.optInt("current_loan_id", 0) > 0) actions.add(new String[]{"close-reissue", "退回待下单"});
+            if (hasPermission("user-location-risk-unlock") && hasLoginDisplacementRisk(item)) actions.add(new String[]{"unlock-location", "解除位移风控"});
+            if (hasPermission("blacklist")) actions.add(blacklistAction(item));
+            if (hasPermission("disbursements") && item.optInt("current_loan_id", 0) > 0 && "CARD_REJECTED".equals(status)) actions.add(new String[]{"reissue-card", "开启二次发卡"});
+            if ((hasPermission("users") || hasPermission("disbursements")) && item.optInt("current_loan_id", 0) > 0 && ("WITHDRAWING".equals(status) || "CARD_REJECTED".equals(status))) actions.add(new String[]{"close-reissue", "退回待下单"});
         } else if ("applications".equals(activeTab)) {
-            actions.add(new String[]{"approve", "审批通过"});
-            actions.add(new String[]{"reject", "审批拒绝"});
-            actions.add(new String[]{"set-credit", "调整授信"});
-            actions.add(new String[]{"adjust-credit", "增加可用额度"});
-            actions.add(new String[]{"save-note", "审批备注"});
-            actions.add(new String[]{"blacklist", "一键拉黑"});
+            if (hasPermission("applications") && "REVIEWING".equals(status)) {
+                actions.add(new String[]{"approve", "审批通过"});
+                actions.add(new String[]{"reject", "审批拒绝"});
+                actions.add(new String[]{"set-credit", "调整授信"});
+                actions.add(new String[]{"adjust-credit", "增加可用额度"});
+            }
+            if (hasPermission("applications")) actions.add(new String[]{"save-note", "审批备注"});
+            if (hasPermission("blacklist")) actions.add(blacklistAction(item));
         } else if ("cards".equals(activeTab)) {
-            actions.add(new String[]{"disburse", "确认发卡"});
-            actions.add(new String[]{"reject-card", "拒绝发卡"});
-            actions.add(new String[]{"close-reissue", "退回待下单"});
-            actions.add(new String[]{"save-note", "保存备注"});
-            actions.add(new String[]{"blacklist", "一键拉黑"});
+            if (hasPermission("disbursements") && "WITHDRAWING".equals(status)) {
+                actions.add(new String[]{"disburse", "确认发卡"});
+                actions.add(new String[]{"reject-card", "拒绝发卡"});
+                actions.add(new String[]{"close-reissue", "退回待下单"});
+            }
+            if (hasPermission("disbursements")) actions.add(new String[]{"save-note", "保存备注"});
+            if (hasPermission("blacklist")) actions.add(blacklistAction(item));
         } else if ("repayments".equals(activeTab)) {
-            actions.add(new String[]{"OVERDUE".equals(segmentScope) ? "collect" : "remind", "OVERDUE".equals(segmentScope) ? "登记催收" : "登记提醒"});
-            actions.add(new String[]{"ack", "确认还款申请"});
-            actions.add(new String[]{"extend", "账单展期"});
-            actions.add(new String[]{"adjust-credit", "增加可用额度"});
-            actions.add(new String[]{"blacklist", "一键拉黑"});
+            if (hasPermission("collections") && "OVERDUE".equals(status)) {
+                actions.add(new String[]{"collect", "登记催收"});
+            } else if (hasPermission("repayments") && "DISBURSED".equals(status)) {
+                actions.add(new String[]{"remind", "登记提醒"});
+            }
+            if ((hasPermission("repayments") || hasPermission("collections")) && item.optInt("repay_attempt_count", 0) > 0) actions.add(new String[]{"ack", "确认还款申请"});
+            if ((hasPermission("repayments") || hasPermission("collections")) && ("DISBURSED".equals(status) || "OVERDUE".equals(status))) {
+                actions.add(new String[]{"extend", "账单展期"});
+            }
+            if (("OVERDUE".equals(status) ? hasPermission("collections") : hasPermission("applications")) && ("DISBURSED".equals(status) || "OVERDUE".equals(status))) actions.add(new String[]{"adjust-credit", "增加可用额度"});
+            if (hasPermission("blacklist")) actions.add(blacklistAction(item));
         } else {
-            actions.add(new String[]{"reconcile", "登记平账"});
-            actions.add(new String[]{"settle", "确认结清"});
-            actions.add(new String[]{"extend", "账单展期"});
+            if (hasPermission("financials") && ("DISBURSED".equals(status) || "OVERDUE".equals(status))) {
+                actions.add(new String[]{"reconcile", "登记平账"});
+                actions.add(new String[]{"settle", "确认结清"});
+            }
         }
         return actions;
+    }
+
+    private boolean hasLoginDisplacementRisk(JSONObject item) {
+        if (!item.optBoolean("location_risk_blocked")) return false;
+        String reason = item.optString("location_risk_reason", "");
+        return isBlank(reason)
+            || reason.contains("登录位置异常")
+            || reason.contains("小时内")
+            || reason.contains("公里");
+    }
+
+    private String[] blacklistAction(JSONObject item) {
+        boolean hit = item.optBoolean("blacklist_hit")
+            || item.optBoolean("user_blacklist_hit")
+            || item.optBoolean("current_blacklist_hit");
+        return new String[]{hit ? "remove-blacklist" : "blacklist", hit ? "移出黑名单" : "一键拉黑"};
+    }
+
+    private String actionStatus(JSONObject item) {
+        String status = item.optString("status", "");
+        if (isBlank(status)) status = item.optString("current_loan_status", "");
+        return status == null ? "" : status.toUpperCase(Locale.ROOT);
     }
 
     private void fillPayload(String action, String text, JSONObject item, JSONObject body) throws Exception {
@@ -1881,11 +2385,11 @@ public class MainActivity extends Activity {
 
     private List<String[]> visibleTabs() {
         List<String[]> tabs = new ArrayList<>();
-        if (hasAny("ADMIN", "REVIEW", "BUSINESS_CONSULTANT")) tabs.add(new String[]{"profiles", "档案"});
-        if (hasAny("ADMIN", "REVIEW")) tabs.add(new String[]{"applications", "申请"});
-        if (hasAny("ADMIN", "FINANCE")) tabs.add(new String[]{"cards", "发卡"});
-        if (hasAny("ADMIN", "REVIEW", "COLLECTION")) tabs.add(new String[]{"repayments", "回款"});
-        if (hasAny("ADMIN", "FINANCE")) tabs.add(new String[]{"finance", "平账"});
+        if (hasPermission("users")) tabs.add(new String[]{"profiles", "档案"});
+        if (hasPermission("applications")) tabs.add(new String[]{"applications", "申请"});
+        if (hasPermission("disbursements")) tabs.add(new String[]{"cards", "发卡"});
+        if (hasPermission("repayments") || hasPermission("collections")) tabs.add(new String[]{"repayments", "回款"});
+        if (hasPermission("financials")) tabs.add(new String[]{"finance", "平账"});
         if (tabs.isEmpty()) tabs.add(new String[]{"profiles", "档案"});
         boolean found = false;
         for (String[] tab : tabs) found = found || tab[0].equals(activeTab);
@@ -1900,6 +2404,24 @@ public class MainActivity extends Activity {
             String role = roles.optString(i);
             for (String value : values) if (value.equals(role)) return true;
         }
+        return false;
+    }
+
+    private boolean hasPermission(String permission) {
+        if (hasAny("ADMIN")) return true;
+        JSONArray permissions = admin == null ? null : admin.optJSONArray("permissions");
+        if (permissions != null) {
+            for (int i = 0; i < permissions.length(); i++) {
+                if (permission.equals(permissions.optString(i))) return true;
+            }
+            return false;
+        }
+        if ("users".equals(permission)) return hasAny("REVIEW", "BUSINESS_CONSULTANT");
+        if ("applications".equals(permission)) return hasAny("REVIEW");
+        if ("disbursements".equals(permission) || "financials".equals(permission)) return hasAny("FINANCE");
+        if ("repayments".equals(permission)) return hasAny("REVIEW");
+        if ("collections".equals(permission)) return hasAny("COLLECTION");
+        if ("blacklist".equals(permission)) return hasAny("REVIEW", "FINANCE", "COLLECTION");
         return false;
     }
 
@@ -1960,33 +2482,30 @@ public class MainActivity extends Activity {
         }
     }
 
-    private JSONObject filterByRepaymentDate(JSONObject result) throws Exception {
-        if (isBlank(repaymentStartDate) && isBlank(repaymentEndDate)) return result;
-        JSONArray items = result.optJSONArray("items");
-        if (items == null) return result;
-        JSONArray filtered = new JSONArray();
-        for (int i = 0; i < items.length(); i++) {
-            JSONObject item = items.optJSONObject(i);
-            if (item != null && inRepaymentDateRange(item)) filtered.put(item);
+    private void applyDueDateQuery(Map<String, String> q) {
+        if ("repayments".equals(activeTab)) {
+            if (!isBlank(repaymentStartDate)) q.put("due_date_start", repaymentStartDate);
+            if (!isBlank(repaymentEndDate)) q.put("due_date_end", repaymentEndDate);
         }
-        result.put("items", filtered);
-        result.put("total", filtered.length());
-        return result;
     }
 
-    private boolean inRepaymentDateRange(JSONObject item) {
-        String value = item.optString("due_date", "");
-        if (value.length() < 10) return false;
-        String day = value.substring(0, 10);
-        if (!isBlank(repaymentStartDate) && day.compareTo(repaymentStartDate) < 0) return false;
-        if (!isBlank(repaymentEndDate) && day.compareTo(repaymentEndDate) > 0) return false;
-        return true;
+    private Map<String, String> repaymentStatsQuery() {
+        Map<String, String> q = new LinkedHashMap<>();
+        if ("repayments".equals(activeTab)) {
+            if (!isBlank(repaymentStartDate)) q.put("due_date_start", repaymentStartDate);
+            if (!isBlank(repaymentEndDate)) q.put("due_date_end", repaymentEndDate);
+        }
+        return q.isEmpty() ? null : q;
+    }
+
+    private boolean hasRepaymentDateRange() {
+        return !isBlank(repaymentStartDate) || !isBlank(repaymentEndDate);
     }
 
     private String scopeForTab(String tab) {
         if ("applications".equals(tab)) return "REVIEWING";
         if ("cards".equals(tab)) return "WITHDRAWING";
-        if ("repayments".equals(tab)) return segmentScope;
+        if ("repayments".equals(tab)) return "REPAYMENTS";
         if ("finance".equals(tab)) return "FINANCE";
         return "";
     }
@@ -2073,6 +2592,10 @@ public class MainActivity extends Activity {
         return valueOr(phone) + " · " + (channel.isEmpty() ? "自然流量" : channel);
     }
 
+    private String reviewerName(JSONObject item) {
+        return valueOr(item.optString("review_admin_name", ""));
+    }
+
     private String rawUserPhone(JSONObject item) {
         String phone = "profiles".equals(activeTab) ? item.optString("phone", "") : item.optString("user_phone", "");
         return valueOr(phone);
@@ -2134,10 +2657,10 @@ public class MainActivity extends Activity {
         JSONObject event = latestGpsEvent(item);
         if (event != null) {
             StringBuilder builder = new StringBuilder();
-            appendPart(builder, event.optString("lon_lat_province", ""));
-            appendPart(builder, event.optString("lon_lat_city", ""));
-            appendPart(builder, event.optString("lon_lat_district", ""));
-            appendPart(builder, event.optString("lon_lat_detail", ""));
+            appendAddressPart(builder, event.optString("lon_lat_province", ""));
+            appendAddressPart(builder, event.optString("lon_lat_city", ""));
+            appendAddressPart(builder, event.optString("lon_lat_district", ""));
+            appendAddressPart(builder, event.optString("lon_lat_detail", ""));
             return builder.toString();
         }
         String location = locationText(detailUser(item));
@@ -2182,7 +2705,7 @@ public class MainActivity extends Activity {
         String note = item.optString("product_name", "");
         if (note.isEmpty()) note = item.optString("review_note", "");
         if (note.isEmpty()) note = item.optString("collection_note", "");
-        return note.isEmpty() ? "点击查看处理动作" : note;
+        return note;
     }
 
     private double amount(JSONObject item) {
@@ -2332,11 +2855,11 @@ public class MainActivity extends Activity {
 
     private String locationText(JSONObject user) {
         StringBuilder builder = new StringBuilder();
-        appendPart(builder, user.optString("location_province", ""));
-        appendPart(builder, user.optString("location_city", ""));
-        appendPart(builder, user.optString("location_district", ""));
-        appendPart(builder, user.optString("location_street", ""));
-        appendPart(builder, user.optString("location_address", ""));
+        appendAddressPart(builder, user.optString("location_province", ""));
+        appendAddressPart(builder, user.optString("location_city", ""));
+        appendAddressPart(builder, user.optString("location_district", ""));
+        appendAddressPart(builder, user.optString("location_street", ""));
+        appendAddressPart(builder, user.optString("location_address", ""));
         return builder.length() == 0 ? "--" : builder.toString();
     }
 
@@ -2349,18 +2872,47 @@ public class MainActivity extends Activity {
 
     private String auditAddressText(JSONObject item) {
         StringBuilder builder = new StringBuilder();
-        appendPart(builder, item.optString("country", ""));
-        appendPart(builder, item.optString("province", ""));
-        appendPart(builder, item.optString("city", ""));
-        appendPart(builder, item.optString("district", ""));
-        appendPart(builder, item.optString("address", ""));
+        appendSlashPart(builder, item.optString("country", ""));
+        appendSlashPart(builder, item.optString("province", ""));
+        appendSlashPart(builder, item.optString("city", ""));
+        appendSlashPart(builder, item.optString("district", ""));
         return builder.length() == 0 ? "--" : builder.toString();
+    }
+
+    private static void appendSlashPart(StringBuilder builder, String value) {
+        if (isBlank(value) || "null".equalsIgnoreCase(value)) return;
+        String normalized = value.trim().replace("中国", "中国/").replace("广东", "广东/").replace("深圳", "深圳/");
+        String[] parts = normalized.split("[/\\s]+");
+        for (String part : parts) {
+            if (isBlank(part) || "null".equalsIgnoreCase(part)) continue;
+            if (builder.indexOf(part) >= 0) continue;
+            if (builder.length() > 0) builder.append("/");
+            builder.append(part);
+        }
     }
 
     private static void appendPart(StringBuilder builder, String value) {
         if (isBlank(value) || "null".equalsIgnoreCase(value)) return;
         if (builder.indexOf(value) >= 0) return;
         builder.append(value);
+    }
+
+    private static void appendAddressPart(StringBuilder builder, String value) {
+        if (isBlank(value) || "null".equalsIgnoreCase(value)) return;
+        String text = value.trim();
+        if (builder.length() == 0) {
+            builder.append(text);
+            return;
+        }
+        String current = builder.toString();
+        if (current.contains(text)) return;
+        // GPS 解析地址常把“省市区”完整带回；前面已拼过行政区划时只补后续详细地址。
+        if (text.startsWith(current)) {
+            builder.append(text.substring(current.length()));
+            return;
+        }
+        if (current.startsWith(text)) return;
+        builder.append(text);
     }
 
     private String dateTimeText(String value) {
@@ -2399,7 +2951,7 @@ public class MainActivity extends Activity {
         map.put("reject-card", "拒绝发卡"); map.put("save-note", "保存备注"); map.put("remind", "登记提醒");
         map.put("collect", "登记催收"); map.put("reconcile", "登记平账"); map.put("extend", "账单展期");
         map.put("adjust-credit", "增加可用额度"); map.put("set-credit", "调整授信"); map.put("blacklist", "一键拉黑");
-        map.put("remove-blacklist", "移出黑名单"); map.put("unlock-location", "解除位置风控");
+        map.put("remove-blacklist", "移出黑名单"); map.put("unlock-location", "解除位移风控");
         return map.containsKey(action) ? map.get(action) : "业务处理";
     }
 
@@ -2511,11 +3063,15 @@ public class MainActivity extends Activity {
     private Button segment(String text, boolean active) {
         Button button = new Button(this);
         button.setText(text);
-        button.setTextColor(active ? Ui.BLUE : Ui.SLATE);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setAllCaps(false);
-        button.setBackground(active ? roundRect(Color.rgb(232, 240, 254), dp(18), Ui.BORDER) : roundRect(Color.WHITE, dp(18), Ui.BORDER));
+        setSegmentActive(button, active);
         return button;
+    }
+
+    private void setSegmentActive(Button button, boolean active) {
+        button.setTextColor(active ? Ui.BLUE : Ui.SLATE);
+        button.setBackground(active ? roundRect(Color.rgb(232, 240, 254), dp(18), Ui.BORDER) : roundRect(Color.WHITE, dp(18), Ui.BORDER));
     }
 
     private LinearLayout row() {
