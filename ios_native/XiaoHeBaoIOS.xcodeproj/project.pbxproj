@@ -51,7 +51,7 @@
 		61011D5808EFFB3515ABDC12 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		66D40E8E6362D799EB8F1082 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		675CE8FCD4BC9E67A811BCA2 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
-		726EF1EB57BAE44183D75FE0 /* XiaoHeBaoIOSTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = XiaoHeBaoIOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		726EF1EB57BAE44183D75FE0 /* XiaoHeBaoIOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XiaoHeBaoIOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1CCF93AE48697784D4D4849 /* XiaoHeBaoIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiaoHeBaoIOSApp.swift; sourceTree = "<group>"; };
 		A6D637807A1119F9628C2A7B /* WorkspaceLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLogic.swift; sourceTree = "<group>"; };
 		B2A68A9741F54E23A3D3D9A1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -59,7 +59,7 @@
 		DD693431221239D9D5D7D3BF /* AppModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModels.swift; sourceTree = "<group>"; };
 		E07534251B205E4F82735B0A /* WorkspaceLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLogicTests.swift; sourceTree = "<group>"; };
 		E4FD42E435AEC63CCF2517A3 /* SummaryCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCards.swift; sourceTree = "<group>"; };
-		FD7C71271749B376CD57ABF2 /* XiaoHeBaoIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = XiaoHeBaoIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD7C71271749B376CD57ABF2 /* XiaoHeBaoIOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiaoHeBaoIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -70,6 +70,14 @@
 				726EF1EB57BAE44183D75FE0 /* XiaoHeBaoIOSTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2BE4F8C9A8EC4E9FA6CF8E36 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B2A68A9741F54E23A3D3D9A1 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		389E082E9A70104E33849366 /* Infrastructure */ = {
@@ -92,14 +100,6 @@
 				88933609BC70D82AA55E6AD7 /* Tests */,
 				0EE84EF24CB8E2BEB4A64B9C /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		2BE4F8C9A8EC4E9FA6CF8E36 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				B2A68A9741F54E23A3D3D9A1 /* Assets.xcassets */,
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 		43899B826D545F271A9F0010 /* Screens */ = {
@@ -248,7 +248,6 @@
 						ProvisioningStyle = Automatic;
 					};
 					DFBA38AEB83B732A6300E269 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -499,6 +498,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 6H5PYN5UP5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "小荷包";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
@@ -522,6 +522,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 6H5PYN5UP5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "小荷包";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
