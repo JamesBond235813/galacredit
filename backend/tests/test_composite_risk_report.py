@@ -1,13 +1,16 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from app.services import admin_service
+from app.schemas.risk import CompositeRiskReportResponse
 from app.services.composite_risk_report import (
     build_composite_risk_payload_async,
     get_cached_composite_report_async,
+    serialize_composite_risk_report,
+    _json_default,
     _probe_result_label,
 )
 from app.services.risk_report import _build_empty_risk_result_payload, _is_empty_risk_result_message
@@ -97,6 +100,50 @@ def test_empty_risk_result_should_be_saved_as_report_payload():
     assert payload["empty_result"] is True
     assert payload["data"] == {}
     assert payload["productNo"] == "JX1000021"
+
+
+def test_composite_response_should_accept_legacy_null_fields():
+    """历史综合报告存在空三要素或空时间时不应触发响应校验500。
+
+    :return: 无返回值
+    """
+    report = SimpleNamespace(
+        id=1,
+        user_id=164,
+        panorama_report_id=None,
+        probe_a_report_id=None,
+        probe_c_report_id=None,
+        name=None,
+        id_card=None,
+        phone=None,
+        report_json=None,
+        query_time=None,
+        created_at=None,
+        updated_at=None,
+    )
+
+    payload = serialize_composite_risk_report(report)
+    response = CompositeRiskReportResponse.model_validate(payload)
+
+    assert response.user_id == 164
+    assert response.name is None
+    assert response.query_time is None
+
+
+def test_composite_report_json_default_should_accept_date():
+    """综合报告包含日期字段时应能正常写入JSON。
+
+    :return: 无返回值
+    """
+    payload = {
+        "due_date": date(2026, 6, 4),
+        "created_at": datetime(2026, 6, 4, 14, 29, 25),
+    }
+
+    result = json.dumps(payload, ensure_ascii=False, default=_json_default)
+
+    assert '"due_date": "2026-06-04"' in result
+    assert '"created_at": "2026-06-04T14:29:25"' in result
 
 
 @pytest.mark.asyncio

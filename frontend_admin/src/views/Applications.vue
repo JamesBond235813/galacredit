@@ -6,9 +6,10 @@
           <el-input v-model="filters.phone" placeholder="手机号 / 姓名 / 身份证号" clearable @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="filters.status" style="width: 160px">
+          <el-select v-model="filters.status" style="width: 160px" @change="handleStatusFilterChange">
             <el-option label="全部" value="ALL" />
             <el-option label="审核中" value="REVIEWING" />
+            <el-option v-if="canReviewTakeover && !isSuperAdmin" label="可转入" value="TAKEOVER" />
             <el-option label="待下单" value="APPROVED" />
             <el-option label="未通过" value="REJECTED" />
           </el-select>
@@ -127,11 +128,22 @@
             {{ row.review_note || '--' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDrawer(row)">
-              {{ row.status === 'APPROVED' ? '额度调整' : '审批处理' }}
-            </el-button>
+            <div class="row-action-group">
+              <el-button
+                v-if="canTakeOverRow(row)"
+                link
+                type="warning"
+                :loading="takingOverLoanId === row.id"
+                @click="confirmTakeOverReviewOwner(row)"
+              >
+                转给我
+              </el-button>
+              <el-button link type="primary" @click="openDrawer(row)">
+                {{ row.status === 'APPROVED' ? '额度调整' : '审批处理' }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -275,6 +287,12 @@
               手动改派
             </el-button>
           </div>
+          <div v-else-if="canTakeOverCurrentReview" class="assignee-row">
+            <span class="assignee-current">当前审核员：{{ currentRow?.review_admin_name || '--' }}</span>
+            <el-button type="primary" plain :loading="assigningReviewer" @click="confirmTakeOverReviewOwner(currentRow)">
+              转给我
+            </el-button>
+          </div>
           <h3>授信审批</h3>
           <el-form label-width="84px" size="small" class="approval-form">
             <el-form-item label="审批结果">
@@ -412,7 +430,7 @@ import IdentityImagePanel from '../components/IdentityImagePanel.vue';
 import IpAuditDialog from '../components/IpAuditDialog.vue';
 import IpAuditTag from '../components/IpAuditTag.vue';
 import { adjustAvailableCredit, assignLoan, blacklistUser, getCompositeRiskReportByUser, getLoanAssignees, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, reviewLoan, setApprovedCreditLimit, updateLoan } from '../api';
-import { readStoredAdminProfile } from '../constants/adminPages';
+import { hasAdminPermission, readStoredAdminProfile } from '../constants/adminPages';
 import { buildApplicationsQueryParams } from '../utils/applicationsFilters';
 import { formatCurrency, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 
@@ -439,6 +457,7 @@ const historyLoan = ref(null);
 const historyBorrowerName = ref('');
 const assignLoading = ref(false);
 const assigningReviewer = ref(false);
+const takingOverLoanId = ref(null);
 const reviewAssigneeOptions = ref([]);
 const selectedReviewAdminId = ref(null);
 const ipAuditVisible = ref(false);
@@ -447,6 +466,8 @@ const ipAuditItems = ref([]);
 const adminProfile = ref(readStoredAdminProfile());
 const isSuperAdmin = computed(() => (adminProfile.value?.roles || []).includes('ADMIN'));
 const currentAdminUsername = computed(() => adminProfile.value?.username || '');
+const currentAdminId = computed(() => Number(adminProfile.value?.id || 0));
+const canReviewTakeover = computed(() => hasAdminPermission(adminProfile.value, 'loan-review-takeover'));
 
 const filters = reactive({
   phone: '',
@@ -483,6 +504,14 @@ const canSubmitReview = computed(() => {
   }
   return Boolean(reviewForm.credit_limit) && !currentRow.value?.user_blacklist_hit && hasCurrentRiskReportViewed.value;
 });
+const canTakeOverRow = (row) => (
+  !isSuperAdmin.value
+  && canReviewTakeover.value
+  && currentAdminId.value > 0
+  && row?.status === 'REVIEWING'
+  && Number(row?.review_admin_id || 0) !== currentAdminId.value
+);
+const canTakeOverCurrentReview = computed(() => canTakeOverRow(currentRow.value));
 const locationEvents = computed(() => (detail.value?.events || []).filter((item) => item.lon_lat));
 const remarkEventTypes = new Set([
   'ADMIN_REVIEW_NOTE',
@@ -531,7 +560,7 @@ const loadReviewAssignees = async () => {
 const fetchData = async () => {
   loading.value = true;
   try {
-    const res = await getLoans(buildApplicationsQueryParams(filters, isSuperAdmin.value));
+    const res = await getLoans(buildApplicationsQueryParams(filters, isSuperAdmin.value, canReviewTakeover.value));
     tableData.value = res.items || [];
     const checkedIds = tableData.value
       .filter(isFreshRiskReportCheckedByCurrentAdmin)
@@ -552,6 +581,13 @@ const resetFilters = () => {
   filters.relendFilter = 'ALL';
   filters.page = 1;
   fetchData();
+};
+
+const handleStatusFilterChange = () => {
+  if (filters.status === 'TAKEOVER') {
+    filters.reviewAdminId = '';
+  }
+  filters.page = 1;
 };
 
 const handlePageChange = (page) => {
@@ -616,6 +652,52 @@ const assignReviewOwner = async () => {
   } finally {
     assigningReviewer.value = false;
   }
+};
+
+const takeOverReviewOwner = async (row) => {
+  if (!row?.id || !currentAdminId.value) {
+    return;
+  }
+  takingOverLoanId.value = row.id;
+  assigningReviewer.value = true;
+  try {
+    const result = await assignLoan(row.id, {
+      stage: 'review',
+      admin_id: currentAdminId.value
+    });
+    row.review_admin_id = result.assignee_id;
+    row.review_admin_name = result.assignee_name;
+    if (currentRow.value?.id === row.id) {
+      currentRow.value.review_admin_id = result.assignee_id;
+      currentRow.value.review_admin_name = result.assignee_name;
+    }
+    ElMessage.success(`已转给 ${result.assignee_name}`);
+    await fetchData();
+  } finally {
+    takingOverLoanId.value = null;
+    assigningReviewer.value = false;
+  }
+};
+
+const confirmTakeOverReviewOwner = async (row) => {
+  if (!canTakeOverRow(row)) {
+    ElMessage.warning('当前申请不可转入');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认将 ${row.user_name || row.user_phone || '该客户'} 的申请转给当前账号处理？`,
+      '转给我',
+      {
+        type: 'warning',
+        confirmButtonText: '确认转入',
+        cancelButtonText: '取消'
+      }
+    );
+  } catch {
+    return;
+  }
+  await takeOverReviewOwner(row);
 };
 
 const openRiskReport = async (row) => {
@@ -865,6 +947,19 @@ onMounted(() => {
 
 .review-submit-tooltip-wrap {
   display: inline-flex;
+}
+
+.row-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.assignee-current {
+  color: #5f7188;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .amount-edit-row,

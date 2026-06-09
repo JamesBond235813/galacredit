@@ -10,6 +10,7 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "repayments", "label": "还款管理", "route": "/repayments"},
     {"key": "collections", "label": "催收管理", "route": "/collections"},
     {"key": "financials", "label": "财务平账", "route": "/financials"},
+    {"key": "risk-single-query", "label": "风控报告单查", "route": "/risk-single-query"},
     {"key": "blacklist", "label": "黑名单", "route": "/blacklist"},
     {"key": "overdue-config", "label": "逾期配置", "route": "/overdue-config"},
     {"key": "products", "label": "商品管理", "route": "/products"},
@@ -21,6 +22,7 @@ ADMIN_PAGE_OPTIONS = [
 
 ADMIN_ACTION_PERMISSION_OPTIONS = [
     {"key": "user-location-risk-unlock", "label": "解除位置风控", "route": None},
+    {"key": "loan-review-takeover", "label": "审核转入自己", "route": None},
 ]
 
 ALL_ADMIN_PERMISSION_KEYS = [
@@ -40,7 +42,7 @@ ALL_ADMIN_ROLE_KEYS = [item["key"] for item in ADMIN_ROLE_OPTIONS]
 
 ADMIN_ROLE_PERMISSION_MAP = {
     "ADMIN": list(ALL_ADMIN_PERMISSION_KEYS),
-    "REVIEW": ["users", "applications", "repayments", "blacklist"],
+    "REVIEW": ["users", "applications", "repayments", "risk-single-query", "blacklist", "loan-review-takeover"],
     "FINANCE": ["disbursements", "financials", "products", "ecard-pool", "blacklist"],
     "COLLECTION": ["collections", "blacklist"],
     "BUSINESS_CONSULTANT": ["users", "exclusive-links"],

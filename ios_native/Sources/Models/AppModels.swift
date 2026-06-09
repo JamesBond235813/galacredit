@@ -71,6 +71,7 @@ enum OverdueFilter: String, CaseIterable {
 
 enum ApplicationStatusFilter: String, CaseIterable {
     case reviewing = "REVIEWING"
+    case takeover = "TAKEOVER"
     case approved = "APPROVED"
     case rejected = "REJECTED"
     case all = "ALL"
@@ -79,6 +80,8 @@ enum ApplicationStatusFilter: String, CaseIterable {
         switch self {
         case .reviewing:
             return "审核中"
+        case .takeover:
+            return "可转入"
         case .approved:
             return "已通过"
         case .rejected:

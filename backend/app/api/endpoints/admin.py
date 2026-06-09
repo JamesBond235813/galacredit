@@ -74,7 +74,13 @@ from app.schemas.loan import (
     PaginatedLoanResponse,
     PurchaseContractResponse,
 )
-from app.schemas.risk import AdminRiskReportRequest, CompositeRiskReportResponse, RiskReportResponse
+from app.schemas.risk import (
+    AdminRiskReportRequest,
+    AdminRiskSingleReportRequest,
+    CompositeRiskReportResponse,
+    PaginatedRiskSingleReportHistoryResponse,
+    RiskReportResponse,
+)
 from app.schemas.user import PaginatedUserResponse, UserDetailResponse
 from app.services.audit import log_user_event_async
 from app.services.admin_permissions import (
@@ -138,7 +144,7 @@ from app.services.loan_ws_notify import notify_loan_snapshot_changed
 from app.services.purchase_contract import serialize_purchase_contract
 from app.services.upload_storage import build_upload_url, save_product_rights_image
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _query_single_risk_report, _get_single_risk_report_history, _get_single_risk_report_detail, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
 router = APIRouter()
 
 
@@ -674,6 +680,7 @@ async def get_loans(
     relend_min_count: Optional[int] = Query(None, ge=0, description="最小复购次数"),
     overdue_min_days: Optional[int] = Query(None, ge=1, description="最小逾期天数"),
     overdue_max_days: Optional[int] = Query(None, ge=1, description="最大逾期天数"),
+    takeover_pool: bool = Query(False, description="审核员查看可转入自己的审核中申请"),
     skip: int = 0,
     limit: int = 20,
     db: AsyncSession = Depends(get_async_db),
@@ -709,6 +716,20 @@ async def get_loans(
         and actual_repayment_start > actual_repayment_end
     ):
         raise HTTPException(status_code=400, detail="实际还款开始日期不能晚于结束日期")
+
+    roles = current_admin_roles(current_admin)
+    review_takeover_pool = False
+    if takeover_pool:
+        if (
+            "ADMIN" not in roles
+            and "REVIEW" in roles
+            and scope == "REVIEWING"
+            and status in (None, "ALL", "REVIEWING")
+            and admin_has_permission(current_admin, "loan-review-takeover")
+        ):
+            review_takeover_pool = True
+        else:
+            raise HTTPException(status_code=403, detail="无权查看可转入申请")
 
     if scope == "REVIEWING":
         expired_count = await expire_unused_approved_credits(db, now=datetime.now())
@@ -767,8 +788,10 @@ async def get_loans(
     scope_filters = build_loan_scope_filters(scope)
     if scope_filters:
         stmt = stmt.where(*scope_filters)
+    if review_takeover_pool:
+        # 审核转入池只开放审核中的申请，避免借此查看已通过/未通过或其他阶段订单。
+        stmt = stmt.where(Loan.status == "REVIEWING")
 
-    roles = current_admin_roles(current_admin)
     if "ADMIN" not in roles:
         if scope == "OVERDUE":
             if "COLLECTION" in roles:
@@ -776,7 +799,7 @@ async def get_loans(
             elif "REVIEW" in roles:
                 stmt = stmt.where(Loan.review_admin_id == current_admin.id)
         elif scope in {"REVIEWING", "REPAYMENTS"}:
-            if "REVIEW" in roles:
+            if "REVIEW" in roles and not review_takeover_pool:
                 stmt = stmt.where(Loan.review_admin_id == current_admin.id)
         elif "REVIEW" in roles:
             stmt = stmt.where(Loan.review_admin_id == current_admin.id)
@@ -1042,6 +1065,58 @@ async def get_composite_risk_report(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     return await _get_composite_risk_report(db, req, current_admin)
+
+
+@router.post("/risk/single-report", response_model=CompositeRiskReportResponse)
+async def query_single_risk_report(
+    req: AdminRiskSingleReportRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """单查小荷包风控报告。
+
+    :param req: 单查三要素
+    :param db: 异步数据库会话
+    :param current_admin: 当前后台用户
+    :return: 小荷包风险报告
+    """
+    return await _query_single_risk_report(db, req, current_admin)
+
+
+@router.get("/risk/single-reports", response_model=PaginatedRiskSingleReportHistoryResponse)
+async def get_single_risk_report_history(
+    keyword: Optional[str] = Query(None, description="姓名/手机号/身份证号"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """获取风控报告单查历史。
+
+    :param keyword: 客户三要素关键词
+    :param skip: 跳过条数
+    :param limit: 返回条数
+    :param db: 异步数据库会话
+    :param current_admin: 当前后台用户
+    :return: 分页历史清单
+    """
+    return await _get_single_risk_report_history(db, current_admin, keyword, skip, limit)
+
+
+@router.get("/risk/single-reports/{report_id}", response_model=CompositeRiskReportResponse)
+async def get_single_risk_report_detail(
+    report_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """打开历史风控报告。
+
+    :param report_id: 报告ID
+    :param db: 异步数据库会话
+    :param current_admin: 当前后台用户
+    :return: 小荷包风险报告
+    """
+    return await _get_single_risk_report_detail(db, current_admin, report_id)
 
 
 @router.get("/blacklist")

@@ -10,11 +10,7 @@ struct SummaryCardsView: View {
                     Text(card.title)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AppTheme.muted)
-                    Text(card.value)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+                    AdaptiveSummaryValueText(value: card.value)
                     Text(card.subtitle)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.muted)
@@ -25,5 +21,28 @@ struct SummaryCardsView: View {
                 .glassCard()
             }
         }
+    }
+}
+
+private struct AdaptiveSummaryValueText: View {
+    let value: String
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            valueText(size: 26)
+            valueText(size: 22)
+            valueText(size: 18)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func valueText(size: CGFloat) -> some View {
+        Text(value)
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .foregroundStyle(AppTheme.text)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.48)
+            .allowsTightening(true)
     }
 }

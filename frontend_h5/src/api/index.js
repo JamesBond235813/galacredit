@@ -27,4 +27,4 @@ export const sendOrderSmsCode = () => request.post('/loan/order-sms-code');
 export const withdraw = (data) => request.post('/loan/withdraw', data);
 export const getBill = () => request.get('/loan/bill');
 export const registerRepayAttempt = () => request.post('/loan/repay-attempt');
-export const getEcardSecret = (field) => request.get('/loan/ecard-secret', { params: { field } });
+export const getEcardSecret = (field, params = {}) => request.get('/loan/ecard-secret', { params: { field, ...params } });

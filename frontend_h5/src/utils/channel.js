@@ -1,5 +1,5 @@
 const CHANNEL_STORAGE_KEY = 'entry_channel';
-const INVITE_CODE_PATTERN = /^[a-z0-9]{16}$/;
+const INVITE_CODE_PATTERN = /^(?:[a-z0-9]{16}|[a-z0-9]{24})$/;
 
 export const isValidInviteCode = (value) => INVITE_CODE_PATTERN.test(String(value || '').trim());
 
@@ -8,7 +8,11 @@ export const saveEntryInviteCode = (inviteCode) => {
   if (!isValidInviteCode(code)) {
     return;
   }
-  localStorage.setItem(CHANNEL_STORAGE_KEY, JSON.stringify({ invite_code: code }));
+  try {
+    localStorage.setItem(CHANNEL_STORAGE_KEY, JSON.stringify({ invite_code: code }));
+  } catch (error) {
+    // 微信内置浏览器偶发存储异常时，不阻断渠道入口跳转登录。
+  }
 };
 
 export const getEntryInviteCode = () => {

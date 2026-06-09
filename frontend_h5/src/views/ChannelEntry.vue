@@ -11,20 +11,25 @@
 
 <script setup>
 import { onMounted, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { saveEntryInviteCode, isValidInviteCode } from '../utils/channel';
 
 const route = useRoute();
-const router = useRouter();
 const message = ref('正在识别专属链接，请稍候...');
 
-onMounted(async () => {
+const redirectToLogin = () => {
+  window.setTimeout(() => {
+    window.location.replace('/login');
+  }, 120);
+};
+
+onMounted(() => {
   const inviteCode = String(route.params.inviteCode || '').trim().toLowerCase();
   if (isValidInviteCode(inviteCode)) {
     saveEntryInviteCode(inviteCode);
     message.value = '已识别专属邀请码，正在跳转登录...';
   }
-  router.replace('/login');
+  redirectToLogin();
 });
 </script>
 

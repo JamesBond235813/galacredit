@@ -35,6 +35,12 @@ final class WorkspaceViewModel: ObservableObject {
         sessionStore.admin?.array("permissions").compactMap(\.stringValue) ?? []
     }
 
+    var applicationFilterOptions: [ApplicationStatusFilter] {
+        canUseReviewTakeoverPool
+            ? [.reviewing, .takeover, .approved, .rejected, .all]
+            : [.reviewing, .approved, .rejected, .all]
+    }
+
     var currentOverdueFilter: OverdueFilter {
         activeTab == .finance ? financeOverdueFilter : repaymentOverdueFilter
     }
@@ -69,6 +75,26 @@ final class WorkspaceViewModel: ObservableObject {
         await reloadAll()
     }
 
+    /// 切换申请状态筛选并刷新列表。
+    ///
+    /// :param filter: 申请状态筛选
+    /// :return: 无
+    func selectApplicationFilter(_ filter: ApplicationStatusFilter) async {
+        guard applicationFilter != filter else { return }
+        applicationFilter = filter
+        await reloadAll()
+    }
+
+    /// 切换回款逾期筛选并刷新列表。
+    ///
+    /// :param filter: 逾期筛选
+    /// :return: 无
+    func selectRepaymentOverdueFilter(_ filter: OverdueFilter) async {
+        guard repaymentOverdueFilter != filter else { return }
+        repaymentOverdueFilter = filter
+        await reloadAll()
+    }
+
     /// 刷新统计与列表。
     ///
     /// :param none: 无
@@ -98,6 +124,19 @@ final class WorkspaceViewModel: ObservableObject {
         activeTab == .repayments || activeTab == .finance
     }
 
+    private var canUseReviewTakeoverPool: Bool {
+        !adminRoles.contains("ADMIN")
+            && adminRoles.contains("REVIEW")
+            && hasPermission("loan-review-takeover")
+    }
+
+    private func hasPermission(_ permission: String) -> Bool {
+        if adminRoles.contains("ADMIN") { return true }
+        if !adminPermissions.isEmpty { return adminPermissions.contains(permission) }
+        if permission == "loan-review-takeover" { return adminRoles.contains("REVIEW") }
+        return false
+    }
+
     /// 根据当前筛选加载列表。
     ///
     /// :param token: Bearer token
@@ -117,7 +156,10 @@ final class WorkspaceViewModel: ObservableObject {
         if !scope.isEmpty {
             query.append(URLQueryItem(name: "scope", value: scope))
         }
-        if activeTab == .applications, applicationFilter != .all {
+        if activeTab == .applications, applicationFilter == .takeover {
+            query.append(URLQueryItem(name: "status", value: ApplicationStatusFilter.reviewing.rawValue))
+            query.append(URLQueryItem(name: "takeover_pool", value: "true"))
+        } else if activeTab == .applications, applicationFilter != .all {
             query.append(URLQueryItem(name: "status", value: applicationFilter.rawValue))
         }
         if activeTab == .repayments || activeTab == .finance {
@@ -175,20 +217,30 @@ final class WorkspaceViewModel: ObservableObject {
     /// :param token: Bearer token
     /// :return: 补齐后的订单行
     private func enrichApplicationItems(_ rows: [JSONMap], token: String) async throws -> [JSONMap] {
-        var enriched: [JSONMap] = []
-        for row in rows {
-            let userID = row.int("user_id", fallback: row.int("owner_id", fallback: 0))
-            guard userID > 0 else {
-                enriched.append(row)
-                continue
+        let apiClient = sessionStore.apiClient
+        var enriched = Array(repeating: JSONMap(), count: rows.count)
+        try await withThrowingTaskGroup(of: (Int, JSONMap).self) { group in
+            for (index, row) in rows.enumerated() {
+                group.addTask {
+                    let userID = row.int("user_id", fallback: row.int("owner_id", fallback: 0))
+                    guard userID > 0 else {
+                        return (index, row)
+                    }
+
+                    var next = row
+                    // 申请列表需要展示用户与 IP 审计信息，改为并发补全以避免逐条串行等待。
+                    async let detailRequest = apiClient.get(path: "/admin/users/\(userID)", token: token)
+                    async let ipAuditRequest = apiClient.get(path: "/admin/users/\(userID)/ip-audit", token: token)
+                    var detailWithAudit = try await detailRequest
+                    detailWithAudit["_ip_audit"] = .object(try await ipAuditRequest)
+                    next["_user_detail"] = .object(detailWithAudit)
+                    return (index, next)
+                }
             }
-            var next = row
-            let detail = try await sessionStore.apiClient.get(path: "/admin/users/\(userID)", token: token)
-            let ipAudit = try await sessionStore.apiClient.get(path: "/admin/users/\(userID)/ip-audit", token: token)
-            var detailWithAudit = detail
-            detailWithAudit["_ip_audit"] = .object(ipAudit)
-            next["_user_detail"] = .object(detailWithAudit)
-            enriched.append(next)
+
+            for try await (index, row) in group {
+                enriched[index] = row
+            }
         }
         return enriched
     }

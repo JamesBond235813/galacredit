@@ -51,27 +51,35 @@
               <span>发卡时间</span>
               <span>{{ disbursedAtText }}</span>
             </div>
-            <div class="meta-row meta-row-card" v-if="loan?.has_issued_ecard">
-              <span>京东E卡卡号</span>
-              <span class="meta-card-value">
-                {{ loan.ecard_account_masked || '--' }}
-                <button class="meta-copy-btn" type="button" :disabled="copyingField === 'account'" @click="copyEcardSecret('account')">
-                  复制
-                </button>
-              </span>
-            </div>
-            <div class="meta-row meta-row-card" v-if="loan?.has_issued_ecard">
-              <span>京东E卡卡密</span>
-              <span class="meta-card-value">
-                {{ loan.ecard_password_masked || '--' }}
-                <button class="meta-copy-btn" type="button" :disabled="copyingField === 'password'" @click="copyEcardSecret('password')">
-                  复制
-                </button>
-              </span>
-            </div>
-            <div class="meta-row" v-if="loan?.has_issued_ecard && loan?.ecard_expires_at">
-              <span>E卡有效期</span>
-              <span>{{ formatDate(loan.ecard_expires_at) }}</span>
+            <div v-if="loan?.has_issued_ecard" class="meta-ecard-list">
+              <div v-for="item in ecardItems" :key="item.key" class="meta-ecard-item">
+                <div class="meta-ecard-title">
+                  <span>{{ item.title }}</span>
+                  <strong v-if="item.faceValue">{{ Number(item.faceValue).toLocaleString('zh-CN') }}元</strong>
+                </div>
+                <div class="meta-row meta-row-card">
+                  <span>卡号</span>
+                  <span class="meta-card-value">
+                    {{ item.accountDisplay }}
+                    <button class="meta-copy-btn" type="button" :disabled="copyingKey === copyKey(item, 'account')" @click="copyEcardSecret('account', item)">
+                      复制
+                    </button>
+                  </span>
+                </div>
+                <div class="meta-row meta-row-card">
+                  <span>卡密</span>
+                  <span class="meta-card-value">
+                    {{ item.passwordDisplay }}
+                    <button class="meta-copy-btn" type="button" :disabled="copyingKey === copyKey(item, 'password')" @click="copyEcardSecret('password', item)">
+                      复制
+                    </button>
+                  </span>
+                </div>
+                <div class="meta-row" v-if="item.expiresAt">
+                  <span>有效期</span>
+                  <span>{{ formatDate(item.expiresAt) }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -110,11 +118,13 @@ import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
 import { getEcardSecret } from '../api';
 import { createLoanSnapshotSubscriber } from '../api/loanSocket';
+import { copyTextSafely } from '../utils/clipboard';
+import { buildEcardDisplayItems, buildEcardSecretParams } from '../utils/ecardDisplay';
 
 const router = useRouter();
 const loading = ref(true);
 const loan = ref(null);
-const copyingField = ref('');
+const copyingKey = ref('');
 let loanSnapshotSubscriber = null;
 
 const statusMap = {
@@ -223,6 +233,7 @@ const repaymentDates = computed(() => {
     };
   });
 });
+const ecardItems = computed(() => buildEcardDisplayItems(loan.value));
 
 const timeline = computed(() => {
   const status = loan.value?.status || 'INIT';
@@ -271,36 +282,27 @@ const applyLoanSnapshot = (snapshot) => {
   loading.value = false;
 };
 
-const copyText = async (value) => {
-  if (!value) {
-    return false;
-  }
-  if (navigator?.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return true;
-  }
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
-  return copied;
+const copyKey = (item, field) => `${field}-${item?.id ?? item?.index ?? 0}`;
+
+const showManualCopyValue = (field, value) => {
+  const label = field === 'account' ? '卡号' : '卡密';
+  window.prompt(`自动复制失败，请长按复制${label}`, value);
 };
 
-const copyEcardSecret = async (field) => {
-  copyingField.value = field;
+const copyEcardSecret = async (field, item = {}) => {
+  copyingKey.value = copyKey(item, field);
   try {
-    const res = await getEcardSecret(field);
-    const copied = await copyText(res.value || '');
-    showToast(copied ? '复制成功' : '复制失败，请手动复制');
+    const res = await getEcardSecret(field, buildEcardSecretParams(item));
+    const copied = await copyTextSafely(res.value || '');
+    if (copied) {
+      showToast('复制成功');
+    } else {
+      showManualCopyValue(field, res.value || '');
+    }
   } catch (error) {
     // handled by interceptor
   } finally {
-    copyingField.value = '';
+    copyingKey.value = '';
   }
 };
 
@@ -412,6 +414,36 @@ onBeforeUnmount(() => {
 
 .meta-row-card {
   align-items: flex-start;
+}
+
+.meta-ecard-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.meta-ecard-item {
+  padding: 10px;
+  border: 1px solid rgba(47, 126, 247, 0.12);
+  border-radius: 14px;
+  background: rgba(247, 250, 255, 0.78);
+}
+
+.meta-ecard-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.meta-ecard-title strong {
+  color: var(--app-primary-deep);
+  font-size: 12px;
 }
 
 .meta-card-value {

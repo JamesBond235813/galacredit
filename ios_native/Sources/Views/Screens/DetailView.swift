@@ -20,6 +20,7 @@ struct DetailView: View {
     @State private var selectedAction: AdminActionKind?
     @State private var selectedPhoto: PhotoPreviewItem?
     @State private var showReviewerAssign = false
+    @State private var isTakingOverReviewer = false
 
     var body: some View {
         NavigationStack {
@@ -166,6 +167,20 @@ struct DetailView: View {
                     badge(text: "审核员 \(reviewerName)", color: AppTheme.primary)
                 }
                 .buttonStyle(.plain)
+            } else if canTakeOverReviewer {
+                Button {
+                    Task { await takeOverReviewer() }
+                } label: {
+                    if isTakingOverReviewer {
+                        ProgressView()
+                            .tint(AppTheme.primary)
+                            .frame(height: 24)
+                    } else {
+                        badge(text: "审核员 \(reviewerName) · 转给我", color: AppTheme.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isTakingOverReviewer)
             } else {
                 badge(text: "审核员 \(reviewerName)", color: AppTheme.muted)
             }
@@ -182,6 +197,7 @@ struct DetailView: View {
                 photoBox(title: "身份证反面", url: userDetail.string("id_card_back_image_url"))
                 photoBox(title: "人脸照", url: userDetail.string("face_image_url"))
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -429,10 +445,14 @@ struct DetailView: View {
                         .stroke(AppTheme.stroke, lineWidth: 1)
                 )
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 112)
             .buttonStyle(.plain)
             Text(title)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(AppTheme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
         }
         .frame(maxWidth: .infinity)
     }
@@ -548,14 +568,58 @@ struct DetailView: View {
     }
 
     private var canAssignReviewer: Bool {
-        activeTab == .applications && hasPermission("applications")
+        activeTab == .applications && adminRoles.contains("ADMIN")
+    }
+
+    private var currentAdminID: Int {
+        sessionStore.admin?.int("id") ?? 0
+    }
+
+    private var canTakeOverReviewer: Bool {
+        activeTab == .applications
+            && !adminRoles.contains("ADMIN")
+            && hasPermission("loan-review-takeover")
+            && currentAdminID > 0
+            && latestLoan.string("status", fallback: item.string("status")) == "REVIEWING"
+            && latestLoan.int("review_admin_id", fallback: item.int("review_admin_id")) != currentAdminID
     }
 
     private func hasPermission(_ permission: String) -> Bool {
         if adminRoles.contains("ADMIN") { return true }
         if !adminPermissions.isEmpty { return adminPermissions.contains(permission) }
         if permission == "applications" { return adminRoles.contains("REVIEW") }
+        if permission == "loan-review-takeover" { return adminRoles.contains("REVIEW") }
         return false
+    }
+
+    /// 将审核中的申请转入当前审核员名下。
+    ///
+    /// :param none: 无
+    /// :return: 无
+    private func takeOverReviewer() async {
+        let loanID = latestLoan.int("id", fallback: item.int("id", fallback: item.int("current_loan_id")))
+        guard loanID > 0, currentAdminID > 0 else {
+            errorMessage = "订单或审核员信息缺失，无法转单"
+            return
+        }
+        isTakingOverReviewer = true
+        defer { isTakingOverReviewer = false }
+        do {
+            _ = try await sessionStore.apiClient.post(
+                path: "/admin/loans/\(loanID)/assign",
+                body: [
+                    "stage": .string("review"),
+                    "admin_id": .number(Double(currentAdminID))
+                ],
+                token: sessionStore.token
+            )
+            await loadDetail()
+            onCompleted()
+        } catch APIError.unauthorized {
+            sessionStore.logout()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     /// 拉取详情、IP 审计与风控报告。

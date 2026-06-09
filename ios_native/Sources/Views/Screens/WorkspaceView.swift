@@ -112,35 +112,34 @@ struct WorkspaceView: View {
     private var filterControls: some View {
         VStack(spacing: 12) {
             if viewModel.activeTab == .profiles {
-                SearchField(text: $viewModel.keyword, prompt: "搜索手机号、姓名、身份证")
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    SearchField(text: $viewModel.keyword, prompt: "搜索手机号、姓名、身份证")
+                        .frame(maxWidth: .infinity)
                     Button("查询") {
                         Task { await viewModel.reloadAll() }
                     }
-                    .buttonStyle(PrimaryButtonStyle())
+                    .buttonStyle(CompactQueryButtonStyle())
                     Button("清空") {
                         viewModel.keyword = ""
                         Task { await viewModel.reloadAll() }
                     }
-                    .buttonStyle(SecondaryButtonStyle())
+                    .buttonStyle(CompactSecondaryButtonStyle())
                 }
             }
             if viewModel.activeTab == .finance {
                 financeFilterControls
             }
             if viewModel.activeTab == .applications {
-                chipRow(values: ApplicationStatusFilter.allCases.map { ($0.rawValue, $0.title) }, current: viewModel.applicationFilter.rawValue) { selected in
+                fullWidthChipRow(values: viewModel.applicationFilterOptions.map { ($0.rawValue, $0.title) }, current: viewModel.applicationFilter.rawValue) { selected in
                     guard let next = ApplicationStatusFilter(rawValue: selected) else { return }
-                    viewModel.applicationFilter = next
-                    Task { await viewModel.reloadAll() }
+                    Task { await viewModel.selectApplicationFilter(next) }
                 }
             }
             if viewModel.activeTab == .repayments {
                 repaymentDateRangeControls
-                chipRow(values: OverdueFilter.allCases.map { ($0.rawValue, $0.title) }, current: viewModel.repaymentOverdueFilter.rawValue) { selected in
+                fullWidthChipRow(values: OverdueFilter.allCases.map { ($0.rawValue, $0.title) }, current: viewModel.repaymentOverdueFilter.rawValue) { selected in
                     guard let next = OverdueFilter(rawValue: selected) else { return }
-                    viewModel.repaymentOverdueFilter = next
-                    Task { await viewModel.reloadAll() }
+                    Task { await viewModel.selectRepaymentOverdueFilter(next) }
                 }
             }
             if viewModel.activeTab == .finance {
@@ -259,35 +258,35 @@ struct WorkspaceView: View {
     }
 
     private var tabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(viewModel.visibleTabs, id: \.self) { tab in
-                    let isActive = viewModel.activeTab == tab
-                    Button {
-                        Task { await viewModel.switchTab(tab) }
-                    } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: tab.iconName)
-                                .font(.system(size: 18, weight: .bold))
-                            Text(tab.title)
-                                .font(.system(size: 11, weight: .bold))
-                        }
-                        .foregroundStyle(isActive ? AppTheme.primary : AppTheme.muted)
-                        .frame(width: 68, height: 58)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(isActive ? Color.white.opacity(0.92) : Color.clear)
-                                .shadow(color: isActive ? Color.white.opacity(0.85) : Color.clear, radius: 8, x: -4, y: -4)
-                                .shadow(color: isActive ? AppTheme.primary.opacity(0.16) : Color.clear, radius: 14, x: 5, y: 7)
-                        )
+        HStack(spacing: 4) {
+            ForEach(viewModel.visibleTabs, id: \.self) { tab in
+                let isActive = viewModel.activeTab == tab
+                Button {
+                    Task { await viewModel.switchTab(tab) }
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: tab.iconName)
+                            .font(.system(size: 18, weight: .bold))
+                        Text(tab.title)
+                            .font(.system(size: 11, weight: .bold))
                     }
-                    .buttonStyle(.plain)
+                    .foregroundStyle(isActive ? AppTheme.primary : AppTheme.muted)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(isActive ? Color.white.opacity(0.92) : Color.clear)
+                            .shadow(color: isActive ? Color.white.opacity(0.85) : Color.clear, radius: 8, x: -4, y: -4)
+                            .shadow(color: isActive ? AppTheme.primary.opacity(0.16) : Color.clear, radius: 14, x: 5, y: 7)
+                    )
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 10)
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(Color.clear)
@@ -300,31 +299,18 @@ struct WorkspaceView: View {
                 )
                 .shadow(color: Color.white.opacity(0.75), radius: 14, x: -8, y: -8)
                 .shadow(color: Color.black.opacity(0.12), radius: 22, x: 0, y: 10)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
         )
         .compositingGroup()
     }
 
-    private func chipRow(values: [(String, String)], current: String, onSelect: @escaping (String) -> Void) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(values, id: \.0) { value, title in
-                    Button(title) {
-                        onSelect(value)
-                    }
-                    .buttonStyle(ChipButtonStyle(active: value == current))
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
     private func fullWidthChipRow(values: [(String, String)], current: String, onSelect: @escaping (String) -> Void) -> some View {
         HStack(spacing: 8) {
             ForEach(values, id: \.0) { value, title in
                 Button(title) {
+                    guard value != current else { return }
                     onSelect(value)
                 }
                 .buttonStyle(WideChipButtonStyle(active: value == current))
@@ -356,26 +342,6 @@ private enum RepaymentDatePickerTarget: String, Identifiable {
         case .end:
             return "选择结束日期"
         }
-    }
-}
-
-private struct ChipButtonStyle: ButtonStyle {
-    let active: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(active ? Color.white : AppTheme.text)
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(active ? AppTheme.primary : Color.white.opacity(0.72))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(active ? AppTheme.primary.opacity(0.25) : Color.white.opacity(0.82), lineWidth: 1)
-            )
     }
 }
 

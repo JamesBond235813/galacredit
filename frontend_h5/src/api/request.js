@@ -1,14 +1,8 @@
 import axios from 'axios';
 import { showToast } from 'vant';
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-if (!apiBaseUrl) {
-  throw new Error('Missing required env: VITE_API_BASE_URL');
-}
-const clientId = import.meta.env.VITE_CLIENT_ID;
-if (!clientId) {
-  throw new Error('Missing required env: VITE_CLIENT_ID');
-}
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+const clientId = import.meta.env.VITE_CLIENT_ID || 'h5-web';
 
 const request = axios.create({
   baseURL: apiBaseUrl,

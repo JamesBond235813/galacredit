@@ -1,5 +1,6 @@
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from sqlalchemy import select
@@ -156,6 +157,108 @@ async def get_or_create_composite_risk_report_async(
     db.add(report)
     await db.flush()
     return report
+
+
+async def get_or_create_standalone_composite_risk_report_async(
+    db: AsyncSession,
+    *,
+    name: str,
+    id_card: str,
+    phone: str,
+    user_id: Optional[int] = None,
+) -> RiskCompositeReport:
+    """获取或创建不依赖订单审批状态的单查风险报告。
+
+    :param db: 异步数据库会话
+    :param name: 姓名
+    :param id_card: 身份证号
+    :param phone: 手机号
+    :param user_id: 匹配到的用户ID
+    :return: 综合风险报告
+    """
+    cached_report = await get_cached_composite_report_async(db, name=name, id_card=id_card, require_probe_c=True)
+    if cached_report:
+        return cached_report
+
+    panorama_report = await get_or_create_risk_report_async(
+        db,
+        name=name,
+        id_card=id_card,
+        phone=phone,
+        user_id=user_id,
+    )
+    probe_c_report = await get_or_create_probe_c_report_async(
+        db,
+        name=name,
+        id_card=id_card,
+        phone=phone,
+        user_id=user_id,
+    )
+    user = _build_standalone_user(name=name, id_card=id_card, phone=phone, user_id=user_id)
+    payload = await build_composite_risk_payload_async(
+        db,
+        user=user,
+        panorama_report=panorama_report,
+        probe_c_report=probe_c_report,
+    )
+    now = datetime.now()
+    report = RiskCompositeReport(
+        user_id=user_id,
+        panorama_report_id=panorama_report.id,
+        probe_a_report_id=probe_c_report.id,
+        name=name,
+        id_card=id_card,
+        phone=phone,
+        report_json=json.dumps(payload, ensure_ascii=False, default=_json_default),
+        query_time=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(report)
+    await db.flush()
+    return report
+
+
+def _build_standalone_user(*, name: str, id_card: str, phone: str, user_id: Optional[int]) -> SimpleNamespace:
+    """构造单查报告使用的轻量用户对象。
+
+    :param name: 姓名
+    :param id_card: 身份证号
+    :param phone: 手机号
+    :param user_id: 匹配到的用户ID
+    :return: 轻量用户对象
+    """
+    now = datetime.now()
+    return SimpleNamespace(
+        id=user_id,
+        name=name,
+        phone=phone,
+        id_card_num=id_card,
+        id_address=None,
+        created_at=now,
+        real_name_status="STANDALONE",
+        face_auth_status="UNKNOWN",
+        ocr_submitted_at=None,
+        application_submitted_at=None,
+        last_login_at=None,
+        blacklist_hit=False,
+        blacklist_reason=None,
+        blacklist_checked_at=None,
+        risk_list_hit=False,
+        risk_list_source=None,
+        risk_list_reason=None,
+        risk_list_checked_at=None,
+        location_province=None,
+        location_city=None,
+        location_district=None,
+        location_street=None,
+        location_address=None,
+        location_risk_blocked=False,
+        location_risk_reason=None,
+        location_risk_at=None,
+        available_credit_limit=0,
+        overdue_credit_locked=False,
+    )
 
 
 async def _get_latest_loan_status_async(db: AsyncSession, *, user_id: int) -> Optional[str]:
@@ -428,7 +531,11 @@ def _dt(value: Any) -> Optional[str]:
     :param value: 时间对象
     :return: ISO时间字符串
     """
-    return value.isoformat(timespec="seconds") if hasattr(value, "isoformat") else None
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="seconds")
+    if isinstance(value, date):
+        return value.isoformat()
+    return None
 
 
 def _json_default(value: Any) -> str:
@@ -437,8 +544,10 @@ def _json_default(value: Any) -> str:
     :param value: 待转换对象
     :return: 可写入JSON的文本
     """
-    if hasattr(value, "isoformat"):
+    if isinstance(value, datetime):
         return value.isoformat(timespec="seconds")
+    if isinstance(value, date):
+        return value.isoformat()
     return str(value)
 
 

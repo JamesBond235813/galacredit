@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-set -eu pipefail
-current_dir=`pwd`
-target_dir="/Users/liwei/shared/projects/jhl/xiaohebao/frontend_h5"
-cd $target_dir
+set -euo pipefail
+cd "$(dirname "$0")/frontend_h5"
+
+# 构建并部署 H5 前端到腾讯云 (152.136.236.144)，nginx 站点 xhb.juxin.pro
 pnpm build
-rsync -avz --delete --progress ${target_dir}/dist qingren@152.136.236.144:/data/www/xhb.juxin.pro/
-cd $current_dir
+rsync -avzc --delete --progress ./dist/ tencent-superapi:/data/www/xhb.juxin.pro/dist/

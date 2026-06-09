@@ -43,7 +43,7 @@ const routes = [
     ]
   },
   {
-    path: '/:inviteCode([a-z0-9]{16})',
+    path: '/:inviteCode([a-z0-9]{16,24})',
     component: ChannelEntry,
     meta: { title: '专属入口', public: true }
   }

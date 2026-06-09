@@ -120,6 +120,7 @@ final class WorkspaceLogicTests: XCTestCase {
 
     func testApplicationFilterTitlesShouldUseFullAndroidLabels() {
         XCTAssertEqual(ApplicationStatusFilter.reviewing.title, "审核中")
+        XCTAssertEqual(ApplicationStatusFilter.takeover.title, "可转入")
         XCTAssertEqual(ApplicationStatusFilter.approved.title, "已通过")
         XCTAssertEqual(ApplicationStatusFilter.rejected.title, "未通过")
     }

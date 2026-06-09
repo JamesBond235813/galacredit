@@ -72,6 +72,7 @@ public class MainActivity extends Activity {
     private String segmentScope = "REPAYMENTS";
     private String keyword = "";
     private String applicationStatusFilter = "REVIEWING";
+    private boolean applicationTakeoverPool = false;
     private String repaymentOverdueFilter = "ALL";
     private String financeOverdueFilter = "ALL";
     private String repaymentStartDate = "";
@@ -584,8 +585,13 @@ public class MainActivity extends Activity {
         if ("profiles".equals(activeTab)) {
             addKeywordSearch(content, "搜索手机号 / 姓名 / 身份证");
         } else if ("applications".equals(activeTab)) {
-            addStatusFilter(content, new String[][]{{"ALL", "全部"}, {"REVIEWING", "审核中"}, {"APPROVED", "已通过"}, {"REJECTED", "未通过"}}, applicationStatusFilter, value -> {
-                applicationStatusFilter = value;
+            String[][] options = canUseReviewTakeoverPool()
+                ? new String[][]{{"ALL", "全部"}, {"REVIEWING", "审核中"}, {"TAKEOVER", "可转入"}, {"APPROVED", "已通过"}, {"REJECTED", "未通过"}}
+                : new String[][]{{"ALL", "全部"}, {"REVIEWING", "审核中"}, {"APPROVED", "已通过"}, {"REJECTED", "未通过"}};
+            addStatusFilter(content, options, applicationTakeoverPool ? "TAKEOVER" : applicationStatusFilter, value -> {
+                applicationTakeoverPool = "TAKEOVER".equals(value);
+                applicationStatusFilter = applicationTakeoverPool ? "REVIEWING" : value;
+                clearPageCache();
                 showWorkspace();
             });
         } else if ("repayments".equals(activeTab)) {
@@ -709,7 +715,14 @@ public class MainActivity extends Activity {
             }
             Map<String, String> q = baseQuery();
             q.put("scope", scopeForTab(activeTab));
-            if ("applications".equals(activeTab) && !"ALL".equals(applicationStatusFilter)) q.put("status", applicationStatusFilter);
+            if ("applications".equals(activeTab)) {
+                if (applicationTakeoverPool) {
+                    q.put("status", "REVIEWING");
+                    q.put("takeover_pool", "true");
+                } else if (!"ALL".equals(applicationStatusFilter)) {
+                    q.put("status", applicationStatusFilter);
+                }
+            }
             applyOverdueQuery(q);
             applyDueDateQuery(q);
             if (!keyword.isEmpty()) q.put("phone", keyword);
@@ -739,7 +752,7 @@ public class MainActivity extends Activity {
     }
 
     private String listCacheKey() {
-        return activeTab + "|" + keyword + "|" + applicationStatusFilter + "|" + repaymentOverdueFilter + "|" + financeOverdueFilter + "|" + repaymentStartDate + "|" + repaymentEndDate;
+        return activeTab + "|" + keyword + "|" + applicationStatusFilter + "|" + applicationTakeoverPool + "|" + repaymentOverdueFilter + "|" + financeOverdueFilter + "|" + repaymentStartDate + "|" + repaymentEndDate;
     }
 
     private void clearPageCache() {
@@ -938,6 +951,9 @@ public class MainActivity extends Activity {
         reviewer.setBackground(roundRect(Color.argb(130, 232, 240, 254), dp(999), Ui.BORDER));
         if (hasAny("ADMIN")) {
             reviewer.setOnClickListener(v -> showReviewerAssignDialog(item));
+        } else if (canTakeOverReview(item)) {
+            reviewer.setText("审核员：" + reviewerName(item) + " · 转给我");
+            reviewer.setOnClickListener(v -> takeOverReviewer(item));
         }
         line.addView(channel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         line.addView(reviewer, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -1714,6 +1730,10 @@ public class MainActivity extends Activity {
             showCreditSetDialog(item);
             return;
         }
+        if ("takeover-review".equals(action)) {
+            takeOverReviewer(item);
+            return;
+        }
         if ("reject-card".equals(action)) {
             showNoteActionDialog(action, item, "拒绝发卡", "拒绝原因", "卡池或订单信息不符合发卡要求", "note");
             return;
@@ -1989,10 +2009,18 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
             }
             clearPageCache();
-            dialog.dismiss();
+            if (dialog != null) dialog.dismiss();
             toast("转单完成");
             showDetail(item);
         });
+    }
+
+    private void takeOverReviewer(JSONObject item) {
+        if (!canTakeOverReview(item)) {
+            toast("当前申请不能转给自己");
+            return;
+        }
+        assignReviewer(item, currentAdminId(), admin == null ? "" : admin.optString("username", ""), null);
     }
 
     private void showReconcileDialog(JSONObject item) {
@@ -2250,6 +2278,7 @@ public class MainActivity extends Activity {
             if (hasPermission("disbursements") && item.optInt("current_loan_id", 0) > 0 && "CARD_REJECTED".equals(status)) actions.add(new String[]{"reissue-card", "开启二次发卡"});
             if ((hasPermission("users") || hasPermission("disbursements")) && item.optInt("current_loan_id", 0) > 0 && ("WITHDRAWING".equals(status) || "CARD_REJECTED".equals(status))) actions.add(new String[]{"close-reissue", "退回待下单"});
         } else if ("applications".equals(activeTab)) {
+            if (canTakeOverReview(item)) actions.add(new String[]{"takeover-review", "转给我"});
             if (hasPermission("applications") && "REVIEWING".equals(status)) {
                 actions.add(new String[]{"approve", "审批通过"});
                 actions.add(new String[]{"reject", "审批拒绝"});
@@ -2407,6 +2436,24 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private int currentAdminId() {
+        return admin == null ? 0 : admin.optInt("id", 0);
+    }
+
+    private boolean canUseReviewTakeoverPool() {
+        return !hasAny("ADMIN") && hasAny("REVIEW") && hasPermission("loan-review-takeover");
+    }
+
+    private boolean canTakeOverReview(JSONObject item) {
+        int currentId = currentAdminId();
+        int reviewAdminId = item == null ? 0 : item.optInt("review_admin_id", 0);
+        return canUseReviewTakeoverPool()
+            && currentId > 0
+            && item != null
+            && "REVIEWING".equals(actionStatus(item))
+            && reviewAdminId != currentId;
+    }
+
     private boolean hasPermission(String permission) {
         if (hasAny("ADMIN")) return true;
         JSONArray permissions = admin == null ? null : admin.optJSONArray("permissions");
@@ -2422,6 +2469,7 @@ public class MainActivity extends Activity {
         if ("repayments".equals(permission)) return hasAny("REVIEW");
         if ("collections".equals(permission)) return hasAny("COLLECTION");
         if ("blacklist".equals(permission)) return hasAny("REVIEW", "FINANCE", "COLLECTION");
+        if ("loan-review-takeover".equals(permission)) return hasAny("REVIEW");
         return false;
     }
 

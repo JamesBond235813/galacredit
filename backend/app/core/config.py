@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     ESIGN_APP_ID: str = ""
     ESIGN_APP_SECRET: str = ""
     ESIGN_OPENAPI_BASE_URL: str = "https://openapi.esign.cn"
-    ESIGN_HTTP_TIMEOUT_SECONDS: int = 15
+    ESIGN_HTTP_TIMEOUT_SECONDS: int = 45
     ESIGN_FACE_CONFIDENCE_THRESHOLD: float = 70.0
     ESIGN_HTTP_PROXY: str=""
 

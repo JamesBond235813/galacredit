@@ -219,6 +219,7 @@ import { onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
 import { submitOCR } from '../api';
+import { getOcrImageCompressionPlan } from '../utils/ocrImageCompression';
 
 const router = useRouter();
 const frontFile = ref(null);
@@ -272,8 +273,7 @@ const setFile = (side, file) => {
 
 const compressImageIfNeeded = (file) =>
   new Promise((resolve) => {
-    const limit = 2.5 * 1024 * 1024;
-    if (!file || file.size <= limit || !file.type.startsWith('image/')) {
+    if (!file || !file.type.startsWith('image/')) {
       resolve(file);
       return;
     }
@@ -285,11 +285,18 @@ const compressImageIfNeeded = (file) =>
     reader.onerror = () => resolve(file);
     img.onload = () => {
       try {
-        const maxSide = 1800;
-        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const plan = getOcrImageCompressionPlan({
+          size: file.size,
+          width: img.width,
+          height: img.height
+        });
+        if (!plan.shouldCompress) {
+          resolve(file);
+          return;
+        }
         const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
+        canvas.width = Math.round(img.width * plan.scale);
+        canvas.height = Math.round(img.height * plan.scale);
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           resolve(file);
@@ -305,7 +312,7 @@ const compressImageIfNeeded = (file) =>
             resolve(new File([blob], file.name || `id-card-${Date.now()}.jpg`, { type: 'image/jpeg' }));
           },
           'image/jpeg',
-          0.82
+          plan.quality
         );
       } catch (error) {
         resolve(file);

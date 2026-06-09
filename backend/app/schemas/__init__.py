@@ -20,4 +20,4 @@ from .channel import (
     ChannelSummaryResponse,
     PaginatedChannelResponse,
 )
-from .risk import AdminRiskReportRequest, RiskReportResponse
+from .risk import AdminRiskReportRequest, AdminRiskSingleReportRequest, RiskReportResponse

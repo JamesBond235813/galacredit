@@ -29,6 +29,7 @@ from app.models.loan_ecard import LoanEcard
 from app.models.loan_transaction import LoanTransaction
 from app.models.overdue_fee_config import OverdueFeeConfig
 from app.models.product import Product
+from app.models.risk_composite_report import RiskCompositeReport
 from app.models.user import User
 from app.models.user_event import UserEvent
 from app.schemas.admin import (
@@ -75,7 +76,7 @@ from app.schemas.loan import (
     PaginatedProductResponse,
     PaginatedLoanResponse,
 )
-from app.schemas.risk import AdminRiskReportRequest, RiskReportResponse
+from app.schemas.risk import AdminRiskReportRequest, AdminRiskSingleReportRequest, RiskReportResponse
 from app.schemas.user import PaginatedUserResponse, UserDetailResponse
 from app.services.audit import log_user_event_async
 from app.services.admin_permissions import (
@@ -139,6 +140,7 @@ from app.services.risk_report import (
 )
 from app.services.composite_risk_report import (
     get_or_create_composite_risk_report_async,
+    get_or_create_standalone_composite_risk_report_async,
     serialize_composite_risk_report,
 )
 from app.services.upload_storage import build_upload_url
@@ -1662,6 +1664,171 @@ async def _get_composite_risk_report(db: AsyncSession, req: AdminRiskReportReque
     )
     await db.commit()
     await db.refresh(report)
+    return serialize_composite_risk_report(report)
+
+def _normalize_single_risk_value(value: Optional[str]) -> str:
+    """规范化单查输入值。
+
+    :param value: 原始输入值
+    :return: 去除首尾空格后的字符串
+    """
+    return str(value or "").strip()
+
+async def _resolve_single_risk_subject(
+    db: AsyncSession,
+    *,
+    name: str,
+    id_card: str,
+    phone: str,
+) -> tuple[str, str, str, Optional[int]]:
+    """根据可选三要素解析最终查询对象。
+
+    :param db: 异步数据库会话
+    :param name: 姓名
+    :param id_card: 身份证号
+    :param phone: 手机号
+    :return: 姓名、身份证、手机号、用户ID
+    """
+    if not any([name, id_card, phone]):
+        raise HTTPException(status_code=400, detail="请至少填写姓名、身份证号或手机号中的一项")
+
+    filters = []
+    if name:
+        filters.append(User.name == name)
+    if id_card:
+        filters.append(User.id_card_num == id_card)
+    if phone:
+        filters.append(User.phone == phone)
+    users = (await db.execute(select(User).where(*filters).order_by(User.id.desc()).limit(2))).scalars().all()
+    if len(users) > 1:
+        raise HTTPException(status_code=400, detail="匹配到多个客户，请补充更完整的三要素后再查询")
+    if len(users) == 1:
+        user = users[0]
+        resolved_name = name or _normalize_single_risk_value(user.name)
+        resolved_id_card = id_card or _normalize_single_risk_value(user.id_card_num)
+        resolved_phone = phone or _normalize_single_risk_value(user.phone)
+        if not all([resolved_name, resolved_id_card, resolved_phone]):
+            raise HTTPException(status_code=400, detail="匹配客户实名信息不完整，请补齐三要素后再查询")
+        return resolved_name, resolved_id_card, resolved_phone, user.id
+
+    if not all([name, id_card, phone]):
+        raise HTTPException(status_code=400, detail="系统内未匹配到唯一客户，请补齐姓名、身份证号和手机号后再单查")
+    return name, id_card, phone, None
+
+async def _query_single_risk_report(
+    db: AsyncSession,
+    req: AdminRiskSingleReportRequest,
+    current_admin: Admin,
+):
+    """执行风控报告单查。
+
+    :param db: 异步数据库会话
+    :param req: 单查请求
+    :param current_admin: 当前后台用户
+    :return: 小荷包风险报告
+    """
+    ensure_admin_page_permission(current_admin, "risk-single-query")
+    name = _normalize_single_risk_value(req.name)
+    id_card = _normalize_single_risk_value(req.id_card)
+    phone = _normalize_single_risk_value(req.phone)
+    resolved_name, resolved_id_card, resolved_phone, user_id = await _resolve_single_risk_subject(
+        db,
+        name=name,
+        id_card=id_card,
+        phone=phone,
+    )
+    if user_id:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        # 已有客户必须复用当前系统用户报告链路，确保弹窗内容与用户详情中完全一致。
+        report = await get_or_create_composite_risk_report_async(db, user=user)
+    else:
+        report = await get_or_create_standalone_composite_risk_report_async(
+            db,
+            name=resolved_name,
+            id_card=resolved_id_card,
+            phone=resolved_phone,
+            user_id=user_id,
+        )
+    await db.commit()
+    await db.refresh(report)
+    return serialize_composite_risk_report(report)
+
+async def _get_single_risk_report_history(
+    db: AsyncSession,
+    current_admin: Admin,
+    keyword: Optional[str],
+    skip: int,
+    limit: int,
+):
+    """获取风控报告查询历史。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前后台用户
+    :param keyword: 客户三要素关键词
+    :param skip: 跳过条数
+    :param limit: 返回条数
+    :return: 分页历史清单
+    """
+    ensure_admin_page_permission(current_admin, "risk-single-query")
+    limit = min(max(limit, 1), 100)
+    skip = max(skip, 0)
+    stmt = select(RiskCompositeReport)
+    count_stmt = select(func.count(RiskCompositeReport.id))
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        keyword_filter = or_(
+            RiskCompositeReport.name.like(pattern),
+            RiskCompositeReport.id_card.like(pattern),
+            RiskCompositeReport.phone.like(pattern),
+        )
+        stmt = stmt.where(keyword_filter)
+        count_stmt = count_stmt.where(keyword_filter)
+    total = (await db.execute(count_stmt)).scalar_one()
+    rows = (
+        await db.execute(
+            stmt.order_by(RiskCompositeReport.query_time.desc(), RiskCompositeReport.id.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+    ).scalars().all()
+    return {
+        "total": total,
+        "page": skip // limit + 1,
+        "size": limit,
+        "items": [
+            {
+                "id": item.id,
+                "user_id": item.user_id,
+                "name": item.name,
+                "id_card": item.id_card,
+                "phone": item.phone,
+                "query_time": item.query_time,
+                "created_at": item.created_at,
+            }
+            for item in rows
+        ],
+    }
+
+async def _get_single_risk_report_detail(
+    db: AsyncSession,
+    current_admin: Admin,
+    report_id: int,
+):
+    """根据历史记录ID获取风控报告详情。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前后台用户
+    :param report_id: 报告ID
+    :return: 小荷包风险报告
+    """
+    ensure_admin_page_permission(current_admin, "risk-single-query")
+    report = (
+        await db.execute(select(RiskCompositeReport).where(RiskCompositeReport.id == report_id))
+    ).scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="风控报告不存在")
     return serialize_composite_risk_report(report)
 
 async def _get_channels(db: AsyncSession, current_admin: Admin, keyword: Optional[str], status: Optional[str], skip: int, limit: int):
@@ -3257,7 +3424,20 @@ async def _get_loan_assignees(db: AsyncSession, current_admin: Admin, stage: str
     return [{"id": item.id, "username": item.username} for item in assignees]
 
 async def _assign_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanAssignRequest):
-    if not is_super_admin(current_admin):
+    stage = (req.stage or "").strip().lower()
+    if stage not in {"review", "collection"}:
+        raise HTTPException(status_code=400, detail="分配阶段参数非法")
+
+    roles = current_admin_roles(current_admin)
+    is_admin = "ADMIN" in roles
+    is_review_takeover = (
+        not is_admin
+        and stage == "review"
+        and "REVIEW" in roles
+        and int(req.admin_id) == int(current_admin.id)
+        and admin_has_permission(current_admin, "loan-review-takeover")
+    )
+    if not is_admin and not is_review_takeover:
         raise HTTPException(status_code=403, detail="仅超级管理员可手动改派订单")
 
     loan = (
@@ -3266,13 +3446,12 @@ async def _assign_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
     if not loan:
         raise HTTPException(status_code=404, detail="订单不存在")
 
+    if is_review_takeover and loan.status != "REVIEWING":
+        raise HTTPException(status_code=400, detail="仅审核中的申请可转入自己")
+
     assignee = (await db.execute(select(Admin).where(Admin.id == req.admin_id))).scalar_one_or_none()
     if not assignee:
         raise HTTPException(status_code=404, detail="分配目标不存在")
-
-    stage = (req.stage or "").strip().lower()
-    if stage not in {"review", "collection"}:
-        raise HTTPException(status_code=400, detail="分配阶段参数非法")
 
     role_key = "REVIEW" if stage == "review" else "COLLECTION"
     if not admin_has_role(assignee, role_key):
@@ -3281,9 +3460,11 @@ async def _assign_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
     if stage == "review":
         previous = loan.review_admin_id
         loan.review_admin_id = assignee.id
-        title = "超管手动改派审核负责人"
+        title = "审核员转入自己" if is_review_takeover else "超管手动改派审核负责人"
         detail = f"审核负责人由 #{previous or '-'} 调整为 #{assignee.id}（{assignee.username}）"
     else:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="仅超级管理员可手动改派催收订单")
         if not is_collection_stage(loan):
             raise HTTPException(status_code=400, detail=f"逾期超过 {COLLECTION_TRANSFER_OVERDUE_DAYS} 天后才可改派催收负责人")
         previous = loan.collection_admin_id

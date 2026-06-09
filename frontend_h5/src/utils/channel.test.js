@@ -9,6 +9,7 @@ describe('channel invite code utils', () => {
 
   it('should validate invite code format', () => {
     expect(isValidInviteCode('abcd1234abcd5678')).toBe(true);
+    expect(isValidInviteCode('0000049bad855673c404cdfe')).toBe(true);
     expect(isValidInviteCode('abcd1234abcd567_')).toBe(false);
     expect(isValidInviteCode('abc')).toBe(false);
   });
@@ -16,8 +17,8 @@ describe('channel invite code utils', () => {
   it('should persist and overwrite invite code', () => {
     saveEntryInviteCode('abcd1234abcd5678');
     expect(getEntryInviteCode()).toBe('abcd1234abcd5678');
-    saveEntryInviteCode('1234abcd5678efgh');
-    expect(getEntryInviteCode()).toBe('1234abcd5678efgh');
+    saveEntryInviteCode('0000049bad855673c404cdfe');
+    expect(getEntryInviteCode()).toBe('0000049bad855673c404cdfe');
     clearEntryChannel();
     expect(getEntryInviteCode()).toBe('');
   });

@@ -48,23 +48,29 @@
 
         <section v-if="hasIssuedEcard" class="page-card ecard-card">
           <h3>已发放京东E卡</h3>
-          <div class="ecard-row">
-            <span>卡号</span>
-            <strong>{{ ecardAccountDisplay }}</strong>
-            <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingField === 'account'" @click="copyEcardSecret('account')">
-              复制
-            </van-button>
-          </div>
-          <div class="ecard-row">
-            <span>卡密</span>
-            <strong>{{ ecardPasswordDisplay }}</strong>
-            <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingField === 'password'" @click="copyEcardSecret('password')">
-              复制
-            </van-button>
-          </div>
-          <div class="ecard-row">
-            <span>有效期</span>
-            <strong>{{ ecardExpiresText }}</strong>
+          <div v-for="item in ecardItems" :key="item.key" class="ecard-item">
+            <div class="ecard-item-title">
+              <span>{{ item.title }}</span>
+              <strong v-if="item.faceValue">{{ formatAmount(item.faceValue) }}元</strong>
+            </div>
+            <div class="ecard-row">
+              <span>卡号</span>
+              <strong>{{ item.accountDisplay }}</strong>
+              <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'account')" @click="copyEcardSecret('account', item)">
+                复制
+              </van-button>
+            </div>
+            <div class="ecard-row">
+              <span>卡密</span>
+              <strong>{{ item.passwordDisplay }}</strong>
+              <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'password')" @click="copyEcardSecret('password', item)">
+                复制
+              </van-button>
+            </div>
+            <div class="ecard-row">
+              <span>有效期</span>
+              <strong>{{ formatDate(item.expiresAt) || '--' }}</strong>
+            </div>
           </div>
           <p class="ecard-tip">页面仅展示脱敏卡密，复制后请妥善保管。</p>
         </section>
@@ -127,23 +133,29 @@
         <div class="pill-info">信用支付金额：¥{{ formatAmount(totalAmount) }}</div>
         <section v-if="hasIssuedEcard" class="ecard-card settled-ecard-card">
           <h3>已发放京东E卡</h3>
-          <div class="ecard-row">
-            <span>卡号</span>
-            <strong>{{ ecardAccountDisplay }}</strong>
-            <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingField === 'account'" @click="copyEcardSecret('account')">
-              复制
-            </van-button>
-          </div>
-          <div class="ecard-row">
-            <span>卡密</span>
-            <strong>{{ ecardPasswordDisplay }}</strong>
-            <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingField === 'password'" @click="copyEcardSecret('password')">
-              复制
-            </van-button>
-          </div>
-          <div class="ecard-row">
-            <span>有效期</span>
-            <strong>{{ ecardExpiresText }}</strong>
+          <div v-for="item in ecardItems" :key="item.key" class="ecard-item">
+            <div class="ecard-item-title">
+              <span>{{ item.title }}</span>
+              <strong v-if="item.faceValue">{{ formatAmount(item.faceValue) }}元</strong>
+            </div>
+            <div class="ecard-row">
+              <span>卡号</span>
+              <strong>{{ item.accountDisplay }}</strong>
+              <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'account')" @click="copyEcardSecret('account', item)">
+                复制
+              </van-button>
+            </div>
+            <div class="ecard-row">
+              <span>卡密</span>
+              <strong>{{ item.passwordDisplay }}</strong>
+              <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'password')" @click="copyEcardSecret('password', item)">
+                复制
+              </van-button>
+            </div>
+            <div class="ecard-row">
+              <span>有效期</span>
+              <strong>{{ formatDate(item.expiresAt) || '--' }}</strong>
+            </div>
           </div>
         </section>
       </section>
@@ -157,6 +169,8 @@ import { useRouter } from 'vue-router';
 import { showDialog, showToast } from 'vant';
 import { getEcardSecret, registerRepayAttempt } from '../api';
 import { createLoanSnapshotSubscriber } from '../api/loanSocket';
+import { copyTextSafely } from '../utils/clipboard';
+import { buildEcardDisplayItems, buildEcardSecretParams } from '../utils/ecardDisplay';
 
 const router = useRouter();
 const loading = ref(true);
@@ -167,28 +181,9 @@ const loanStatus = computed(() => loanData.value?.status || '');
 const totalAmount = computed(() => loanData.value?.total_repayment_amount || 0);
 const productName = computed(() => loanData.value?.product_name || '未命名商品');
 const hasIssuedEcard = computed(() => Boolean(loanData.value?.has_issued_ecard));
-const ecardExpiresText = computed(() => formatDate(loanData.value?.ecard_expires_at));
+const ecardItems = computed(() => buildEcardDisplayItems(loanData.value));
 const rightsContent = computed(() => loanData.value?.rights_desc || loanData.value?.rights_title || '权益内容以订单快照为准');
-const copyingField = ref('');
-
-const formatMaskedEcardValue = (value) => {
-  const text = String(value || '').trim();
-  if (!text || text === '--') {
-    return '--';
-  }
-
-  const normalized = text.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
-  if (normalized.length >= 8) {
-    const head = normalized.slice(0, 4);
-    const tail = normalized.slice(-4);
-    return `${head}-****-****-****-${tail}`;
-  }
-
-  return text.replace(/\*{5,}/g, '****');
-};
-
-const ecardAccountDisplay = computed(() => formatMaskedEcardValue(loanData.value?.ecard_account_masked));
-const ecardPasswordDisplay = computed(() => formatMaskedEcardValue(loanData.value?.ecard_password_masked));
+const copyingKey = ref('');
 
 const formatDate = (value) => {
   if (!value) {
@@ -221,41 +216,28 @@ const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
   maximumFractionDigits: 2
 });
 
-const copyText = async (value) => {
-  if (!value) {
-    return false;
-  }
-  if (navigator?.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return true;
-  }
+const copyKey = (item, field) => `${field}-${item?.id ?? item?.index ?? 0}`;
 
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  const copied = document.execCommand('copy');
-  document.body.removeChild(textarea);
-  return copied;
+const showManualCopyValue = (field, value) => {
+  const label = field === 'account' ? '卡号' : '卡密';
+  // 部分安卓/鸿蒙浏览器会限制异步接口返回后的剪贴板写入，用系统输入框兜底便于长按复制。
+  window.prompt(`自动复制失败，请长按复制${label}`, value);
 };
 
-const copyEcardSecret = async (field) => {
-  copyingField.value = field;
+const copyEcardSecret = async (field, item = {}) => {
+  copyingKey.value = copyKey(item, field);
   try {
-    const res = await getEcardSecret(field);
-    const copied = await copyText(res.value || '');
+    const res = await getEcardSecret(field, buildEcardSecretParams(item));
+    const copied = await copyTextSafely(res.value || '');
     if (copied) {
       showToast('复制成功');
     } else {
-      showToast('复制失败，请手动复制');
+      showManualCopyValue(field, res.value || '');
     }
   } catch (error) {
     // handled by interceptor
   } finally {
-    copyingField.value = '';
+    copyingKey.value = '';
   }
 };
 
@@ -505,6 +487,30 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 15px;
   color: var(--app-text);
+}
+
+.ecard-item {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(47, 126, 247, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ecard-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ecard-item-title strong {
+  color: var(--app-primary-deep);
+  font-size: 12px;
 }
 
 .ecard-row {

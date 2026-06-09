@@ -20,9 +20,7 @@ enum APIError: LocalizedError, Equatable {
     }
 }
 
-final class APIClient {
-    private let decoder = JSONDecoder()
-    private let encoder = JSONEncoder()
+final class APIClient: @unchecked Sendable {
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -116,7 +114,7 @@ final class APIClient {
         }
         if let body {
             request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try encoder.encode(body)
+            request.httpBody = try JSONEncoder().encode(body)
         }
 
         let (data, response) = try await session.data(for: request)
@@ -172,7 +170,7 @@ final class APIClient {
         if httpResponse.statusCode == 401 {
             throw APIError.unauthorized
         }
-        let value = try decoder.decode(JSONValue.self, from: data)
+        let value = try JSONDecoder().decode(JSONValue.self, from: data)
         if !(200...299).contains(httpResponse.statusCode) {
             let payload = value.objectValue ?? [:]
             let message = payload.string("msg", fallback: payload.string("detail", fallback: "请求失败：\(httpResponse.statusCode)"))
@@ -192,7 +190,7 @@ final class APIClient {
         if data.isEmpty {
             return [:]
         }
-        let value = try decoder.decode(JSONValue.self, from: data)
+        let value = try JSONDecoder().decode(JSONValue.self, from: data)
         guard let object = value.objectValue else {
             throw APIError.invalidResponse
         }
