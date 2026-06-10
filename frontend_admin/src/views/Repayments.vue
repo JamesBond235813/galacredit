@@ -64,6 +64,23 @@
         <el-form-item>
           <el-button type="primary" @click="handleActualRepaymentSearch">查询</el-button>
         </el-form-item>
+        <el-form-item label="还款状态">
+          <el-select
+            v-model="filters.repaymentStatus"
+            class="repayment-status-select"
+            placeholder="选择还款状态"
+          >
+            <el-option
+              v-for="item in repaymentStatusOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleRepaymentStatusSearch">确认</el-button>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -436,6 +453,16 @@ const duePresetOptions = [
   { label: '全部', value: 'ALL' }
 ];
 
+const repaymentStatusOptions = [
+  { label: '全部', value: 'ALL' },
+  { label: '未到期', value: 'NOT_DUE' },
+  { label: '今日到期', value: 'DUE_TODAY' },
+  { label: '已逾期', value: 'OVERDUE' },
+  { label: '待支付', value: 'UNPAID' },
+  { label: '部分支付', value: 'PARTIAL_PAID' },
+  { label: '已结清', value: 'SETTLED' }
+];
+
 const followEventTypes = [
   'ADMIN_REVIEW_NOTE',
   'ADMIN_REMIND',
@@ -450,6 +477,7 @@ const filters = reactive({
   dueDatePreset: 'ALL',
   dueDateRange: [],
   actualRepaymentRange: [],
+  repaymentStatus: 'ALL',
   page: 1,
   size: 10
 });
@@ -467,6 +495,10 @@ const activeSummaryLabel = computed(() => {
   }
   if (activeFilterScope.value === 'keyword') {
     return '当前搜索结果';
+  }
+  if (activeFilterScope.value === 'repaymentStatus') {
+    const selected = repaymentStatusOptions.find((item) => item.value === filters.repaymentStatus);
+    return `${selected?.label || '还款状态'}筛选`;
   }
   return `${selectedDueOption.value.label}时间区间`;
 });
@@ -517,6 +549,12 @@ const buildRepaymentFilterParams = (scope = activeFilterScope.value) => {
     if (filters.dueDateRange.length === 2) {
       params.due_date_start = filters.dueDateRange[0];
       params.due_date_end = filters.dueDateRange[1];
+    }
+    return params;
+  }
+  if (scope === 'repaymentStatus') {
+    if (filters.repaymentStatus !== 'ALL') {
+      params.repayment_status = filters.repaymentStatus;
     }
     return params;
   }
@@ -605,6 +643,11 @@ const handleDueDateSearch = () => {
   fetchData();
 };
 
+const handleRepaymentStatusSearch = () => {
+  applyQueryScope('repaymentStatus');
+  fetchData();
+};
+
 const applyDueFilter = (value) => {
   activeFilterScope.value = 'due';
   filters.dueDatePreset = value;
@@ -618,6 +661,7 @@ const resetFilters = () => {
   filters.phone = '';
   filters.dueDateRange = [];
   filters.actualRepaymentRange = [];
+  filters.repaymentStatus = 'ALL';
   filters.page = 1;
   if (route.query.due) {
     router.replace({ path: route.path, query: {} });
@@ -1005,6 +1049,10 @@ watch(
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.repayment-status-select {
+  width: 150px;
 }
 
 .assignee-row {

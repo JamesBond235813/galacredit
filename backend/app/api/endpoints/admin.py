@@ -185,6 +185,50 @@ REPAYMENT_STATS_PERMISSION_KEYS = (
 
 ECARD_POOL_STATUSES = {"AVAILABLE", "ASSIGNED", "EXPIRED", "VOID"}
 ADMIN_STATS_WS_PUSH_SECONDS = 15
+REPAYMENT_STATUS_FILTERS = {
+    "NOT_DUE",
+    "DUE_TODAY",
+    "OVERDUE",
+    "UNPAID",
+    "PARTIAL_PAID",
+    "SETTLED",
+}
+
+
+def build_repayment_status_filters(repayment_status: Optional[str]):
+    """构建还款管理页账单进度筛选条件。
+
+    :param repayment_status: 前端传入的还款状态筛选值
+    :return: SQLAlchemy 查询条件列表
+    """
+    value = (repayment_status or "").strip().upper()
+    if not value or value == "ALL":
+        return []
+    if value not in REPAYMENT_STATUS_FILTERS:
+        raise HTTPException(status_code=400, detail="还款状态筛选参数非法")
+
+    today_start, tomorrow = get_today_range()
+    repaid_amount = func.coalesce(Loan.repaid_amount, 0)
+    if value == "NOT_DUE":
+        return [
+            Loan.status == "DISBURSED",
+            or_(Loan.due_date.is_(None), Loan.due_date >= tomorrow),
+        ]
+    if value == "DUE_TODAY":
+        return [
+            Loan.status.in_(["DISBURSED", "OVERDUE"]),
+            Loan.due_date >= today_start,
+            Loan.due_date < tomorrow,
+        ]
+    if value == "OVERDUE":
+        return [Loan.status == "OVERDUE"]
+    if value == "UNPAID":
+        return [Loan.status != "SETTLED", repaid_amount <= 0]
+    if value == "PARTIAL_PAID":
+        return [Loan.status != "SETTLED", repaid_amount > 0]
+    if value == "SETTLED":
+        return [Loan.status == "SETTLED"]
+    return []
 
 
 async def _notify_user_loan_snapshot_if_needed(db: AsyncSession, loan_id: int):
@@ -451,6 +495,7 @@ async def admin_stats_ws(websocket: WebSocket):
 @router.get("/repayment-stats", response_model=RepaymentStatsResponse)
 async def get_repayment_stats(
     due_date_preset: Optional[str] = Query(None, description="还款日快捷筛选"),
+    repayment_status: Optional[str] = Query(None, description="还款状态筛选"),
     due_date_start: Optional[date] = Query(None, description="应还款开始日期"),
     due_date_end: Optional[date] = Query(None, description="应还款结束日期"),
     actual_repayment_start: Optional[date] = Query(None, description="实际还款开始日期"),
@@ -483,6 +528,7 @@ async def get_repayment_stats(
             Loan.due_date >= day_start,
             Loan.due_date < day_end,
         ])
+    filters.extend(build_repayment_status_filters(repayment_status))
     if due_date_start is not None:
         filters.append(Loan.due_date >= datetime.combine(due_date_start, datetime.min.time()))
     if due_date_end is not None:
@@ -670,6 +716,7 @@ async def get_loans(
     status: Optional[str] = Query(None, description="订单状态"),
     phone: Optional[str] = Query(None, description="手机号/姓名/身份证号"),
     scope: Optional[str] = Query(None, description="业务筛选"),
+    repayment_status: Optional[str] = Query(None, description="还款状态筛选"),
     due_date_preset: Optional[str] = Query(None, description="还款日快捷筛选"),
     due_date_start: Optional[date] = Query(None, description="应还款开始日期"),
     due_date_end: Optional[date] = Query(None, description="应还款结束日期"),
@@ -788,6 +835,9 @@ async def get_loans(
     scope_filters = build_loan_scope_filters(scope)
     if scope_filters:
         stmt = stmt.where(*scope_filters)
+    repayment_status_filters = build_repayment_status_filters(repayment_status)
+    if repayment_status_filters:
+        stmt = stmt.where(*repayment_status_filters)
     if review_takeover_pool:
         # 审核转入池只开放审核中的申请，避免借此查看已通过/未通过或其他阶段订单。
         stmt = stmt.where(Loan.status == "REVIEWING")

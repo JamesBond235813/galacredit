@@ -5,7 +5,7 @@ export const login = (data) => request.post('/admin/login', data);
 export const getAdminInfo = () => request.get('/admin/me');
 export const changeAdminPassword = (data) => request.post('/admin/change-password', data);
 export const getAdminStats = () => request.get('/admin/stats');
-export const getRepaymentStats = () => request.get('/admin/repayment-stats');
+export const getRepaymentStats = (params) => request.get('/admin/repayment-stats', { params });
 export const getProjectCashInsights = () => request.get('/admin/project-cash-insights');
 export const getChannels = (params) => request.get('/admin/channels', { params });
 export const getExclusiveLinks = () => request.get('/admin/exclusive-links');

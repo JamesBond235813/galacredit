@@ -52,6 +52,7 @@ async def test_get_loans_should_build_reviewer_and_relend_filters(monkeypatch):
         status="REVIEWING",
         phone=None,
         scope="REVIEWING",
+        repayment_status=None,
         due_date_preset=None,
         due_date_start=None,
         due_date_end=None,
@@ -62,6 +63,7 @@ async def test_get_loans_should_build_reviewer_and_relend_filters(monkeypatch):
         relend_min_count=None,
         overdue_min_days=None,
         overdue_max_days=None,
+        takeover_pool=False,
         skip=0,
         limit=20,
         db=db,
@@ -139,6 +141,7 @@ async def test_repayment_stats_should_follow_due_date_preset(monkeypatch):
 
     result = await admin.get_repayment_stats(
         due_date_preset="TODAY",
+        repayment_status=None,
         due_date_start=None,
         due_date_end=None,
         actual_repayment_start=None,
@@ -182,6 +185,7 @@ async def test_get_loans_repayments_overdue_should_stay_before_collection_thresh
         status="OVERDUE",
         phone=None,
         scope="REPAYMENTS",
+        repayment_status=None,
         due_date_preset=None,
         due_date_start=None,
         due_date_end=None,
@@ -192,6 +196,7 @@ async def test_get_loans_repayments_overdue_should_stay_before_collection_thresh
         relend_min_count=None,
         overdue_min_days=None,
         overdue_max_days=None,
+        takeover_pool=False,
         skip=0,
         limit=20,
         db=db,
@@ -253,6 +258,7 @@ async def test_repayment_stats_should_count_pending_repayment_before_due_date(mo
 
     result = await admin.get_repayment_stats(
         due_date_preset=None,
+        repayment_status=None,
         due_date_start=None,
         due_date_end=None,
         actual_repayment_start=None,
@@ -281,6 +287,7 @@ async def test_get_loans_should_apply_actual_repayment_date_range(monkeypatch):
         status=None,
         phone=None,
         scope="REPAYMENTS",
+        repayment_status=None,
         due_date_preset=None,
         due_date_start=None,
         due_date_end=None,
@@ -291,6 +298,7 @@ async def test_get_loans_should_apply_actual_repayment_date_range(monkeypatch):
         relend_min_count=None,
         overdue_min_days=None,
         overdue_max_days=None,
+        takeover_pool=False,
         skip=0,
         limit=20,
         db=db,
@@ -316,6 +324,7 @@ async def test_get_loans_should_apply_due_date_range(monkeypatch):
         status=None,
         phone=None,
         scope="REPAYMENTS",
+        repayment_status=None,
         due_date_preset=None,
         due_date_start=datetime(2026, 5, 21).date(),
         due_date_end=datetime(2026, 5, 23).date(),
@@ -326,6 +335,7 @@ async def test_get_loans_should_apply_due_date_range(monkeypatch):
         relend_min_count=None,
         overdue_min_days=None,
         overdue_max_days=None,
+        takeover_pool=False,
         skip=0,
         limit=20,
         db=db,
@@ -335,3 +345,41 @@ async def test_get_loans_should_apply_due_date_range(monkeypatch):
     assert result["items"] == [{"id": 13}]
     combined_sql = f"{db.total_stmt_sql}\n{db.loan_stmt_sql}"
     assert "loans.due_date" in combined_sql
+
+
+@pytest.mark.asyncio
+async def test_get_loans_should_apply_repayment_status_filter(monkeypatch):
+    monkeypatch.setattr(admin, "ensure_admin_page_permission", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(admin, "ensure_any_admin_page_permission", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(admin, "serialize_loan", lambda loan: {"id": loan.id})
+
+    loan = SimpleNamespace(id=15)
+    db = _FakeDb([loan])
+    current_admin = SimpleNamespace(id=1, username="root", roles='["ADMIN"]')
+
+    result = await admin.get_loans(
+        status=None,
+        phone=None,
+        scope="REPAYMENTS",
+        repayment_status="PARTIAL_PAID",
+        due_date_preset=None,
+        due_date_start=None,
+        due_date_end=None,
+        actual_repayment_start=None,
+        actual_repayment_end=None,
+        review_admin_id=None,
+        relend_count=None,
+        relend_min_count=None,
+        overdue_min_days=None,
+        overdue_max_days=None,
+        takeover_pool=False,
+        skip=0,
+        limit=20,
+        db=db,
+        current_admin=current_admin,
+    )
+
+    assert result["items"] == [{"id": 15}]
+    combined_sql = f"{db.total_stmt_sql}\n{db.loan_stmt_sql}".lower()
+    assert "repaid_amount" in combined_sql
+    assert "loans.status" in combined_sql

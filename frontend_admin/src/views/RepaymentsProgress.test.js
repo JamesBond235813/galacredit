@@ -19,6 +19,7 @@ describe('repayments bill progress display', () => {
     expect(repaymentsSource).toContain('@click="handleSearch"');
     expect(repaymentsSource).toContain('@click="handleDueDateSearch"');
     expect(repaymentsSource).toContain('@click="handleActualRepaymentSearch"');
+    expect(repaymentsSource).toContain('@click="handleRepaymentStatusSearch"');
     expect(repaymentsSource).toContain("if (scope === 'keyword')");
     expect(repaymentsSource).toContain('params.phone = filters.phone || undefined;');
     expect(repaymentsSource).toContain("if (scope === 'dueRange')");
@@ -27,7 +28,20 @@ describe('repayments bill progress display', () => {
     expect(repaymentsSource).toContain("if (scope === 'actualRepayment')");
     expect(repaymentsSource).toContain('params.actual_repayment_start = filters.actualRepaymentRange[0];');
     expect(repaymentsSource).toContain('params.actual_repayment_end = filters.actualRepaymentRange[1];');
+    expect(repaymentsSource).toContain("if (scope === 'repaymentStatus')");
+    expect(repaymentsSource).toContain('params.repayment_status = filters.repaymentStatus;');
     expect(repaymentsSource).not.toContain('phone: filters.phone || undefined,');
+  });
+
+  it('should render repayment status filter options on repayments page', () => {
+    expect(repaymentsSource).toContain('label="还款状态"');
+    expect(repaymentsSource).toContain('repaymentStatusOptions');
+    expect(repaymentsSource).toContain("label: '未到期', value: 'NOT_DUE'");
+    expect(repaymentsSource).toContain("label: '今日到期', value: 'DUE_TODAY'");
+    expect(repaymentsSource).toContain("label: '已逾期', value: 'OVERDUE'");
+    expect(repaymentsSource).toContain("label: '待支付', value: 'UNPAID'");
+    expect(repaymentsSource).toContain("label: '部分支付', value: 'PARTIAL_PAID'");
+    expect(repaymentsSource).toContain("label: '已结清', value: 'SETTLED'");
   });
 
   it('should show and filter due time and actual repayment time on all repayment-related pages', () => {
