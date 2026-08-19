@@ -13,7 +13,7 @@ import 'vant/lib/index.css'
 
 const app = createApp(App)
 
-// 注册 Vant 组件
+// Register Vant components.
 app.use(Button).use(Field).use(CellGroup).use(Form).use(Toast).use(Loading)
    .use(NavBar).use(NoticeBar).use(Icon).use(Uploader).use(Dialog).use(Tag)
    .use(Steps).use(Step).use(Empty).use(Popup)

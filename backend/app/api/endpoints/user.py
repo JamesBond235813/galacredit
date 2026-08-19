@@ -27,6 +27,7 @@ from app.services.audit import log_user_event_async
 from app.services.blacklist_service import refresh_user_blacklist_status
 from app.services.channel_service import bind_user_source_channel_async, get_channel_by_name_async
 from app.services.esign_identity import ESignIdentityError, esign_identity_client
+from app.services.ghana_identity import GhanaIdentityError, ghana_card_identity_provider
 from app.services.login_location_risk import apply_login_location
 from app.services.loan_amounts import DEFAULT_FEE_RATE, serialize_loan_snapshot
 from app.services.loan_flow import (
@@ -232,7 +233,16 @@ async def mock_ocr(
     front_bytes = await front_image.read()
     back_bytes = await back_image.read() if back_image else None
 
-    if settings.ESIGN_IDENTITY_ENABLED:
+    if settings.GHANA_IDENTITY_ENABLED or settings.GHANA_IDENTITY_MOCK_ENABLED:
+        try:
+            ocr_result = await ghana_card_identity_provider.ocr(front_bytes, back_bytes)
+        except GhanaIdentityError as exc:
+            raise HTTPException(status_code=400, detail=f"Ghana Card verification failed: {exc}") from exc
+        ocr_name = (ocr_result.get("name") or "").strip()
+        ocr_id_card_num = (ocr_result.get("id_card_num") or "").strip()
+        ocr_id_address = (ocr_result.get("id_address") or "").strip()
+        ocr_id_expiry = (ocr_result.get("id_expiry") or "").strip()
+    elif settings.ESIGN_IDENTITY_ENABLED:
         try:
             ocr_result = await esign_identity_client.id_card_ocr(front_bytes, back_bytes)
         except ESignIdentityError as exc:
@@ -244,10 +254,10 @@ async def mock_ocr(
     elif settings.ESIGN_IDENTITY_MOCK_ENABLED:
         await asyncio.sleep(0.8)
         id_suffix = current_user.phone[-4:] if current_user.phone else "1234"
-        ocr_name = "张三"
-        ocr_id_card_num = f"11010119900101{id_suffix}"
-        ocr_id_address = "北京市朝阳区建国路 88 号"
-        ocr_id_expiry = "2020.01.01-2040.01.01"
+        ocr_name = "Ama Mensah"
+        ocr_id_card_num = f"GHA-000000{id_suffix}-0"
+        ocr_id_address = "Accra, Ghana"
+        ocr_id_expiry = "2025.01.01-2035.01.01"
     else:
         raise HTTPException(status_code=503, detail="实名识别服务未启用，请联系管理员。")
 
@@ -347,16 +357,16 @@ async def mock_ocr(
         user=active_user,
         loan=loan,
         event_type="OCR_SUBMIT",
-        title="提交身份证识别",
+        title="Submit Ghana Card verification",
         detail={
-            "身份证正面": "已上传" if front_image else "未上传",
-            "身份证反面": "已上传" if back_image else "未上传",
-            "识别姓名": active_user.name,
-            "身份证号": active_user.id_card_num,
-            "住址": active_user.id_address,
-            "有效期": active_user.id_expiry,
-            "识别方式": "e签宝OCR" if settings.ESIGN_IDENTITY_ENABLED else "本地模拟",
-            "手机号接管": "是" if phone_reclaimed else "否",
+            "Ghana Card front": "uploaded" if front_image else "missing",
+            "Ghana Card back": "uploaded" if back_image else "not provided",
+            "Recognized name": active_user.name,
+            "Ghana Card number": active_user.id_card_num,
+            "Residential address": active_user.id_address,
+            "Expiry date": active_user.id_expiry,
+            "Recognition method": "Ghana Card provider" if (settings.GHANA_IDENTITY_ENABLED or settings.GHANA_IDENTITY_MOCK_ENABLED) else "Legacy eSign provider",
+            "Phone takeover": "yes" if phone_reclaimed else "no",
         },
     )
 
@@ -395,7 +405,35 @@ async def mock_face_auth(
         raise HTTPException(status_code=400, detail="请先完成身份证识别并确认实名信息。")
 
     score = None
-    if settings.ESIGN_IDENTITY_ENABLED:
+    if settings.GHANA_IDENTITY_ENABLED or settings.GHANA_IDENTITY_MOCK_ENABLED:
+        if not face_image:
+            raise HTTPException(status_code=400, detail="Please upload a face photo.")
+
+        face_image_bytes = await face_image.read()
+        try:
+            compare_result = await ghana_card_identity_provider.face_compare(
+                name=current_user.name,
+                ghana_card_number=current_user.id_card_num,
+                face_image_bytes=face_image_bytes,
+            )
+            score = compare_result.get("score")
+        except GhanaIdentityError as exc:
+            fail_detail = str(exc).strip()
+            loan = await get_or_create_loan_async(db, current_user.id)
+            await log_user_event_async(
+                db,
+                user=current_user,
+                loan=loan,
+                event_type="FACE_AUTH_FAIL",
+                title="Ghana Card face comparison failed",
+                detail={
+                    "verification_method": "Ghana Card face comparison",
+                    "failure_reason": fail_detail,
+                },
+            )
+            await db.commit()
+            raise HTTPException(status_code=400, detail=fail_detail) from exc
+    elif settings.ESIGN_IDENTITY_ENABLED:
         if not face_image:
             raise HTTPException(status_code=400, detail="请上传人脸照片。")
 
@@ -420,8 +458,8 @@ async def mock_face_auth(
                 event_type="FACE_AUTH_FAIL",
                 title="人脸识别未通过",
                 detail={
-                    "核验方式": "e签宝人脸核验",
-                    "失败原因": fail_detail,
+                    "verification_method": "Legacy eSign face comparison",
+                    "failure_reason": fail_detail,
                 },
             )
             await db.commit()
@@ -448,9 +486,9 @@ async def mock_face_auth(
         event_type="FACE_AUTH_PASS",
         title="完成人脸识别",
         detail={
-            "核验方式": "e签宝人脸核验" if settings.ESIGN_IDENTITY_ENABLED else "本地模拟",
-            "核验结果": "通过",
-            "核验分值": score,
+            "verification_method": "Ghana Card face comparison" if (settings.GHANA_IDENTITY_ENABLED or settings.GHANA_IDENTITY_MOCK_ENABLED) else "Legacy eSign face comparison",
+            "verification_result": "passed",
+            "verification_score": score,
         },
     )
 

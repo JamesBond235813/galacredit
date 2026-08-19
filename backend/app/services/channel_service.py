@@ -17,6 +17,7 @@ from app.services.loan_amounts import calculate_remaining_repayment_amount, roun
 CHANNEL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 DAILY_INVITE_CODE_PATTERN = re.compile(r"^[a-z0-9]{24,32}$")
 CHANNEL_STATUSES = {"ACTIVE", "INACTIVE"}
+CHANNEL_DISBURSEMENT_MODES = {"AUTO_DISBURSE", "MANUAL_DISBURSE"}
 APPLICATION_STATUSES = {"REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"}
 DISBURSED_STATUSES = {"DISBURSED", "OVERDUE", "SETTLED"}
 CHANNEL_DAILY_ROTATE_AT = time(0, 1, 0)
@@ -34,6 +35,18 @@ def normalize_channel_status(value: Optional[str]) -> str:
     if status not in CHANNEL_STATUSES:
         raise ValueError("渠道状态非法")
     return status
+
+
+def normalize_channel_disbursement_mode(value: Optional[str]) -> str:
+    """规范化渠道放款模式。
+
+    :param value: 渠道放款模式
+    :return: 规范化后的放款模式
+    """
+    mode = (value or "MANUAL_DISBURSE").strip().upper()
+    if mode not in CHANNEL_DISBURSEMENT_MODES:
+        raise ValueError("渠道放款模式非法")
+    return mode
 
 
 async def get_channel_by_name_async(
@@ -205,6 +218,7 @@ def build_channel_metrics(channel: Channel):
         "channel_name": channel.channel_name,
         "sales_name": channel.sales_name,
         "status": channel.status,
+        "disbursement_mode": normalize_channel_disbursement_mode(getattr(channel, "disbursement_mode", None)),
         "note": channel.note,
         "created_at": channel.created_at,
         "attributed_user_count": attributed_user_count,

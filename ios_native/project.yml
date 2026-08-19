@@ -28,7 +28,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.juxin.xiaohebao.ios
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: 小荷包
+        INFOPLIST_KEY_CFBundleDisplayName: GalaCredit
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.business
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIRequiresFullScreen: YES

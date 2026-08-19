@@ -1,36 +1,36 @@
 <template>
   <div class="page-shell review-page">
-    <van-nav-bar title="审核进度" />
+    <van-nav-bar title="Application Review" />
 
     <div class="page-inner review-inner">
       <section v-if="loading" class="page-card review-loading-card">
         <div class="loading-orbit">
           <van-loading type="spinner" color="#2f7ef7" size="56px" />
         </div>
-        <h2 class="review-title">后台审核中</h2>
+        <h2 class="review-title">Application Under Review</h2>
         <p class="review-desc">
-          正在等待业务专员确认授信额度，审核通过后即可在商品列表进行信用下单。
+          We are reviewing your information and determining your available credit limit.
         </p>
       </section>
 
       <template v-else-if="loanStatus === 'APPROVED'">
         <section class="page-card approval-card">
-          <span class="approval-badge">审批结果</span>
+          <span class="approval-badge">Decision</span>
           <div class="approval-summary-grid">
             <article class="approval-summary-item">
-              <span>状态</span>
-              <strong>通过</strong>
+              <span>Status</span>
+              <strong>Approved</strong>
             </article>
             <article class="approval-summary-item">
-              <span>有效期</span>
-              <strong>30天</strong>
+              <span>Valid For</span>
+              <strong>30 Days</strong>
             </article>
             <article class="approval-summary-item">
-              <span>额度</span>
-              <strong>¥{{ formatAmount(creditLimit) }}</strong>
+              <span>Credit Limit</span>
+              <strong>GHS {{ formatAmount(creditLimit) }}</strong>
             </article>
           </div>
-          <p class="approval-note">以上是您的授信，请理性消费。点击可以查看商品详情。</p>
+          <p class="approval-note">This is your approved credit limit. Borrow responsibly.</p>
         </section>
 
         <section v-if="recommendedProduct" class="page-card product-item-card">
@@ -38,22 +38,22 @@
             <div class="product-item-head">
               <h3 class="product-item-title">{{ recommendedProduct.name }}</h3>
               <div class="product-item-price-wrap">
-                <span class="product-item-price-label">总售价</span>
-                <strong class="product-item-price">¥{{ formatAmount(recommendedProduct.payment_amount) }}</strong>
+                <span class="product-item-price-label">Loan Amount</span>
+                <strong class="product-item-price">GHS {{ formatAmount(recommendedProduct.payment_amount) }}</strong>
               </div>
             </div>
-            <p class="product-item-subtitle">{{ recommendedProduct.rights_title || '韶关丹霞山旅游权益' }}</p>
+            <p class="product-item-subtitle">{{ recommendedProduct.product_type === 'CASH_LOAN' ? 'Ghana short-term cash loan' : (recommendedProduct.rights_title || 'Service package') }}</p>
             <div class="product-item-tags">
-              <span>京东E卡额度 ¥{{ formatAmount(recommendedProduct.ecard_face_value) }}</span>
-              <span>账期 {{ recommendedProduct.term_days }} 天</span>
-              <span>额度按总价扣减</span>
+              <span>Cash Received: GHS {{ formatAmount(recommendedProduct.product_type === 'CASH_LOAN' ? recommendedProduct.nominal_loan_amount * (1 - recommendedProduct.upfront_fee_rate) : recommendedProduct.ecard_face_value) }}</span>
+              <span>Term: {{ recommendedProduct.term_days }} days</span>
+              <span>Upfront Fees: {{ formatAmount(recommendedProduct.upfront_fee_rate * 100) }}%</span>
             </div>
             <div class="product-item-rights">
-              <p class="rights-caption">权益说明</p>
-              <p class="rights-content">{{ recommendedProduct.rights_desc || '权益内容以订单快照为准' }}</p>
+              <p class="rights-caption">Repayment</p>
+              <p class="rights-content">{{ recommendedProduct.product_type === 'CASH_LOAN' ? `Due on day ${recommendedProduct.repayment_due_day}, paid in ${recommendedProduct.installment_count} instalment(s)` : (recommendedProduct.rights_desc || 'Details are saved with your application') }}</p>
             </div>
             <div class="product-item-action">
-              <span>立即查看并下单</span>
+              <span>View and Apply</span>
             </div>
           </button>
         </section>
@@ -68,22 +68,22 @@
               <div class="product-item-head">
                 <h3 class="product-item-title">{{ item.name }}</h3>
                 <div class="product-item-price-wrap">
-                  <span class="product-item-price-label">总售价</span>
-                  <strong class="product-item-price">¥{{ formatAmount(item.payment_amount) }}</strong>
+                  <span class="product-item-price-label">Loan Amount</span>
+                  <strong class="product-item-price">GHS {{ formatAmount(item.payment_amount) }}</strong>
                 </div>
               </div>
-              <p class="product-item-subtitle">{{ item.rights_title || '韶关丹霞山旅游权益' }}</p>
+              <p class="product-item-subtitle">{{ item.product_type === 'CASH_LOAN' ? 'Ghana short-term cash loan' : (item.rights_title || 'Service package') }}</p>
               <div class="product-item-tags">
-                <span>京东E卡额度 ¥{{ formatAmount(item.ecard_face_value) }}</span>
-                <span>账期 {{ item.term_days }} 天</span>
-                <span>额度按总价扣减</span>
+                <span>Cash Received: GHS {{ formatAmount(item.product_type === 'CASH_LOAN' ? item.nominal_loan_amount * (1 - item.upfront_fee_rate) : item.ecard_face_value) }}</span>
+                <span>Term: {{ item.term_days }} days</span>
+                <span>Upfront Fees: {{ formatAmount(item.upfront_fee_rate * 100) }}%</span>
               </div>
               <div class="product-item-rights">
-                <p class="rights-caption">权益说明</p>
-                <p class="rights-content">{{ item.rights_desc || '权益内容以订单快照为准' }}</p>
+                <p class="rights-caption">Repayment</p>
+                <p class="rights-content">{{ item.product_type === 'CASH_LOAN' ? `Due on day ${item.repayment_due_day}, paid in ${item.installment_count} instalment(s)` : (item.rights_desc || 'Details are saved with your application') }}</p>
               </div>
               <div class="product-item-action">
-                <span>立即查看并下单</span>
+                <span>View and Apply</span>
               </div>
             </button>
           </article>
@@ -92,22 +92,22 @@
 
       <section v-else-if="loanStatus === 'REJECTED'" class="page-card reject-card">
         <div class="reject-head">
-          <h2 class="review-title">当前审核未通过</h2>
-          <span class="reject-order">单号 {{ loanOrderNo }}</span>
+          <h2 class="review-title">Application Not Approved</h2>
+          <span class="reject-order">Application {{ loanOrderNo }}</span>
         </div>
         <p class="review-desc">{{ rejectReason }}</p>
 
         <div class="reject-grid">
           <article class="reject-item">
-            <span>审批状态</span>
-            <strong>未通过</strong>
+            <span>Decision</span>
+            <strong>Not Approved</strong>
           </article>
           <article class="reject-item">
-            <span>处理建议</span>
-            <strong>补充后重提</strong>
+            <span>Next Step</span>
+            <strong>Update and Resubmit</strong>
           </article>
           <article class="reject-item reject-item-wide">
-            <span>备注说明</span>
+            <span>Review Note</span>
             <strong>{{ rejectReason }}</strong>
           </article>
         </div>
@@ -118,7 +118,7 @@
           class="primary-action reject-action-btn"
           @click="router.replace('/application-form')"
         >
-          重新提交资料
+          Resubmit Application
         </van-button>
       </section>
 
@@ -126,8 +126,8 @@
         <div class="loading-orbit">
           <van-loading type="spinner" color="#2f7ef7" size="48px" />
         </div>
-        <h2 class="review-title">状态更新中</h2>
-        <p class="review-desc">正在刷新最新审核状态，请稍后。</p>
+        <h2 class="review-title">Updating Status</h2>
+        <p class="review-desc">Loading the latest application status.</p>
       </section>
     </div>
   </div>
@@ -169,9 +169,9 @@ const loanOrderNo = computed(() => {
   }
   return String(loanData.value.id).padStart(6, '0');
 });
-const rejectReason = computed(() => loanData.value?.review_note || '暂未通过当前授信审核，请核对资料后重新提交。');
+const rejectReason = computed(() => loanData.value?.review_note || 'Your application was not approved. Review your information and submit again.');
 
-const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
+const formatAmount = (value) => Number(value || 0).toLocaleString('en-GH', {
   minimumFractionDigits: Number(value || 0) % 1 === 0 ? 0 : 2,
   maximumFractionDigits: 2
 });

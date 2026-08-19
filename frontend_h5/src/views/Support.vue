@@ -1,6 +1,6 @@
 <template>
   <div class="page-shell support-page">
-    <van-nav-bar left-arrow title="客服帮助" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="Customer Support" @click-left="router.back()" />
 
     <div class="page-inner support-inner">
       <section class="page-card hero-card">
@@ -8,21 +8,21 @@
           <van-icon name="service-o" />
         </div>
         <div class="hero-copy">
-          <h1 class="hero-title">客服帮助</h1>
-          <p class="hero-desc">为您提供常见问题说明、订单查询入口和客服协助指引。</p>
+          <h1 class="hero-title">How Can We Help?</h1>
+          <p class="hero-desc">Find answers, review your applications and contact support.</p>
         </div>
       </section>
 
       <section class="page-card quick-card">
-        <h2 class="page-section-title">快捷入口</h2>
+        <h2 class="page-section-title">Quick Access</h2>
         <div class="quick-actions">
           <button type="button" class="quick-action" @click="router.push('/orders')">
             <span class="quick-icon">
               <van-icon name="orders-o" />
             </span>
             <span class="quick-copy">
-              <span class="quick-title">查看我的订单</span>
-              <span class="quick-desc">查看申请记录、审核进度与账单状态</span>
+              <span class="quick-title">View My Applications</span>
+              <span class="quick-desc">Review applications, decisions and repayment status</span>
             </span>
             <van-icon name="arrow" class="quick-arrow" />
           </button>
@@ -32,8 +32,8 @@
               <van-icon name="replay" />
             </span>
             <span class="quick-copy">
-              <span class="quick-title">刷新业务状态</span>
-              <span class="quick-desc">同步最新审核、下单、发卡和付款信息</span>
+              <span class="quick-title">Refresh Status</span>
+              <span class="quick-desc">Load the latest review, disbursement and repayment information</span>
             </span>
             <van-icon name="arrow" class="quick-arrow" />
           </button>
@@ -41,7 +41,7 @@
       </section>
 
       <section class="page-card faq-card">
-        <h2 class="page-section-title">常见问题</h2>
+        <h2 class="page-section-title">Frequently Asked Questions</h2>
         <div class="faq-list">
           <div class="faq-item" v-for="item in faqs" :key="item.question">
             <p class="faq-question">{{ item.question }}</p>
@@ -51,8 +51,8 @@
       </section>
 
       <section class="page-card service-card">
-        <h2 class="page-section-title">服务时间</h2>
-        <p class="page-section-desc">工作日 09:00 - 18:00。非工作时间提交的问题会在下一个服务时段内处理。</p>
+        <h2 class="page-section-title">Support Hours</h2>
+        <p class="page-section-desc">Weekdays, 09:00 - 18:00. Requests submitted outside these hours will be handled during the next service period.</p>
       </section>
     </div>
   </div>
@@ -66,21 +66,21 @@ const router = useRouter();
 
 const faqs = [
   {
-    question: '如何继续申请额度？',
-    answer: '进入首页点击“立即申请”，按流程完成实名认证和人脸识别后即可提交申请。'
+    question: 'How do I apply for credit?',
+    answer: 'Open the home page, select Apply Now, and complete identity and face verification.'
   },
   {
-    question: '订单为什么一直在审核中？',
-    answer: '审核会根据资料完整度和业务规则自动处理，您可以在“我的订单”中查看最新状态。'
+    question: 'Why is my application still under review?',
+    answer: 'Review time depends on the completeness of your information and the applicable credit rules. Check My Applications for updates.'
   },
   {
-    question: '如何查看还款信息？',
-    answer: '如果订单已进入待发卡、待付款或逾期阶段，可在“我的订单”页点击按钮进入账单页面查看。'
+    question: 'Where can I find repayment information?',
+    answer: 'Open My Applications and select View Bill once your loan is disbursed or overdue.'
   }
 ];
 
 const refreshStatus = () => {
-  showToast('状态已刷新，请前往我的订单查看');
+  showToast('Status refreshed. Open My Applications to view the latest information.');
   router.push('/orders');
 };
 </script>

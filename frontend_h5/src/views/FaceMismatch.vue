@@ -1,15 +1,15 @@
 <template>
   <div class="page-shell mismatch-page">
-    <van-nav-bar left-arrow title="人脸识别结果" @click-left="goBack" />
+    <van-nav-bar left-arrow title="Verification Result" @click-left="goBack" />
 
     <div class="page-inner mismatch-inner">
       <section class="page-card mismatch-card">
         <div class="icon-wrap">!</div>
-        <h1 class="title">识别未通过</h1>
-        <p class="desc">人脸识别信息与身份证信息不符，请重新尝试借款。</p>
+        <h1 class="title">Verification Unsuccessful</h1>
+        <p class="desc">Your face image did not match your identity document. Please try again.</p>
         <p v-if="reasonText" class="reason">{{ reasonText }}</p>
         <van-button block type="primary" class="primary-action retry-btn" @click="goBack">
-          返回人脸验证
+          Try Face Verification Again
         </van-button>
       </section>
     </div>
@@ -25,7 +25,7 @@ const route = useRoute();
 
 const reasonText = computed(() => {
   const reason = String(route.query.reason || '').trim();
-  return reason ? `失败原因：${reason}` : '';
+  return reason ? `Reason: ${reason}` : '';
 });
 
 const goBack = () => {

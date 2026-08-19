@@ -6,10 +6,10 @@ export const isValidSmsCode = (value) => /^\d{6}$/.test(value);
 
 export const getSmsButtonText = (loading, cooldownSeconds) => {
   if (loading) {
-    return '发送中...';
+    return 'Sending...';
   }
   if (cooldownSeconds > 0) {
-    return `${cooldownSeconds}s后重试`;
+    return `Retry in ${cooldownSeconds}s`;
   }
-  return '发送验证码';
+  return 'Send code';
 };

@@ -8,7 +8,7 @@ export const copyTextSafely = async (value) => {
       await navigator.clipboard.writeText(value);
       return true;
     } catch (error) {
-      // 部分手机浏览器会暴露 Clipboard API 但拒绝写入，继续使用 textarea 兜底。
+      // Some mobile browsers expose the Clipboard API but reject writes, so keep the textarea fallback.
     }
   }
 

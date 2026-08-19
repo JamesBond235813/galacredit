@@ -5,6 +5,7 @@ import random
 import string
 import time
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
@@ -19,11 +20,13 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.loan import Loan
+from app.models.channel import Channel
 from app.models.loan_ecard import LoanEcard
 from app.models.product import Product
 from app.models.purchase_contract import PurchaseContractSignature
+from app.models.loan_mandate import LoanMandate
 from app.models.user import User
-from app.schemas.loan import EcardSecretResponse, LoanOrderRequest, LoanOrderSmsCodeResponse, LoanResponse, ProductItemResponse, PurchaseContractPreviewRequest, PurchaseContractResponse
+from app.schemas.loan import DisburseRequest, EcardSecretResponse, LoanOrderRequest, LoanOrderSmsCodeResponse, LoanResponse, ProductItemResponse, PurchaseContractPreviewRequest, PurchaseContractResponse
 from app.services.audit import log_user_event_async
 from app.services.approved_credit_expiry import expire_unused_approved_credit_for_loan
 from app.services.blacklist_service import refresh_user_blacklist_status
@@ -32,7 +35,8 @@ from app.services.loan_assignment import assign_review_admin_if_needed_async
 from app.services.loan_flow import create_init_loan_async, get_latest_loan_async, get_or_create_loan_async
 from app.services.loan_ledger import sync_loan_repayment_state
 from app.services.loan_ws_notify import notify_loan_snapshot_changed, wait_loan_snapshot_changed
-from app.services.admin_service import notify_admin_stats_changed
+from app.services.admin_service import _disburse_loan, notify_admin_stats_changed
+from app.services.channel_service import normalize_channel_disbursement_mode
 from app.services.purchase_contract import PARTY_A_LEGAL_PERSON, PARTY_A_NAME, build_contract_payload, generate_contract_no, serialize_purchase_contract
 from app.services.risk_list_service import refresh_user_risk_list_status
 from app.services.sms_service import sms_service
@@ -56,7 +60,7 @@ def generate_order_no(now: Optional[datetime] = None) -> str:
 
 
 def _is_rights_only_product(product: Product) -> bool:
-    return (getattr(product, "product_type", None) == "RIGHTS_ONLY") or float(getattr(product, "ecard_face_value", 0) or 0) <= 0
+    return getattr(product, "product_type", None) == "RIGHTS_ONLY"
 
 
 def _is_regular_ecard_rights_loan(loan: Loan) -> bool:
@@ -309,7 +313,7 @@ async def preview_purchase_contract(
         "user_id": db_user.id,
         "loan_id": loan.id,
         "product_id": product.id,
-        "contract_title": "小荷包商品购销合同",
+        "contract_title": "GalaCredit Loan Agreement",
         "contract_content": payload["contract_content"],
         "party_a_name": PARTY_A_NAME,
         "party_a_legal_person": PARTY_A_LEGAL_PERSON,
@@ -358,7 +362,7 @@ async def sign_purchase_contract(
         loan_id=loan.id,
         product_id=product.id,
         extension_source_loan_id=source_loan.id if source_loan else None,
-        contract_title="小荷包商品购销合同",
+        contract_title="GalaCredit Loan Agreement",
         contract_content=payload["contract_content"],
         contract_text=payload["contract_text"],
         party_a_name=PARTY_A_NAME,
@@ -380,12 +384,28 @@ async def sign_purchase_contract(
     )
     db.add(signature)
     await db.flush()
+    if getattr(product, "product_type", None) == "CASH_LOAN":
+        db.add(
+            LoanMandate(
+                loan_id=loan.id,
+                user_id=db_user.id,
+                provider="momo",
+                status="ACTIVE",
+                consent_version="v1",
+                consent_content=(
+                    "The borrower authorizes GalaCredit and its appointed MoMo provider "
+                    "to process the confirmed disbursement and supported repayment collection."
+                ),
+                phone=db_user.phone,
+                signed_at=signed_at,
+            )
+        )
     await log_user_event_async(
         db,
         user=db_user,
         loan=loan,
         event_type="PURCHASE_CONTRACT_SIGNED",
-        title="签署小荷包商品购销合同",
+        title="Sign GalaCredit Loan Agreement",
         detail=f"合同编号：{signature.signature_no}；订单号：{order_no}；商品：{product.name}；金额：{payload['payment_amount']:.2f} 元。",
     )
     await db.commit()
@@ -447,8 +467,13 @@ async def withdraw(
     if payment_amount - available_limit > 1e-6:
         raise HTTPException(status_code=400, detail="信用额度不足，请选择更低金额商品")
 
-    ecard_face_value = float(product.ecard_face_value or 0)
-    rights_price = float(product.rights_price or 0)
+    is_cash_loan = getattr(product, "product_type", None) == "CASH_LOAN"
+    nominal_amount = float(getattr(product, "nominal_loan_amount", 0) or payment_amount)
+    upfront_fee_rate = float(getattr(product, "upfront_fee_rate", 0.4) or 0.4)
+    upfront_fee_amount = round(nominal_amount * upfront_fee_rate, 2)
+    actual_disbursement_amount = round(max(nominal_amount - upfront_fee_amount, 0), 2)
+    ecard_face_value = actual_disbursement_amount if is_cash_loan else float(product.ecard_face_value or 0)
+    rights_price = upfront_fee_amount if is_cash_loan else float(product.rights_price or 0)
     available_discount = 0.0 if source_loan else float(loan.approval_discount_amount or 0)
     discount_amount = min(available_discount, rights_price) if req.use_discount else 0.0
     payment_amount = round(payment_amount - discount_amount, 2)
@@ -463,12 +488,12 @@ async def withdraw(
         )
     ).scalar_one_or_none()
     if not signature:
-        raise HTTPException(status_code=400, detail="请先阅读并同意《小荷包商品购销合同》")
+        raise HTTPException(status_code=400, detail="请先阅读并同意《GalaCredit Loan Agreement》")
     if (signature.extension_source_loan_id or None) != (req.extension_source_loan_id or None):
         raise HTTPException(status_code=400, detail="合同签署记录与当前下单类型不匹配")
     if abs(float(signature.payment_amount or 0) - float(payment_amount or 0)) > 1e-6:
         raise HTTPException(status_code=400, detail="合同签署金额与当前下单金额不一致，请重新阅读并同意合同")
-    fee_rate = (effective_rights_price / ecard_face_value) if ecard_face_value > 0 else 0.0
+    fee_rate = upfront_fee_rate if is_cash_loan else ((effective_rights_price / ecard_face_value) if ecard_face_value > 0 else 0.0)
 
     order_loan = loan
     if source_loan:
@@ -485,10 +510,20 @@ async def withdraw(
     order_loan.credit_limit = ecard_face_value if ecard_face_value > 0 else payment_amount
     order_loan.fee_rate = fee_rate
     order_loan.fee_amount = effective_rights_price
+    order_loan.nominal_loan_amount = payment_amount if is_cash_loan else ecard_face_value
+    order_loan.upfront_fee_amount = effective_rights_price
+    order_loan.actual_disbursement_amount = ecard_face_value
+    order_loan.total_repayment_amount_snapshot = payment_amount if is_cash_loan else 0
+    order_loan.interest_start_day = int(getattr(product, "interest_start_day", 1) or 1)
+    order_loan.repayment_due_day = int(getattr(product, "repayment_due_day", product.term_days) or product.term_days)
+    order_loan.installment_count = int(getattr(product, "installment_count", 1) or 1)
+    order_loan.installment_ratios_json = getattr(product, "installment_ratios_json", None)
+    order_loan.fee_components_json = getattr(product, "fee_components_json", None)
     order_term_days = source_loan.term_days if source_loan else (loan.term_days or product.term_days)
     order_loan.term_days = order_term_days
     order_loan.product_term_days = order_term_days
     order_loan.product_id = product.id
+    order_loan.product_type = getattr(product, "product_type", None) or "CASH_LOAN"
     order_loan.product_name = product.name
     order_loan.rights_title = product.rights_title
     order_loan.rights_desc = product.rights_desc
@@ -537,6 +572,30 @@ async def withdraw(
             f"账期 {order_term_days} 天。"
         ),
     )
+
+    source_channel = None
+    if db_user.source_channel_id:
+        source_channel = (
+            await db.execute(select(Channel).where(Channel.id == db_user.source_channel_id))
+        ).scalar_one_or_none()
+    if source_channel and normalize_channel_disbursement_mode(getattr(source_channel, "disbursement_mode", None)) == "AUTO_DISBURSE":
+        # 自动渠道复用后台放款服务，确保MoMo、账本、分期和审计口径完全一致。
+        system_operator = SimpleNamespace(
+            id=0,
+            username="SYSTEM_AUTO_DISBURSE",
+            roles='["ADMIN"]',
+            permissions=None,
+        )
+        await _disburse_loan(
+            db,
+            system_operator,
+            order_loan.id,
+            DisburseRequest(
+                term_days=order_loan.term_days,
+                interest_start_day=order_loan.interest_start_day,
+                repayment_due_day=order_loan.repayment_due_day,
+            ),
+        )
 
     await db.commit()
     await db.refresh(order_loan)

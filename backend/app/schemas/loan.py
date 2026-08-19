@@ -119,6 +119,13 @@ class LoanResponse(LoanBase):
     status: str
     fee_rate: float = 0.6
     fee_amount: float = 0
+    nominal_loan_amount: float = 0
+    upfront_fee_amount: float = 0
+    actual_disbursement_amount: float = 0
+    interest_start_day: int = 1
+    repayment_due_day: int = 7
+    installment_count: int = 1
+    momo_disbursement_reference: Optional[str] = None
     interest_amount: float = 0
     guarantee_fee_amount: float = 0
     installment_amount: float = 0
@@ -193,6 +200,8 @@ class LoanResponse(LoanBase):
 
 class DisburseRequest(BaseModel):
     term_days: Optional[int] = Field(None, ge=1, le=364)
+    interest_start_day: Optional[int] = Field(None, ge=1, le=364)
+    repayment_due_day: Optional[int] = Field(None, ge=1, le=364)
 
     @field_validator("term_days")
     @classmethod
@@ -478,6 +487,14 @@ class ProductItemResponse(BaseModel):
     rights_detail: Optional[Dict[str, Any]] = None
     term_days: int
     payment_amount: float = 0
+    nominal_loan_amount: float = 0
+    upfront_fee_rate: float = 0.4
+    fee_components: Optional[Dict[str, Any]] = None
+    interest_start_day: int = 1
+    repayment_due_day: int = 7
+    installment_count: int = 1
+    installment_ratios: List[float] = Field(default_factory=list)
+    daily_overdue_fee: float = 10
     product_type: str = "ECARD_RIGHTS"
     is_active: bool = True
     created_at: datetime
@@ -493,7 +510,15 @@ class ProductCreateRequest(BaseModel):
     rights_detail: Optional[Dict[str, Any]] = None
     term_days: int = Field(..., ge=1, le=364)
     payment_amount: Optional[float] = Field(None, gt=0)
-    product_type: str = Field("ECARD_RIGHTS", pattern=r"^(ECARD_RIGHTS|RIGHTS_ONLY)$")
+    nominal_loan_amount: Optional[float] = Field(None, gt=0)
+    upfront_fee_rate: float = Field(0.4, ge=0, le=1)
+    fee_components: Optional[Dict[str, Any]] = None
+    interest_start_day: int = Field(1, ge=1, le=364)
+    repayment_due_day: int = Field(7, ge=1, le=364)
+    installment_count: int = Field(1, ge=1, le=24)
+    installment_ratios: Optional[List[float]] = None
+    daily_overdue_fee: float = Field(10, ge=0)
+    product_type: str = Field("CASH_LOAN", pattern=r"^(CASH_LOAN|ECARD_RIGHTS|RIGHTS_ONLY)$")
     is_active: bool = True
 
     @field_validator("term_days")
@@ -513,7 +538,15 @@ class ProductUpdateRequest(BaseModel):
     rights_detail: Optional[Dict[str, Any]] = None
     term_days: Optional[int] = Field(None, ge=1, le=364)
     payment_amount: Optional[float] = Field(None, gt=0)
-    product_type: Optional[str] = Field(None, pattern=r"^(ECARD_RIGHTS|RIGHTS_ONLY)$")
+    nominal_loan_amount: Optional[float] = Field(None, gt=0)
+    upfront_fee_rate: Optional[float] = Field(None, ge=0, le=1)
+    fee_components: Optional[Dict[str, Any]] = None
+    interest_start_day: Optional[int] = Field(None, ge=1, le=364)
+    repayment_due_day: Optional[int] = Field(None, ge=1, le=364)
+    installment_count: Optional[int] = Field(None, ge=1, le=24)
+    installment_ratios: Optional[List[float]] = None
+    daily_overdue_fee: Optional[float] = Field(None, ge=0)
+    product_type: Optional[str] = Field(None, pattern=r"^(CASH_LOAN|ECARD_RIGHTS|RIGHTS_ONLY)$")
     is_active: Optional[bool] = None
 
     @field_validator("term_days")
@@ -552,7 +585,7 @@ class PurchaseContractResponse(BaseModel):
     user_id: int
     loan_id: Optional[int] = None
     product_id: int
-    contract_title: str = "小荷包商品购销合同"
+    contract_title: str = "GalaCredit Loan Agreement"
     contract_content: str
     party_a_name: str
     party_a_legal_person: str

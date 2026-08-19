@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="小荷包风险报告"
+    title="GalaCredit Risk Report"
     width="1120px"
     top="2vh"
     append-to-body
@@ -12,8 +12,8 @@
       <template v-if="payload">
         <section class="composite-hero">
           <div>
-            <span class="composite-eyebrow">Xiaohebao Risk</span>
-            <h3>小荷包风险报告</h3>
+            <span class="composite-eyebrow">GalaCredit Risk</span>
+            <h3>GalaCredit Risk Report</h3>
             <p>合并全景雷达与探针C数据，展示客户申请行为、履约付款行为及外部履约探查结果。</p>
           </div>
           <div class="hero-source">
@@ -191,7 +191,7 @@
           </el-table>
         </section>
       </template>
-      <el-empty v-else description="暂无小荷包风险报告数据" />
+      <el-empty v-else description="No GalaCredit risk report data" />
     </div>
   </el-dialog>
 </template>

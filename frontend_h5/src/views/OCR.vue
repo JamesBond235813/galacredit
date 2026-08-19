@@ -1,126 +1,56 @@
 <template>
   <div class="page-shell ocr-page">
-    <van-nav-bar left-arrow title="实名认证" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="ID Verification" @click-left="router.back()" />
 
     <div class="page-inner ocr-inner">
-      <header class="ocr-hero">
-        <h1 class="ocr-title">
-          完成实名认证最高可申请<span class="ocr-title-highlight">8,000额度</span>
-        </h1>
-        <p class="ocr-subtitle">
-          为配合国家监管机构要求，您的身份信息将通过合作机构进行验证
-        </p>
+      <header class="document-heading">
+        <span>Front of your</span>
+        <strong>Ghana Card</strong>
       </header>
 
-      <section class="capture-stack">
-        <article class="page-card capture-card">
-          <div class="capture-head">
-            <div>
-              <h2 class="capture-title">上传人像面</h2>
-              <p class="capture-desc">请拍摄身份证头像面，确保信息清晰完整</p>
+      <section class="capture-panel">
+        <div class="viewfinder">
+          <div class="finder-corner top-left"></div>
+          <div class="finder-corner top-right"></div>
+          <div class="finder-corner bottom-left"></div>
+          <div class="finder-corner bottom-right"></div>
+
+          <img v-if="frontPreview" :src="frontPreview" alt="Ghana Card front" class="selected-preview" />
+          <div v-else class="ghana-card-placeholder">
+            <div class="ghana-card-topline">
+              <span class="ghana-seal">GH</span>
+              <div><b>ECOWAS IDENTITY CARD</b><small>REPUBLIC OF GHANA</small></div>
+              <span class="ghana-flag"><i></i><i></i><i></i></span>
             </div>
-            <span class="capture-status" :class="{ 'capture-status-done': !!frontFile }">
-              {{ frontFile ? '已选择' : '待上传' }}
-            </span>
+            <div class="ghana-card-body">
+              <div class="ghana-chip"></div>
+              <div class="ghana-lines"><i></i><i></i><i></i><i></i></div>
+              <div class="ghana-portrait"><span></span></div>
+            </div>
           </div>
 
-          <div class="viewfinder">
-            <div class="finder-corner top-left"></div>
-            <div class="finder-corner top-right"></div>
-            <div class="finder-corner bottom-left"></div>
-            <div class="finder-corner bottom-right"></div>
-
-            <img v-if="frontPreview" :src="frontPreview" alt="身份证人像面" class="selected-preview" />
-
-            <div v-else class="placeholder-id placeholder-id-front">
-              <div class="front-copy">
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <div class="portrait-box">
-                <div class="portrait-head"></div>
-                <div class="portrait-body"></div>
-              </div>
-              <div class="front-bar"></div>
-            </div>
-
-            <button
-              type="button"
-              class="lens-button"
-              :class="{ 'lens-button-float': !!frontPreview }"
-              @click="openPicker('front')"
-            >
-              <van-icon name="photograph" />
-            </button>
-          </div>
-        </article>
-
-        <article class="page-card capture-card">
-          <div class="capture-head">
-            <div>
-              <h2 class="capture-title">上传国徽面</h2>
-              <p class="capture-desc">请拍摄身份证国徽面，避免反光和缺边</p>
-            </div>
-            <span class="capture-status" :class="{ 'capture-status-done': !!backFile }">
-              {{ backFile ? '已选择' : '待上传' }}
-            </span>
-          </div>
-
-          <div class="viewfinder">
-            <div class="finder-corner top-left"></div>
-            <div class="finder-corner top-right"></div>
-            <div class="finder-corner bottom-left"></div>
-            <div class="finder-corner bottom-right"></div>
-
-            <img v-if="backPreview" :src="backPreview" alt="身份证国徽面" class="selected-preview" />
-
-            <div v-else class="placeholder-id placeholder-id-back">
-              <div class="back-emblem"></div>
-              <div class="back-title">
-                <span></span>
-                <span></span>
-              </div>
-              <div class="back-copy">
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              class="lens-button"
-              :class="{ 'lens-button-float': !!backPreview }"
-              @click="openPicker('back')"
-            >
-              <van-icon name="photograph" />
-            </button>
-          </div>
-        </article>
+          <button type="button" class="upload-button" :class="{ 'upload-button-float': !!frontPreview }" @click="openPicker('front')">
+            <van-icon name="photograph" />
+            <span>{{ frontPreview ? 'Change' : 'Upload' }}</span>
+          </button>
+        </div>
       </section>
 
-      <section class="guide-section">
-        <h2 class="guide-title">拍摄须知</h2>
-        <div class="guide-grid">
-          <div v-for="item in tips" :key="item.label" class="guide-item">
-            <div class="guide-shot" :class="`guide-shot-${item.type}`">
-              <div class="guide-card">
-                <div class="guide-headline"></div>
-                <div class="guide-body">
-                  <div class="guide-avatar"></div>
-                  <div class="guide-lines">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                </div>
-              </div>
+      <section class="note-section">
+        <strong>Note:</strong>
+        <p>Submitting a clear, valid Ghana Card scan can help you get a higher credit limit.</p>
+      </section>
+
+      <section class="reject-section">
+        <h2><van-icon name="close" /> Photos that would be rejected</h2>
+        <div class="reject-grid">
+          <div v-for="item in rejectedExamples" :key="item.label" class="reject-item">
+            <div class="reject-shot" :class="`reject-shot-${item.type}`">
+              <div v-if="item.type === 'selfie'" class="selfie-figure"><span></span></div>
+              <div v-else-if="item.type === 'blur'" class="blur-card"><b>GHANA CARD</b><i></i><i></i><i></i></div>
+              <div v-else class="scenery"><i></i></div>
             </div>
-            <p class="guide-label" :class="{ 'guide-label-ok': item.ok, 'guide-label-bad': !item.ok }">
-              <van-icon :name="item.ok ? 'passed' : 'close'" />
-              <span>{{ item.label }}</span>
-            </p>
+            <p>{{ item.label }}</p>
           </div>
         </div>
       </section>
@@ -129,8 +59,8 @@
     <footer class="ocr-footer">
       <div class="agreement-box">
         <van-checkbox v-model="agreed" icon-size="18px" checked-color="#2f7ef7" label-disabled>
-          <span class="agreement-toggle" @click.stop="toggleAgreed">我已阅读并同意</span>
-          <span class="agreement-link" @click.stop="goPersonalAgreement">《个人信息授权协议》</span>
+          <span class="agreement-toggle" @click.stop="toggleAgreed">I have read and agree to the</span>
+          <span class="agreement-link" @click.stop="goPersonalAgreement">Personal Data Authorization</span>
         </van-checkbox>
       </div>
 
@@ -138,11 +68,11 @@
         block
         type="primary"
         class="primary-action submit-btn"
-        :disabled="!frontFile || !backFile || !agreed"
+        :disabled="!frontFile || !agreed"
         :loading="loading"
         @click="onSubmit"
       >
-        提交实名信息
+        Submit Identity Information
       </van-button>
     </footer>
 
@@ -151,9 +81,9 @@
     </transition>
     <transition name="sheet-up">
       <div v-if="pickerVisible" class="picker-sheet">
-        <button type="button" class="picker-option" @click="chooseSource('camera')">拍照</button>
-        <button type="button" class="picker-option" @click="chooseSource('album')">从相册选择</button>
-        <button type="button" class="picker-cancel" @click="closePicker">取消</button>
+        <button type="button" class="picker-option" @click="chooseSource('camera')">Take Photo</button>
+        <button type="button" class="picker-option" @click="chooseSource('album')">Choose from Gallery</button>
+        <button type="button" class="picker-cancel" @click="closePicker">Cancel</button>
       </div>
     </transition>
 
@@ -172,39 +102,23 @@
       class="hidden-input"
       @change="handleFileChange($event, 'front')"
     />
-    <input
-      ref="backCameraInput"
-      type="file"
-      accept="image/*"
-      capture="environment"
-      class="hidden-input"
-      @change="handleFileChange($event, 'back')"
-    />
-    <input
-      ref="backAlbumInput"
-      type="file"
-      accept="image/*"
-      class="hidden-input"
-      @change="handleFileChange($event, 'back')"
-    />
-
     <van-dialog
       v-model:show="showConfirm"
-      title="请核对以下信息"
+      title="Confirm Your Information"
       class-name="ocr-confirm-dialog"
       show-cancel-button
       confirm-button-color="#2f7ef7"
       @confirm="onConfirmInfo"
     >
       <van-cell-group inset>
-        <van-cell class="ocr-confirm-cell" title="姓名" :value="extractedInfo.name" />
-        <van-cell class="ocr-confirm-cell" title="身份证号">
+        <van-cell class="ocr-confirm-cell" title="Full Name" :value="extractedInfo.name" />
+        <van-cell class="ocr-confirm-cell" title="Ghana Card No.">
           <template #value>
             <span class="ocr-single-line-value">{{ extractedInfo.idNum }}</span>
           </template>
         </van-cell>
-        <van-cell title="居住地址" :value="extractedInfo.address" />
-        <van-cell class="ocr-confirm-cell" title="有效期">
+        <van-cell title="Residential Address" :value="extractedInfo.address" />
+        <van-cell class="ocr-confirm-cell" title="Expiry Date">
           <template #value>
             <span class="ocr-single-line-value">{{ extractedInfo.expiry }}</span>
           </template>
@@ -238,16 +152,13 @@ const extractedInfo = ref({
 
 const frontCameraInput = ref(null);
 const frontAlbumInput = ref(null);
-const backCameraInput = ref(null);
-const backAlbumInput = ref(null);
 const pickerVisible = ref(false);
 const pendingSide = ref('');
 
-const tips = [
-  { label: '标准', type: 'good', ok: true },
-  { label: '缺边', type: 'cut', ok: false },
-  { label: '模糊', type: 'blur', ok: false },
-  { label: '闪光强烈', type: 'flash', ok: false }
+const rejectedExamples = [
+  { label: 'Selfie', type: 'selfie' },
+  { label: 'Blurred photos or incomplete ID photos', type: 'blur' },
+  { label: 'Scenery or items', type: 'scenery' }
 ];
 
 const revokePreview = (value) => {
@@ -338,10 +249,7 @@ const chooseSource = (source) => {
       camera: frontCameraInput.value,
       album: frontAlbumInput.value
     },
-    back: {
-      camera: backCameraInput.value,
-      album: backAlbumInput.value
-    }
+    back: {}
   };
 
   inputMap[pendingSide.value]?.[source]?.click();
@@ -369,7 +277,7 @@ const onSubmit = async () => {
       formData.append('back_image', backFile.value);
     }
 
-    showToast({ type: 'loading', message: '正在智能识别...', duration: 1500 });
+    showToast({ type: 'loading', message: 'Reading your ID...', duration: 1500 });
     const res = await submitOCR(formData);
     if (res.access_token) {
       localStorage.setItem('token', res.access_token);
@@ -385,7 +293,7 @@ const onSubmit = async () => {
       expiry: res.id_expiry
     };
     if (res.phone_reclaimed) {
-      showToast('已完成手机号实名归属更新');
+      showToast('Your verified mobile ownership has been updated');
     }
     showConfirm.value = true;
   } catch (error) {
@@ -973,4 +881,57 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateX(-50%) translateY(16px);
 }
+
+.ocr-page { padding-bottom: calc(150px + var(--app-tabbar-space)); background: #ffffff; }
+.ocr-page::before { display: none; }
+.ocr-inner { padding-top: 22px; }
+.document-heading { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; color: var(--app-text); }
+.document-heading span { font-size: 20px; line-height: 1.2; }
+.document-heading strong { padding: 18px 16px; border-radius: 8px; background: #f5f8fd; font-size: 20px; line-height: 1.2; }
+.capture-panel { padding: 8px; border-radius: 8px; background: #f2f4f8; }
+.viewfinder { aspect-ratio: 1.58 / 1; border: 0; border-radius: 6px; background: #f2f4f8; box-shadow: none; }
+.finder-corner { width: 22px; height: 22px; border-width: 4px; border-color: #bfc8d8; border-radius: 3px; }
+.top-left, .top-right { top: 4px; }
+.bottom-left, .bottom-right { bottom: 4px; }
+.top-left, .bottom-left { left: 4px; }
+.top-right, .bottom-right { right: 4px; }
+.ghana-card-placeholder { position: absolute; inset: 17% 9%; padding: 9px; border-radius: 7px; background: linear-gradient(135deg, #e5f4f8 0%, #f2f8ef 54%, #e9f2fb 100%); box-shadow: 0 5px 12px rgba(34, 63, 95, 0.08); color: #52677f; }
+.ghana-card-topline { display: flex; align-items: center; gap: 7px; font-size: 7px; text-align: center; }
+.ghana-card-topline div { flex: 1; }
+.ghana-card-topline b, .ghana-card-topline small { display: block; line-height: 1.25; }
+.ghana-seal { display: grid; width: 24px; height: 24px; place-items: center; border: 2px solid #d1a141; border-radius: 50%; color: #317360; font-size: 8px; font-weight: 800; }
+.ghana-flag { display: flex; width: 30px; flex-direction: column; }
+.ghana-flag i { height: 6px; background: #d94a48; }
+.ghana-flag i:nth-child(2) { background: #e5c34d; }
+.ghana-flag i:nth-child(3) { background: #3b9868; }
+.ghana-card-body { display: grid; grid-template-columns: 42px 1fr 54px; align-items: center; gap: 8px; margin-top: 12px; }
+.ghana-chip { height: 34px; border-radius: 6px; background: linear-gradient(135deg, #e7c675, #b88f3e); }
+.ghana-lines { display: flex; flex-direction: column; gap: 7px; }
+.ghana-lines i { width: 90%; height: 4px; border-radius: 4px; background: rgba(88, 115, 143, 0.28); }
+.ghana-lines i:nth-child(2) { width: 68%; }
+.ghana-lines i:nth-child(4) { width: 78%; }
+.ghana-portrait { height: 66px; border-radius: 6px; background: rgba(204, 218, 228, 0.9); overflow: hidden; }
+.ghana-portrait span { display: block; width: 42px; height: 58px; margin: 12px auto 0; border-radius: 50% 50% 35% 35%; background: #9fb1c4; }
+.upload-button { position: absolute; left: 50%; top: 50%; z-index: 4; display: flex; width: 74px; height: 74px; transform: translate(-50%, -50%); align-items: center; justify-content: center; flex-direction: column; gap: 3px; border-radius: 50%; background: var(--app-primary-deep); color: #ffffff; box-shadow: 0 10px 22px rgba(47, 126, 247, 0.25); font-size: 21px; }
+.upload-button span { font-size: 12px; font-weight: 700; }
+.upload-button-float { left: auto; top: auto; right: 12px; bottom: 12px; width: 58px; height: 58px; transform: none; }
+.note-section { margin-top: 18px; }
+.note-section strong { font-size: 16px; color: var(--app-text); }
+.note-section p { margin: 5px 0 0; font-size: 14px; line-height: 1.5; color: var(--app-text-faint); }
+.reject-section { margin-top: 18px; }
+.reject-section h2 { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; font-size: 16px; color: var(--app-text); }
+.reject-section h2 .van-icon { display: grid; width: 22px; height: 22px; place-items: center; border: 2px solid var(--app-danger); border-radius: 50%; color: var(--app-danger); font-size: 13px; }
+.reject-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.reject-item { min-width: 0; text-align: center; }
+.reject-shot { position: relative; height: 72px; border: 1px solid #e4e9f1; border-radius: 7px; background: #eef3f8; overflow: hidden; }
+.reject-item p { margin: 7px 0 0; font-size: 10px; line-height: 1.3; color: var(--app-text-faint); }
+.selfie-figure { position: absolute; inset: 12px 25px 0; border-radius: 50% 50% 0 0; background: #8eb4d6; }
+.selfie-figure span { position: absolute; left: 50%; top: -3px; width: 28px; height: 28px; transform: translateX(-50%); border-radius: 50%; background: #506f91; }
+.blur-card { position: absolute; inset: 12px 8px; padding: 8px; border-radius: 5px; background: #e8f1ed; filter: blur(1.7px); text-align: left; }
+.blur-card b { font-size: 7px; }
+.blur-card i { display: block; width: 70%; height: 3px; margin-top: 6px; background: #91a5b5; }
+.scenery { position: absolute; inset: 0; background: linear-gradient(#b9dcf2 0 48%, #d5c178 49% 100%); }
+.scenery::before, .scenery::after { position: absolute; bottom: 27px; content: ''; border-style: solid; border-width: 0 30px 24px; border-color: transparent transparent #819e88; }
+.scenery::before { left: -8px; }
+.scenery::after { right: -12px; border-bottom-color: #76917c; }
 </style>

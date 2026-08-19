@@ -14,6 +14,9 @@ export const updateChannel = (id, data) => request.patch(`/admin/channels/${id}`
 export const getProducts = (params) => request.get('/admin/products', { params });
 export const createProduct = (data) => request.post('/admin/products', data);
 export const updateProduct = (id, data) => request.patch(`/admin/products/${id}`, data);
+export const getActiveComplianceRule = () => request.get('/admin/compliance-rules/active');
+export const createComplianceRule = (data) => request.post('/admin/compliance-rules', data);
+export const getMomoTransactions = (params) => request.get('/admin/momo-transactions', { params });
 export const uploadProductRightsImage = (formData) => request.post('/admin/products/rights-image', formData);
 export const getEcardPool = (params) => request.get('/admin/ecard-pool', { params });
 export const createEcardPoolItem = (data) => request.post('/admin/ecard-pool', data);
@@ -50,6 +53,7 @@ export const createOverdueFeeConfig = (data) => request.post('/admin/overdue-fee
 export const getLoans = (params) => request.get('/admin/loans', { params });
 export const getLoanLedger = (id) => request.get(`/admin/loans/${id}/ledger`);
 export const getLoanPurchaseContract = (id) => request.get(`/admin/loans/${id}/purchase-contract`);
+export const getLoanMomoMandate = (id) => request.get(`/admin/loans/${id}/momo-mandate`);
 export const reviewLoan = (id, data) => request.post(`/admin/loans/${id}/review`, data);
 export const updateLoan = (id, data) => request.patch(`/admin/loans/${id}`, data);
 export const disburseLoan = (id, data) => request.post(`/admin/loans/${id}/disburse`, data);

@@ -16,3 +16,6 @@ from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.overdue_fee_config import OverdueFeeConfig
 from app.models.purchase_contract import PurchaseContractSignature
+from app.models.loan_mandate import LoanMandate
+from app.models.momo_transaction import MomoTransaction
+from app.models.compliance_rule import ComplianceRule

@@ -22,7 +22,7 @@
           <el-button @click="resetFilters">重置</el-button>
           <el-button type="warning" @click="openUploadDialog">批量上传</el-button>
           <el-button type="info" @click="downloadTemplate">下载模板</el-button>
-          <el-button type="success" @click="openCreateDialog">新增卡密</el-button>
+          <el-button type="success" @click="openCreateDialog">新增卡池记录</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -31,7 +31,7 @@
       <el-table v-loading="loading" :data="tableData" stripe>
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="account" label="卡号(脱敏)" min-width="180" />
-        <el-table-column prop="password" label="卡密(脱敏)" min-width="150" />
+        <el-table-column prop="password" label="卡密/卡号(脱敏)" min-width="150" />
         <el-table-column label="面额" min-width="100">
           <template #default="{ row }">{{ formatCurrency(row.face_value) }}</template>
         </el-table-column>
@@ -66,13 +66,13 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="createVisible" width="600px" title="新增卡池卡密" destroy-on-close>
+    <el-dialog v-model="createVisible" width="600px" title="新增卡池记录" destroy-on-close>
       <el-form label-width="110px">
         <el-form-item label="卡号">
-          <el-input v-model="createForm.account" placeholder="请输入京东E卡卡号" />
+          <el-input v-model="createForm.account" placeholder="请输入历史卡号" />
         </el-form-item>
         <el-form-item label="卡密">
-          <el-input v-model="createForm.password" placeholder="请输入京东E卡卡密" />
+          <el-input v-model="createForm.password" placeholder="请输入历史卡密" />
         </el-form-item>
         <el-form-item label="面额">
           <el-input-number v-model="createForm.face_value" :min="0" :step="100" />
@@ -90,7 +90,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="uploadVisible" width="640px" title="批量上传E卡" destroy-on-close>
+    <el-dialog v-model="uploadVisible" width="640px" title="批量上传历史卡密" destroy-on-close>
       <div style="margin-bottom: 12px; color: #606266; line-height: 1.6;">
         请上传包含卡号、密码、面额、有效期四列的 Excel 文件（xls/xlsx）。
         <br />模板可通过“下载模板”按钮获取。

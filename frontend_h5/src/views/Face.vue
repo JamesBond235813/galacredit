@@ -1,12 +1,12 @@
 <template>
   <div class="page-shell face-page">
-    <van-nav-bar left-arrow title="人脸识别" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="Face Verification" @click-left="router.back()" />
 
     <div class="page-inner face-inner">
       <header class="face-hero">
-        <span class="hero-chip">流程 2 / 4</span>
-        <h1 class="hero-title">请完成人脸活体核验</h1>
-        <p class="hero-desc">为保障申请真实性，系统将校验是否为本人操作，预计 10 秒内完成。</p>
+        <span class="hero-chip">Step 2 of 4</span>
+        <h1 class="hero-title">Complete Face Verification</h1>
+        <p class="hero-desc">We use a live face check to confirm that you are completing this application.</p>
       </header>
 
       <div class="tip-row">
@@ -16,11 +16,11 @@
       <section class="page-card scan-card">
         <div class="card-head">
           <div>
-            <h2 class="card-title">活体检测</h2>
-            <p class="card-desc">请将面部保持在取景框中央</p>
+            <h2 class="card-title">Live Face Check</h2>
+            <p class="card-desc">Keep your face centred in the frame</p>
           </div>
           <span class="capture-status" :class="{ 'capture-status-done': success }">
-            {{ success ? '已完成' : scanning ? '识别中' : '待识别' }}
+            {{ success ? 'Completed' : scanning ? 'Verifying' : 'Not Started' }}
           </span>
         </div>
 
@@ -42,15 +42,15 @@
 
         <div class="status-block">
           <h3 class="status-title">
-            <template v-if="!scanning && !success">请正对镜头并保持稳定</template>
-            <template v-else-if="scanning">正在进行活体检测...</template>
-            <template v-else>识别成功，继续补充资料</template>
+            <template v-if="!scanning && !success">Face the camera and keep still</template>
+            <template v-else-if="scanning">Verification in progress...</template>
+            <template v-else>Verification successful</template>
           </h3>
           <p class="status-desc">
-            <template v-if="!success">请避免逆光、遮挡和频繁晃动。</template>
-            <template v-else>下一步需要填写两位紧急联系人信息。</template>
+            <template v-if="!success">Avoid backlighting, face coverings and sudden movement.</template>
+            <template v-else>Next, provide two emergency contacts.</template>
           </p>
-          <p v-if="faceImageName" class="selected-face-tip">已选择照片：{{ faceImageName }}</p>
+          <p v-if="faceImageName" class="selected-face-tip">Selected image: {{ faceImageName }}</p>
         </div>
 
         <van-button
@@ -60,13 +60,13 @@
           :loading="scanning || redirecting"
           @click="startScan"
         >
-          {{ success ? '正在跳转...' : '开始识别' }}
+          {{ success ? 'Continuing...' : 'Start Verification' }}
         </van-button>
       </section>
 
       <p class="safe-note">
         <van-icon name="shield-o" />
-        认证影像仅用于实名核验与风控审核
+        Your image is used only for identity and risk verification
       </p>
     </div>
 
@@ -102,15 +102,15 @@
       <transition name="sheet-up">
         <div v-if="cameraModalVisible" class="camera-sheet">
           <div class="camera-sheet-head">
-            <span>{{ activeFacingMode === 'user' ? '前置相机' : '后置相机' }}</span>
-            <button type="button" class="camera-close" @click="closeLiveCamera">关闭</button>
+            <span>{{ activeFacingMode === 'user' ? 'Front Camera' : 'Rear Camera' }}</span>
+            <button type="button" class="camera-close" @click="closeLiveCamera">Close</button>
           </div>
           <video ref="videoRef" class="camera-preview" autoplay playsinline muted></video>
           <div class="camera-actions">
             <button type="button" class="camera-switch" @click="openLiveCamera(activeFacingMode === 'user' ? 'environment' : 'user')">
-              切换摄像头
+              Switch Camera
             </button>
-            <button type="button" class="camera-capture" @click="captureFromVideo">拍照并识别</button>
+            <button type="button" class="camera-capture" @click="captureFromVideo">Capture and Verify</button>
           </div>
         </div>
       </transition>
@@ -120,10 +120,10 @@
       </transition>
       <transition name="sheet-up">
         <div v-if="pickerVisible" class="picker-sheet">
-          <button type="button" class="picker-option" @click="chooseSource('front-camera')">前置拍照</button>
-          <button type="button" class="picker-option" @click="chooseSource('back-camera')">后置拍照</button>
-          <button type="button" class="picker-option" @click="chooseSource('album')">从相册选择</button>
-          <button type="button" class="picker-cancel" @click="closePicker">取消</button>
+          <button type="button" class="picker-option" @click="chooseSource('front-camera')">Use Front Camera</button>
+          <button type="button" class="picker-option" @click="chooseSource('back-camera')">Use Rear Camera</button>
+          <button type="button" class="picker-option" @click="chooseSource('album')">Choose from Gallery</button>
+          <button type="button" class="picker-cancel" @click="closePicker">Cancel</button>
         </div>
       </transition>
     </teleport>
@@ -153,7 +153,7 @@ const canvasRef = ref(null);
 let mediaStream = null;
 let redirectTimer = null;
 
-const tips = ['正对镜头', '环境明亮', '无明显遮挡'];
+const tips = ['Face the camera', 'Use good lighting', 'Keep your face clear'];
 
 const continueIfAlreadyPassed = async (silent = false) => {
   try {
@@ -162,7 +162,7 @@ const continueIfAlreadyPassed = async (silent = false) => {
       success.value = true;
       redirecting.value = true;
       if (!silent) {
-        showToast('检测到已完成人脸核验，继续下一步');
+        showToast('Face verification is already complete');
       }
       redirectTimer = window.setTimeout(() => {
         nextStep();
@@ -186,8 +186,8 @@ const doFaceAuth = async () => {
     formData.append('face_image', faceImage.value);
     const res = await submitFaceAuth(formData);
     success.value = true;
-    const scoreText = res?.score === null || res?.score === undefined ? '' : `（分值 ${res.score}）`;
-    showToast(`人脸核验通过${scoreText}`);
+    const scoreText = res?.score === null || res?.score === undefined ? '' : ` (score ${res.score})`;
+    showToast(`Face verification successful${scoreText}`);
     redirecting.value = true;
     redirectTimer = window.setTimeout(() => {
       nextStep();
@@ -196,7 +196,14 @@ const doFaceAuth = async () => {
     const detail = error?.response?.data?.detail || '';
     if (
       typeof detail === 'string' &&
-      ['人脸识别信息与身份证信息不符', '人脸核验未通过', '信息比对不通过', '姓名与身份证号不匹配', '信息比对失败', '不符'].some((key) =>
+      [
+        '\u4eba\u8138\u8bc6\u522b\u4fe1\u606f\u4e0e\u8eab\u4efd\u8bc1\u4fe1\u606f\u4e0d\u7b26',
+        '\u4eba\u8138\u6838\u9a8c\u672a\u901a\u8fc7',
+        '\u4fe1\u606f\u6bd4\u5bf9\u4e0d\u901a\u8fc7',
+        '\u59d3\u540d\u4e0e\u8eab\u4efd\u8bc1\u53f7\u4e0d\u5339\u914d',
+        '\u4fe1\u606f\u6bd4\u5bf9\u5931\u8d25',
+        '\u4e0d\u7b26'
+      ].some((key) =>
         detail.includes(key)
       )
     ) {
@@ -206,8 +213,7 @@ const doFaceAuth = async () => {
       });
       return;
     }
-    // 容错：移动端在弱网/超时场景下可能出现“后端已通过但前端未收到成功响应”。
-    // 发生异常时主动回查实名状态，若已通过则继续后续流程。
+    // Recheck the server state after mobile network timeouts because verification may have completed.
     await continueIfAlreadyPassed(true);
   } finally {
     scanning.value = false;
@@ -256,7 +262,7 @@ const openLiveCamera = async (facingMode) => {
       await videoRef.value.play();
     }
   } catch (error) {
-    showToast('当前环境不支持实时相机，已切换系统拍照');
+    showToast('Live camera is unavailable. Opening your device camera instead.');
     if (facingMode === 'user') {
       faceFrontCameraInput.value?.click();
     } else {
@@ -282,7 +288,7 @@ const closeLiveCamera = () => {
 
 const setFaceFile = (file) => {
   faceImage.value = file;
-  faceImageName.value = file.name || '已拍照';
+  faceImageName.value = file.name || 'Captured photo';
 };
 
 const compressImageIfNeeded = (file) =>
@@ -340,7 +346,7 @@ const captureFromVideo = () => {
   const video = videoRef.value;
   const canvas = canvasRef.value;
   if (!video || !canvas) {
-    showToast('相机初始化失败，请重试');
+    showToast('Could not start the camera. Please try again.');
     return;
   }
   const width = video.videoWidth || 720;
@@ -349,20 +355,20 @@ const captureFromVideo = () => {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    showToast('拍照失败，请重试');
+    showToast('Could not capture the photo. Please try again.');
     return;
   }
   ctx.drawImage(video, 0, 0, width, height);
   canvas.toBlob(
     (blob) => {
       if (!blob) {
-        showToast('拍照失败，请重试');
+        showToast('Could not capture the photo. Please try again.');
         return;
       }
       const file = new File([blob], `face-${Date.now()}.jpg`, { type: 'image/jpeg' });
       setFaceFile(file);
       closeLiveCamera();
-      showToast('已获取照片，开始核验');
+      showToast('Photo captured. Starting verification.');
       doFaceAuth();
     },
     'image/jpeg',
@@ -373,13 +379,13 @@ const captureFromVideo = () => {
 const handleFaceImageChange = async (event) => {
   const file = event.target.files?.[0];
   if (!file) {
-    showToast('未获取到照片，请重试');
+    showToast('No photo was selected. Please try again.');
     return;
   }
   const finalFile = await compressImageIfNeeded(file);
   setFaceFile(finalFile);
   event.target.value = '';
-  showToast('已获取照片，开始核验');
+  showToast('Photo selected. Starting verification.');
   doFaceAuth();
 };
 

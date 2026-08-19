@@ -1,6 +1,6 @@
 <template>
   <div class="page-shell bill-page">
-    <van-nav-bar left-arrow title="付款账单" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="Repayment Bill" @click-left="router.back()" />
 
     <div v-if="loading" class="page-inner bill-inner">
       <div class="loading-box">
@@ -13,13 +13,13 @@
         <div class="status-icon status-icon-warn">
           <van-icon name="underway" />
         </div>
-        <h1 class="status-title">发卡中</h1>
-        <p class="status-desc">您的订单已提交，正在为您配发京东E卡与权益确认，完成后即生成正式账单，敬请稍后。</p>
-        <div class="pill-info">下单商品：{{ productName }}</div>
+        <h1 class="status-title">Disbursement Processing</h1>
+        <p class="status-desc">Your application has been submitted. We are processing your MoMo disbursement.</p>
+        <div class="pill-info">Loan option: {{ productName }}</div>
         <div class="detail-list status-detail-list">
           <div class="detail-item">
-            <span>信用支付金额</span>
-            <span>{{ formatAmount(totalAmount) }}元</span>
+            <span>Total Repayment</span>
+            <span>GHS {{ formatAmount(totalAmount) }}</span>
           </div>
         </div>
       </section>
@@ -31,64 +31,64 @@
         <section class="page-card payment-record-card" :class="{ 'payment-record-card-overdue': loanStatus === 'OVERDUE' }">
           <div class="payment-record-head">
             <div class="payment-record-head-line">
-              <span class="payment-record-badge">{{ loanStatus === 'OVERDUE' ? '逾期账单' : '支付记录' }}</span>
-              <h1>{{ loanStatus === 'OVERDUE' ? '账单已逾期，请尽快处理' : '信用支付已入账' }}</h1>
+              <span class="payment-record-badge">{{ loanStatus === 'OVERDUE' ? 'Overdue Bill' : 'Loan Disbursed' }}</span>
+              <h1>{{ loanStatus === 'OVERDUE' ? 'Your repayment is overdue' : 'Funds Sent to Your MoMo Wallet' }}</h1>
             </div>
             <p>
               {{ loanStatus === 'OVERDUE'
-                ? '该笔信用支付账单已进入逾期状态，请尽快联系专属客服处理。'
-                : '该笔订单已完成信用支付，正式账单已生成。' }}
+                ? 'This bill is overdue. Contact customer support as soon as possible.'
+                : 'Your loan has been disbursed and your repayment schedule is ready.' }}
             </p>
           </div>
           <div class="payment-record-amount">
-            <span>信用支付金额</span>
-            <strong>¥{{ formatAmount(totalAmount) }}</strong>
+            <span>Total Repayment</span>
+            <strong>GHS {{ formatAmount(totalAmount) }}</strong>
           </div>
         </section>
 
         <section v-if="hasIssuedEcard" class="page-card ecard-card">
-          <h3>已发放京东E卡</h3>
+          <h3>Legacy E-card Details</h3>
           <div v-for="item in ecardItems" :key="item.key" class="ecard-item">
             <div class="ecard-item-title">
               <span>{{ item.title }}</span>
-              <strong v-if="item.faceValue">{{ formatAmount(item.faceValue) }}元</strong>
+              <strong v-if="item.faceValue">GHS {{ formatAmount(item.faceValue) }}</strong>
             </div>
             <div class="ecard-row">
-              <span>卡号</span>
+              <span>Card Number</span>
               <strong>{{ item.accountDisplay }}</strong>
               <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'account')" @click="copyEcardSecret('account', item)">
-                复制
+                Copy
               </van-button>
             </div>
             <div class="ecard-row">
-              <span>卡密</span>
+              <span>Card PIN</span>
               <strong>{{ item.passwordDisplay }}</strong>
               <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'password')" @click="copyEcardSecret('password', item)">
-                复制
+                Copy
               </van-button>
             </div>
             <div class="ecard-row">
-              <span>有效期</span>
+              <span>Expiry Date</span>
               <strong>{{ formatDate(item.expiresAt) || '--' }}</strong>
             </div>
           </div>
-          <p class="ecard-tip">页面仅展示脱敏卡密，复制后请妥善保管。</p>
+          <p class="ecard-tip">Sensitive card details are masked. Keep copied information secure.</p>
         </section>
 
-        <section class="page-card rights-service-card">
-          <h3>权益服务信息</h3>
+        <section v-if="loanData?.product_type !== 'CASH_LOAN'" class="page-card rights-service-card">
+          <h3>Legacy Service Information</h3>
           <div class="rights-service-rows">
             <div class="rights-service-item">
-              <span>权益内容</span>
+              <span>Service Details</span>
               <p>{{ rightsContent }}</p>
             </div>
             <div class="rights-service-item">
-              <span>联系电话</span>
+              <span>Contact Number</span>
               <p><a href="tel:13800138000">13800138000</a></p>
             </div>
             <div class="rights-service-item">
-              <span>行权提醒</span>
-              <p>请联系旅行社时提供权益发放机构以及您注册时的真实身份信息。</p>
+              <span>Important</span>
+              <p>Provide your registered identity details when requesting the legacy service.</p>
             </div>
           </div>
         </section>
@@ -104,21 +104,21 @@
         >
           <div class="installment-body">
             <div class="installment-grid installment-grid-labels">
-              <span>应还金额</span>
-              <span>期数</span>
-              <span>还款日</span>
+              <span>Amount Due</span>
+              <span>Instalment</span>
+              <span>Due Date</span>
             </div>
 
             <div class="installment-grid installment-grid-values">
               <strong :class="{ 'installment-danger': item.remainingAmount > 0 && item.status === 'OVERDUE' }">
-                {{ formatAmount(item.remainingAmount) }}元
+                GHS {{ formatAmount(item.remainingAmount) }}
               </strong>
-              <strong>第{{ item.index }}期</strong>
+              <strong>{{ item.index }} of {{ installmentCards.length }}</strong>
               <strong>{{ item.dueDateText }}</strong>
             </div>
 
             <van-button block type="primary" class="primary-action installment-btn" @click="onRepay(item)">
-              立即还款
+              Repay Now
             </van-button>
           </div>
         </article>
@@ -128,32 +128,32 @@
         <div class="status-icon status-icon-success">
           <van-icon name="passed" />
         </div>
-        <h1 class="status-title">账单已结清</h1>
-        <p class="status-desc">感谢您的守信，小荷包期待下次继续为您服务。</p>
-        <div class="pill-info">信用支付金额：¥{{ formatAmount(totalAmount) }}</div>
+        <h1 class="status-title">Loan Fully Repaid</h1>
+        <p class="status-desc">Thank you for repaying your loan.</p>
+        <div class="pill-info">Total repayment: GHS {{ formatAmount(totalAmount) }}</div>
         <section v-if="hasIssuedEcard" class="ecard-card settled-ecard-card">
-          <h3>已发放京东E卡</h3>
+          <h3>Legacy E-card Details</h3>
           <div v-for="item in ecardItems" :key="item.key" class="ecard-item">
             <div class="ecard-item-title">
               <span>{{ item.title }}</span>
-              <strong v-if="item.faceValue">{{ formatAmount(item.faceValue) }}元</strong>
+              <strong v-if="item.faceValue">GHS {{ formatAmount(item.faceValue) }}</strong>
             </div>
             <div class="ecard-row">
-              <span>卡号</span>
+              <span>Card Number</span>
               <strong>{{ item.accountDisplay }}</strong>
               <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'account')" @click="copyEcardSecret('account', item)">
-                复制
+                Copy
               </van-button>
             </div>
             <div class="ecard-row">
-              <span>卡密</span>
+              <span>Card PIN</span>
               <strong>{{ item.passwordDisplay }}</strong>
               <van-button size="small" type="primary" plain class="copy-btn" :loading="copyingKey === copyKey(item, 'password')" @click="copyEcardSecret('password', item)">
-                复制
+                Copy
               </van-button>
             </div>
             <div class="ecard-row">
-              <span>有效期</span>
+              <span>Expiry Date</span>
               <strong>{{ formatDate(item.expiresAt) || '--' }}</strong>
             </div>
           </div>
@@ -179,17 +179,17 @@ let loanSnapshotSubscriber = null;
 
 const loanStatus = computed(() => loanData.value?.status || '');
 const totalAmount = computed(() => loanData.value?.total_repayment_amount || 0);
-const productName = computed(() => loanData.value?.product_name || '未命名商品');
+const productName = computed(() => loanData.value?.product_name || 'Cash loan');
 const hasIssuedEcard = computed(() => Boolean(loanData.value?.has_issued_ecard));
 const ecardItems = computed(() => buildEcardDisplayItems(loanData.value));
-const rightsContent = computed(() => loanData.value?.rights_desc || loanData.value?.rights_title || '权益内容以订单快照为准');
+const rightsContent = computed(() => loanData.value?.rights_desc || loanData.value?.rights_title || 'Details are saved with your application');
 const copyingKey = ref('');
 
 const formatDate = (value) => {
   if (!value) {
     return '--';
   }
-  return new Date(value).toLocaleDateString('zh-CN');
+  return new Date(value).toLocaleDateString('en-GH');
 };
 
 const installmentCards = computed(() => {
@@ -202,16 +202,16 @@ const installmentCards = computed(() => {
     dueDateText: formatDate(item.due_date),
     status: item.status || 'PENDING',
     statusText: item.status === 'SETTLED'
-      ? '已结清'
+      ? 'Settled'
       : item.status === 'OVERDUE'
-        ? '已逾期'
+        ? 'Overdue'
         : item.status === 'CURRENT'
-          ? '待还款'
-          : '待到期',
+          ? 'Due'
+          : 'Upcoming',
   }));
 });
 
-const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
+const formatAmount = (value) => Number(value || 0).toLocaleString('en-GH', {
   minimumFractionDigits: Number(value || 0) % 1 === 0 ? 0 : 2,
   maximumFractionDigits: 2
 });
@@ -219,9 +219,9 @@ const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
 const copyKey = (item, field) => `${field}-${item?.id ?? item?.index ?? 0}`;
 
 const showManualCopyValue = (field, value) => {
-  const label = field === 'account' ? '卡号' : '卡密';
-  // 部分安卓/鸿蒙浏览器会限制异步接口返回后的剪贴板写入，用系统输入框兜底便于长按复制。
-  window.prompt(`自动复制失败，请长按复制${label}`, value);
+  const label = field === 'account' ? 'card number' : 'card PIN';
+  // Some mobile browsers block clipboard writes after an async request, so use a prompt as fallback.
+  window.prompt(`Automatic copy failed. Press and hold to copy the ${label}.`, value);
 };
 
 const copyEcardSecret = async (field, item = {}) => {
@@ -230,7 +230,7 @@ const copyEcardSecret = async (field, item = {}) => {
     const res = await getEcardSecret(field, buildEcardSecretParams(item));
     const copied = await copyTextSafely(res.value || '');
     if (copied) {
-      showToast('复制成功');
+      showToast('Copied');
     } else {
       showManualCopyValue(field, res.value || '');
     }
@@ -256,11 +256,11 @@ const onRepay = async (item = null) => {
   } catch (error) {
     // handled by interceptor
   }
-  const title = item ? `第${item.index}期还款指引` : '还款指引';
+  const title = item ? `Instalment ${item.index} Repayment` : 'Repayment Support';
   showDialog({
     title,
-    message: '请联系您的专属客服专员完成还款处理，客服确认后会在后台同步更新账单状态。',
-    confirmButtonText: '我知道了',
+    message: 'Contact customer support to complete your repayment. Your bill will update after payment is confirmed.',
+    confirmButtonText: 'Got It',
     confirmButtonColor: '#2f7ef7',
     className: 'repay-guide-dialog'
   });

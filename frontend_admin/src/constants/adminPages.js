@@ -2,18 +2,27 @@ export const ADMIN_PAGE_OPTIONS = [
   { key: 'overview', label: '洞察看板', route: '/overview', iconKey: 'overview' },
   { key: 'users', label: '用户档案', route: '/users', iconKey: 'users' },
   { key: 'applications', label: '申请审批', route: '/applications', iconKey: 'applications' },
-  { key: 'disbursements', label: '待发卡', route: '/disbursements', iconKey: 'disbursements' },
+  { key: 'disbursements', label: '待MoMo放款', route: '/disbursements', iconKey: 'disbursements' },
   { key: 'repayments', label: '还款管理', route: '/repayments', iconKey: 'repayments' },
   { key: 'collections', label: '催收管理', route: '/collections', iconKey: 'collections' },
   { key: 'financials', label: '财务平账', route: '/financials', iconKey: 'financials' },
   { key: 'risk-single-query', label: '风控报告单查', route: '/risk-single-query', iconKey: 'riskSingleQuery' },
   { key: 'blacklist', label: '黑名单', route: '/blacklist', iconKey: 'users' },
   { key: 'overdue-config', label: '逾期配置', route: '/overdue-config', iconKey: 'overdueConfig' },
-  { key: 'products', label: '商品管理', route: '/products', iconKey: 'products' },
-  { key: 'ecard-pool', label: '卡池管理', route: '/ecard-pool', iconKey: 'ecardPool' },
+  { key: 'products', label: '贷款产品', route: '/products', iconKey: 'products' },
+  { key: 'ecard-pool', label: '历史卡池兼容', route: '/ecard-pool', iconKey: 'ecardPool' },
   { key: 'channels', label: '渠道管理', route: '/channels', iconKey: 'channels' },
   { key: 'exclusive-links', label: '专属链接', route: '/exclusive-links', iconKey: 'channels' },
   { key: 'admin-users', label: '后台用户', route: '/admin-users', iconKey: 'adminUsers' }
+];
+
+export const ADMIN_MENU_GROUPS = [
+  { key: 'operations', iconKey: 'overview', itemKeys: ['overview'] },
+  { key: 'customerRisk', iconKey: 'users', itemKeys: ['users', 'risk-single-query', 'blacklist'] },
+  { key: 'loanOperations', iconKey: 'applications', itemKeys: ['applications', 'disbursements'] },
+  { key: 'repaymentCollections', iconKey: 'repayments', itemKeys: ['repayments', 'collections', 'financials'] },
+  { key: 'productsChannels', iconKey: 'products', itemKeys: ['products', 'overdue-config', 'channels', 'exclusive-links', 'ecard-pool'] },
+  { key: 'system', iconKey: 'adminUsers', itemKeys: ['admin-users'] }
 ];
 
 export const ADMIN_DEFAULT_ROUTE = ADMIN_PAGE_OPTIONS[0].route;
@@ -28,7 +37,7 @@ export const ALL_ADMIN_PERMISSION_KEYS = [...ADMIN_PAGE_PERMISSION_KEYS, ...ADMI
 export const ADMIN_ROLE_OPTIONS = [
   { key: 'ADMIN', label: '管理员', description: '所有页面与操作权限' },
   { key: 'REVIEW', label: '审核', description: '用户档案、申请审批、还款管理' },
-  { key: 'FINANCE', label: '财务', description: '待发卡、财务平账、商品管理、卡池管理' },
+  { key: 'FINANCE', label: '财务', description: 'MoMo放款、财务平账、贷款产品、历史卡池兼容' },
   { key: 'COLLECTION', label: '催收', description: '仅催收管理' },
   { key: 'BUSINESS_CONSULTANT', label: '业务顾问', description: '用户档案、专属链接页面' }
 ];

@@ -2,10 +2,10 @@
   <div class="page-shell profile-page">
     <header class="profile-header">
       <div class="user-copy">
-        <h1 class="greeting">您好，{{ maskedPhone }}</h1>
+        <h1 class="greeting">Hello, {{ maskedPhone }}</h1>
         <div class="license-pill">
           <van-icon name="shield-o" />
-          <span>信用消费服务，信息加密保护</span>
+          <span>Your information is encrypted and protected</span>
         </div>
       </div>
 
@@ -13,7 +13,7 @@
         <div class="avatar-inner">
           <van-icon name="user-o" />
         </div>
-        <span v-if="realNameStatus === 'AUTHED'" class="auth-badge">实名认证</span>
+        <span v-if="realNameStatus === 'AUTHED'" class="auth-badge">Verified</span>
       </div>
     </header>
 
@@ -21,13 +21,13 @@
       <div class="notice-banner">
         <div class="notice-main">
           <van-icon name="volume-o" class="notice-icon" />
-          <span class="notice-text">公告：{{ noticeText }}</span>
+          <span class="notice-text">Notice: {{ noticeText }}</span>
         </div>
-        <span class="notice-brand">小荷包</span>
+        <span class="notice-brand">GalaCredit</span>
       </div>
 
       <div class="services-card page-card">
-        <h2 class="section-title">我的服务</h2>
+        <h2 class="section-title">My Services</h2>
         <div class="services-grid">
           <button
             v-for="item in serviceItems"
@@ -47,7 +47,7 @@
     </section>
 
     <section class="menu-card page-card">
-      <h2 class="section-title">更多服务</h2>
+      <h2 class="section-title">More Services</h2>
       <div class="menu-list">
         <button
           v-for="item in menuItems"
@@ -81,18 +81,18 @@ const realNameStatus = ref('UNVERIFIED');
 let loanSnapshotSubscriber = null;
 
 const serviceItems = [
-  { key: 'withdraw', title: '待下单', icon: 'balance-pay', route: '/withdraw' },
-  { key: 'review', title: '审核中', icon: 'records', route: '/review' },
-  { key: 'repayment', title: '待付款', icon: 'idcard', route: '/bill' }
+  { key: 'withdraw', title: 'Apply', icon: 'balance-pay', route: '/withdraw' },
+  { key: 'review', title: 'Under Review', icon: 'records', route: '/review' },
+  { key: 'repayment', title: 'Repayment', icon: 'idcard', route: '/bill' }
 ];
 
 const menuItems = [
-  { key: 'service', title: '专属客服', icon: 'service-o' },
-  { key: 'change-password', title: '修改密码', icon: 'shield-o' },
-  { key: 'refresh', title: '点击更新', icon: 'replay' },
-  { key: 'about', title: '关于我们', icon: 'info-o' },
-  { key: 'agreement', title: '用户协议', icon: 'orders-o' },
-  { key: 'feedback', title: '问题反馈', icon: 'comment-o' }
+  { key: 'service', title: 'Customer Support', icon: 'service-o' },
+  { key: 'change-password', title: 'Change Password', icon: 'shield-o' },
+  { key: 'refresh', title: 'Refresh Status', icon: 'replay' },
+  { key: 'about', title: 'About Us', icon: 'info-o' },
+  { key: 'agreement', title: 'User Agreement', icon: 'orders-o' },
+  { key: 'feedback', title: 'Feedback', icon: 'comment-o' }
 ];
 
 const maskedPhone = computed(() => formatMaskedPhone(phone.value));
@@ -115,10 +115,10 @@ const activeServiceKey = computed(() => {
 
 const noticeText = computed(() => {
   if (loanStatus.value === 'OVERDUE') {
-    return '当前账单已逾期，请尽快联系专员处理。';
+    return 'Your repayment is overdue. Please contact support as soon as possible.';
   }
 
-  return '小荷包最新诈骗防范指南，请勿向私人账户转账。';
+  return 'Never send repayment funds to a private account.';
 });
 
 const formatMaskedPhone = (value) => {
@@ -144,7 +144,7 @@ const loadProfileData = async (showSuccessToast = false) => {
   }
 
   if (showSuccessToast) {
-    showToast('页面信息已更新');
+    showToast('Your information has been refreshed');
   }
 };
 
@@ -187,7 +187,7 @@ const handleMenuAction = async (key) => {
   }
 
   if (key === 'feedback') {
-    showToast('问题反馈入口正在完善');
+    showToast('The feedback channel is being prepared');
   }
 };
 

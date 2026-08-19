@@ -14,8 +14,8 @@
         <section class="risk-hero">
           <div class="risk-hero-top">
             <div class="risk-hero-main">
-              <span class="risk-eyebrow">Xiaohebao Risk</span>
-              <h3>小荷包风险报告</h3>
+              <span class="risk-eyebrow">GalaCredit Risk</span>
+              <h3>GalaCredit Risk Report</h3>
               <p>合并全景雷达与探针C数据，展示客户申请行为、履约付款行为及外部履约探查结果。</p>
             </div>
             <div class="risk-hero-side">
@@ -259,7 +259,7 @@
       </template>
 
       <div v-else class="empty-wrap">
-        <el-empty description="暂无小荷包风险报告数据" />
+        <el-empty description="No GalaCredit risk report data" />
       </div>
     </div>
   </el-dialog>

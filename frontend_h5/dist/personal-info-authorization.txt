@@ -1,166 +1,75 @@
-【用户在“小荷包”平台点击同意、勾选、继续操作或以其他积极方式表示接受本授权书的，则表示用户已充分阅读理解并接受本授权书的条款，本授权书在用户进行前述认可行为后立即生效。授权人与被授权人均同意本授权书以电子形式作出并认可其法律效力。】
+GALACREDIT PERSONAL DATA AUTHORIZATION
 
-一、定义
-1、个人信息，指如下信息：
+Last updated: 18 August 2026
 
+Please read this authorization before submitting identity documents or a credit application.
 
+This document is an operational draft for the Ghana service and must be reviewed by qualified Ghanaian legal and compliance advisers before production release.
 
-（1）姓名、出生日期、身份证件号码、身份证件及有效期、地址、电话号码、学历、声音、肖像、面部识别特征、人脸扫描数据、虹膜及其他类似的生物特征信息、工作信息、家庭信息、社保及公积金缴存信息等个人基本信息。
+1. DATA WE MAY COLLECT
 
+To provide credit application and account services, GalaCredit and its approved service providers may collect and process:
 
+- your name, date of birth, gender and Ghana Card information;
+- images of your identity document and face verification image;
+- registered mobile number and verification records;
+- residential, employment and emergency contact information;
+- device, browser, IP address and location information;
+- application, credit decision, disbursement, repayment and customer support records;
+- MoMo account and transaction references required for disbursement, repayment and reconciliation;
+- fraud prevention, blacklist and risk assessment results obtained lawfully from approved sources.
 
-（2）涉讼信息、行政处罚信息、违法犯罪信息等个人正常信用信息及不良信用信息。 本人已经充分理解并知晓：前述不良信用信息一旦记录在第三方机构的信息数据库中，有可能会对本人日后的经济活动产生不同程度的不良影响。
+2. PURPOSES OF PROCESSING
 
+Your data may be used to:
 
+- create and secure your account;
+- verify your identity and mobile ownership;
+- assess eligibility, affordability, fraud and credit risk;
+- process applications and generate loan terms;
+- arrange MoMo disbursement and repayment;
+- send service, security and repayment notifications;
+- provide customer support and handle complaints;
+- maintain audit records, prevent unlawful activity and comply with legal obligations;
+- improve service reliability, risk controls and customer experience using appropriately protected data.
 
-（3）个人收入、存款、有价证券、商业保险、银行卡信息、不动产的信息和纳税数额信息等财产性信息。本人已经认识的本人的前述财产性信息对本人而言是私密且重要的信息。 本人已经充分理解并知晓该等信息被提供和使用的风险。这些风险包括但不限于：纳入这些信息对本人的信用评级（评分）、信用报告等结果可能产生不利影响等。
+3. IDENTITY AND FACE VERIFICATION
 
+You authorise the use of your Ghana Card images and face image to confirm that the application is being made by you. Approved identity or biometric verification providers may process these images only for authorised verification, fraud prevention and compliance purposes.
 
+4. LOCATION AND DEVICE INFORMATION
 
-（4）设备信息、社交数据、阅读数据、上网浏览/搜索数据、所用应用程序的账号信息、使用某项服务的时间地点等信息、联系人信息（含通讯录信息以及本人在申请服务过程中提交的联系人信息等）、消费数据（含近期交易笔数、交易金额及消费行为评分数据等）等个人行为特征数据信息。
+Location and device information may be used to protect your account, detect suspicious access and support risk assessment. The application will request browser or device permission before collecting precise location information where required.
 
+5. EMERGENCY CONTACTS
 
+You confirm that emergency contact information is accurate and supplied lawfully. Contacts may be used only for permitted verification, account support or collection purposes. You must not provide a contact without a lawful basis to do so.
 
-（5）其他任何与本人有关联的信息，但法律、法规、监管政策禁止的除外。
+6. SERVICE PROVIDERS AND DISCLOSURE
 
+Data may be shared, where necessary and legally permitted, with identity verification providers, risk service providers, hosting and security providers, communications providers, MoMo/payment providers, professional advisers, collection service providers and competent authorities.
 
+Service providers must process data only for authorised purposes and apply appropriate confidentiality and security controls.
 
-2、第三方，指与被授权人或本人有直接或间接关联的如下主体或机构：
+7. STORAGE AND RETENTION
 
+Data may be stored in secure systems used to provide the service. Records will be retained only for as long as required for the loan relationship, legal obligations, fraud prevention, audit, complaints and legitimate business purposes.
 
+8. SECURITY
 
-（1）中国人民银行金融信用信息基础数据库、依法设立的征信机构（包括不限于朴道征信等）、资信评估机构或有关法律、监管机构许可的类似信用机构。该等机构特定的授权内容可作为本授权书附件，构成本授权书的有效组成部分。
+GalaCredit applies reasonable technical and organisational safeguards. No electronic service can guarantee absolute security. Protect your phone, SIM card, verification codes and account access, and report suspected misuse promptly.
 
+9. YOUR RIGHTS
 
+Subject to applicable Ghanaian law, you may request access to, correction of or information about your personal data. You may also raise a complaint or request review of how your information is handled through Customer Support.
 
-（2）被授权人关联方、为被授权人提供必要技术和服务的合作方，以及与被授权人合作从事信贷、担保相关业务的放款机构、担保机构、支付机构。
+Withdrawing consent may not affect processing already completed lawfully and may prevent GalaCredit from providing services that require the affected information.
 
+10. AUTHORIZATION
 
+By selecting the agreement checkbox and submitting your information, you confirm that:
 
-（3）依法存有本人某方面个人信息的其他机构，包括但不限于法院、公积金、社保、税务、民政、物流、通信运营商、电子商务平台、电子认证服务提供者、互联网平台等机构或主体。
-
-
-
-二、授权内容
-
-
-
-因本人使用 “小荷包”平台 提供的融资担保相关的咨询、支持、顾问与服务等业务，基于业务的需要，本人现同意向 平台的所有者（以下称“被授权人”）及第三方郑重授权如下：
-
-1、同意被授权人及第三方在办理下列业务（下称“授权用途”）时查询、收集、使用、保存本人的个人信息：
-
-
-
-（1）审核本人通过被授权人或第三方申请的融资担保需求；
-
-
-
-（2）出于电子签名方面的需要进行必要的身份注册及认证；
-
-
-
-（3）处理本人征信异议；
-
-
-
-（4）依法或经有权部门要求向第三方提供；
-
-
-
-（5）管理本人通过被授权人或第三方办理的其他业务；
-
-
-
-（6）为本人建立、管理账户；
-
-
-
-（7）为本人提供客户服务；
-
-
-
-（8）为向本人提供更优的服务开展必要的市场调研或广告营销；
-
-
-
-（9）其他合法合规的用途。
-
-
-
-2、同意被授权人基于授权用途通过第三方查询、核实、采集和保存本人的个人信息。
-
-
-
-3、同意被授权人基于授权用途向第三方报送、提供、共享被授权人通过相关渠道获取的本人个人信息。
-
-
-
-4、同意被授权人及第三方对依法获取的本人个人信息进行保存、分析、加工、整理或处理，包括但不限于将本人的个人信息纳入被授权人或第三方的风险模型并输出相应的信用评分/评级数据等。
-
-
-
-以上的授权事项，均以满足法律法规和监管规定为前提。
-
-
-
-5、本人知悉，被授权人将本人个人信息存储在中华人民共和国境内。若存在跨境信息传输的必要，需另行取得本人同意。关于个人信息的处理与保护的详情，本人已知晓可查询《用户隐私政策》。
-
-
-
-三、授权的例外
-
-
-
-本人知悉，根据相关法律法规规定，以下情形下被授权人收集或处理本人的个人信息无需征得本人的授权同意:
-
-
-
-（1）与国家安全、国防安全、公共安全、公共卫生、重大公共利益、犯罪侦查、起诉、审判和判决执行有关的；
-
-
-
-（2）出于维护本人或其他个人的生命、财产重大合法权益但又难以征得到本人同意的；
-
-
-
-（3）所收集的个人信息是已向社会公众公开的；
-
-
-
-（4）从合法公开披露的信息中收集个人信息的，如合法的新闻报道、政府信息公开渠道；
-
-
-
-（5）被授权人根据本人要求签订和履行合同所必需的；
-
-
-
-（6）法律法规规定的其他情形。
-
-
-
-四、授权期限
-
-
-
-自本人作出本授权承诺之日起，至本人在被授权人处注销之日止。本人知悉并同意：本人在被授权人和/或其合作方处有借款额度或授信但无贷款余额的业务关系仍然存续，被授权人仍有权向第三方查询、打印、保存或上报本人的基本信息和信用信息。
-
-
-
-五、争议解决
-
-
-
-若本人与被授权人发生任何纠纷或争议，首先应友好协商解决。协商不成的，本人同意将纠纷或争议提交山东省日照市仲裁委员会仲裁解决。本授权书的成立、生效、履行、解释及纠纷解决，适用中华人民共和国大陆地区法律（不包括冲突法）。
-
-
-
-本人姓名：
-
-
-
-证件名称及号码：身份证
-
-
-
-签署日期：    年  月  日
+- the information you provide is accurate and belongs to you;
+- you understand the categories and purposes described above;
+- you authorise GalaCredit and approved providers to process the information for those purposes, subject to applicable law;
+- you understand that identity and risk checks are required before a credit decision can be made.

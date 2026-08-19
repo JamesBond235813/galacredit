@@ -14,8 +14,8 @@ describe('smsLogin utils', () => {
   });
 
   it('should format sms button text', () => {
-    expect(getSmsButtonText(true, 0)).toBe('发送中...');
-    expect(getSmsButtonText(false, 21)).toBe('21s后重试');
-    expect(getSmsButtonText(false, 0)).toBe('发送验证码');
+    expect(getSmsButtonText(true, 0)).toBe('Sending...');
+    expect(getSmsButtonText(false, 21)).toBe('Retry in 21s');
+    expect(getSmsButtonText(false, 0)).toBe('Send code');
   });
 });

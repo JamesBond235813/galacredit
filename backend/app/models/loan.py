@@ -16,6 +16,17 @@ class Loan(Base):
     approved_credit_limit = Column(Float, default=0.0)
     fee_rate = Column(Float, default=0.6)         # 综合息费率
     fee_amount = Column(Float, default=0.0)       # 综合息费金额
+    nominal_loan_amount = Column(Float, default=0.0, nullable=False)
+    upfront_fee_amount = Column(Float, default=0.0, nullable=False)
+    actual_disbursement_amount = Column(Float, default=0.0, nullable=False)
+    total_repayment_amount_snapshot = Column(Float, default=0.0, nullable=False)
+    interest_start_day = Column(Integer, default=1, nullable=False)
+    repayment_due_day = Column(Integer, default=7, nullable=False)
+    installment_count = Column(Integer, default=1, nullable=False)
+    installment_ratios_json = Column(String(2000), nullable=True)
+    fee_components_json = Column(String(2000), nullable=True)
+    momo_disbursement_reference = Column(String(100), nullable=True)
+    momo_repayment_reference = Column(String(100), nullable=True)
     term_days = Column(Integer, nullable=True)     # 后台设定
     due_date = Column(DateTime, nullable=True)     # 后台发卡时根据 term_days 计算
     penalty_amount = Column(Float, default=0.0)    # 违约金
@@ -52,6 +63,7 @@ class Loan(Base):
     identity_face_auth_at = Column(DateTime, nullable=True)
 
     product_id = Column(Integer, nullable=True, index=True)
+    product_type = Column(String(30), nullable=True, index=True)
     product_name = Column(String(120), nullable=True)
     rights_title = Column(String(120), nullable=True)
     rights_desc = Column(String(255), nullable=True)

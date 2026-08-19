@@ -2,48 +2,55 @@
   <el-container class="layout-container">
     <el-aside width="248px" class="aside-menu">
       <div class="logo">
-        <img :src="brandLogo" class="brand-logo" alt="小荷包 logo" />
+        <img :src="brandLogo" class="brand-logo" alt="GalaCredit logo" />
         <div class="logo-copy">
-          <strong>小荷包</strong>
-          <span>解生活之所急</span>
+          <strong>GalaCredit</strong>
+          <span>{{ t('brandSubtitle') }}</span>
         </div>
       </div>
 
-      <el-menu :default-active="route.path" class="el-menu-vertical" router>
-        <el-menu-item v-for="item in visibleMenuItems" :key="item.key" :index="item.route">
-          <el-icon><component :is="iconMap[item.iconKey]" /></el-icon>
-          <div class="menu-item-content">
-            <span>{{ item.label }}</span>
-            <span
-              v-if="getMenuBadgeCount(item.key) > 0"
-              class="menu-badge"
-            >
-              {{ getMenuBadgeCount(item.key) }}
-            </span>
-          </div>
-        </el-menu-item>
+      <el-menu :default-active="route.path" :default-openeds="openGroupKeys" class="el-menu-vertical" router>
+        <el-sub-menu v-for="group in visibleMenuGroups" :key="group.key" :index="group.key">
+          <template #title>
+            <el-icon><component :is="iconMap[group.iconKey]" /></el-icon>
+            <span>{{ t(group.key) }}</span>
+          </template>
+          <el-menu-item v-for="item in group.items" :key="item.key" :index="item.route">
+            <el-icon><component :is="iconMap[item.iconKey]" /></el-icon>
+            <div class="menu-item-content">
+              <span>{{ getMenuLabel(item.key) }}</span>
+              <span v-if="getMenuBadgeCount(item.key) > 0" class="menu-badge">
+                {{ getMenuBadgeCount(item.key) }}
+              </span>
+            </div>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
     <el-container>
       <el-header class="main-header">
         <div class="header-left">
-          <h2 class="page-title">{{ route.meta.title }}</h2>
+          <h2 class="page-title">{{ getPageTitle(route.meta.permission || 'overview') }}</h2>
           <p class="page-subtitle">{{ pageSubtitle }}</p>
         </div>
 
         <div class="header-right">
+          <el-select v-model="selectedLocale" class="locale-select" size="small" :aria-label="t('language')" @change="handleLocaleChange">
+            <el-option label="中文" value="zh-CN" />
+            <el-option label="English" value="en-GH" />
+          </el-select>
           <div class="header-date">{{ currentDateText }}</div>
           <el-dropdown @command="handleCommand">
             <span class="user-dropdown">
-              <el-avatar size="small" class="admin-avatar">管</el-avatar>
+              <el-avatar size="small" class="admin-avatar">{{ adminLocale === 'en-GH' ? 'A' : '管' }}</el-avatar>
               {{ adminDisplayName }}
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="change-password">修改密码</el-dropdown-item>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                <el-dropdown-item command="change-password">{{ t('changePassword') }}</el-dropdown-item>
+                <el-dropdown-item command="logout">{{ t('logout') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -58,21 +65,21 @@
         </router-view>
       </el-main>
 
-      <el-dialog v-model="passwordDialogVisible" width="460px" title="修改密码" destroy-on-close>
+      <el-dialog v-model="passwordDialogVisible" width="460px" :title="t('changePassword')" destroy-on-close>
         <el-form label-position="top">
-          <el-form-item label="原密码" required>
+          <el-form-item :label="t('oldPassword')" required>
             <el-input v-model="passwordForm.oldPassword" type="password" show-password maxlength="50" />
           </el-form-item>
-          <el-form-item label="新密码" required>
+          <el-form-item :label="t('newPassword')" required>
             <el-input v-model="passwordForm.newPassword" type="password" show-password maxlength="50" />
           </el-form-item>
-          <el-form-item label="确认新密码" required>
+          <el-form-item :label="t('confirmPassword')" required>
             <el-input v-model="passwordForm.confirmPassword" type="password" show-password maxlength="50" />
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="passwordDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="changingPassword" @click="submitChangePassword">确认修改</el-button>
+          <el-button @click="passwordDialogVisible = false">{{ t('cancel') }}</el-button>
+          <el-button type="primary" :loading="changingPassword" @click="submitChangePassword">{{ t('confirm') }}</el-button>
         </template>
       </el-dialog>
     </el-container>
@@ -100,6 +107,7 @@ import {
 import { changeAdminPassword, getAdminInfo, getAdminStats } from '../api';
 import brandLogo from '../assets/logo.svg';
 import {
+  ADMIN_MENU_GROUPS,
   ADMIN_PAGE_OPTIONS,
   clearStoredAdminAuth,
   getFirstAccessibleRoute,
@@ -108,6 +116,7 @@ import {
   getStoredAdminPermissions,
   writeStoredAdminProfile
 } from '../constants/adminPages';
+import { adminLocale, getMenuLabel, getPageTitle, setAdminLocale, t } from '../i18n/adminLocale';
 
 const route = useRoute();
 const router = useRouter();
@@ -124,6 +133,7 @@ let statsReconnectTimer = null;
 const passwordDialogVisible = ref(false);
 const changingPassword = ref(false);
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' });
+const selectedLocale = ref(adminLocale.value);
 
 const iconMap = {
   overview: DataAnalysis,
@@ -141,16 +151,26 @@ const iconMap = {
   adminUsers: Setting
 };
 
-const currentDateText = computed(() => new Date().toLocaleString('zh-CN', { hour12: false }));
-const pageSubtitle = computed(() => route.meta.description || '同步查看 H5 用户资料、审批、发卡、付款提醒和催收进度');
-const adminDisplayName = computed(() => adminProfile.value?.username || '后台用户');
-const visibleMenuItems = computed(() => {
-  if (!adminProfile.value?.permissions?.length) {
-    return ADMIN_PAGE_OPTIONS;
-  }
-
-  return ADMIN_PAGE_OPTIONS.filter((item) => hasAdminPermission(adminProfile.value.permissions, item.key));
+const currentDateText = computed(() => new Date().toLocaleString(adminLocale.value, { hour12: false }));
+const pageSubtitle = computed(() => adminLocale.value === 'en-GH'
+  ? t('defaultSubtitle')
+  : route.meta.description || t('defaultSubtitle'));
+const adminDisplayName = computed(() => adminProfile.value?.username || (adminLocale.value === 'en-GH' ? 'Administrator' : '后台用户'));
+const visibleMenuGroups = computed(() => ADMIN_MENU_GROUPS.map((group) => ({
+  ...group,
+  items: group.itemKeys
+    .map((key) => ADMIN_PAGE_OPTIONS.find((item) => item.key === key))
+    .filter((item) => item && (!adminProfile.value?.permissions?.length || hasAdminPermission(adminProfile.value.permissions, item.key)))
+})).filter((group) => group.items.length));
+const openGroupKeys = computed(() => {
+  const activeGroup = visibleMenuGroups.value.find((group) => group.items.some((item) => item.route === route.path));
+  return activeGroup ? [activeGroup.key] : visibleMenuGroups.value.map((group) => group.key);
 });
+
+const handleLocaleChange = (locale) => {
+  setAdminLocale(locale);
+  selectedLocale.value = locale;
+};
 
 const canReadStats = () => {
   const permissions = getStoredAdminPermissions();
@@ -416,15 +436,46 @@ onBeforeUnmount(() => {
   letter-spacing: 0.8px;
 }
 
+.locale-select {
+  width: 112px;
+}
+
 .el-menu-vertical {
   border-right: none;
   background: transparent;
 }
 
+.el-menu-vertical :deep(.el-sub-menu .el-menu) {
+  background: transparent;
+}
+
+.el-menu-vertical :deep(.el-sub-menu__title) {
+  height: 48px;
+  line-height: 48px;
+  margin: 4px 10px 0;
+  border-radius: 8px;
+  color: #9aabc2;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.el-menu-vertical :deep(.el-sub-menu__title:hover) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.el-menu-vertical :deep(.el-sub-menu .el-menu-item) {
+  padding-left: 50px !important;
+}
+
 .el-menu-vertical :deep(.el-menu-item) {
-  margin: 8px 14px;
+  height: 48px;
+  line-height: 48px;
+  margin: 4px 14px;
   border-radius: 14px;
   color: rgba(255, 255, 255, 0.72);
+  font-size: 15px;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -461,13 +512,14 @@ onBeforeUnmount(() => {
 }
 
 .el-menu-vertical :deep(.el-menu-item.is-active) {
-  background: linear-gradient(135deg, rgba(88, 163, 255, 0.22) 0%, rgba(114, 241, 200, 0.16) 100%);
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: #f19e2e;
+  color: #142b4d;
+  font-weight: 700;
+  box-shadow: 0 6px 14px rgba(241, 158, 46, 0.22);
 }
 
 .el-menu-vertical :deep(.el-menu-item.is-active .el-icon) {
-  color: #ffffff;
+  color: #142b4d;
 }
 
 .main-header {

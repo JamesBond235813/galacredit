@@ -79,7 +79,7 @@ struct WorkspaceView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("小荷包")
+                Text("GalaCredit")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.muted)
                 Text(viewModel.activeTab.title)

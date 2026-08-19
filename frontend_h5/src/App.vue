@@ -7,7 +7,7 @@
 </template>
 
 <style>
-/* 基础路由切换动画 */
+/* Basic route transition animation */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;

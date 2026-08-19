@@ -124,6 +124,14 @@ class Settings(BaseSettings):
     ESIGN_FACE_CONFIDENCE_THRESHOLD: float = 70.0
     ESIGN_HTTP_PROXY: str=""
 
+    # Ghana Card identity provider; the production API contract is reserved until a local provider is selected.
+    GHANA_IDENTITY_ENABLED: bool = False
+    GHANA_IDENTITY_MOCK_ENABLED: bool = False
+    GHANA_IDENTITY_API_URL: str = ""
+    GHANA_IDENTITY_API_KEY: str = ""
+    GHANA_IDENTITY_TIMEOUT_SECONDS: int = 45
+    GHANA_IDENTITY_FACE_CONFIDENCE_THRESHOLD: float = 70.0
+
     USER_UPLOAD_DIR: str = "uploads"
     IP138_TOKEN: str = ""
     IP138_API_URL: str = "https://api.ip138.com/ipdata/"

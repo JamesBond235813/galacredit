@@ -12,7 +12,7 @@ struct LoginView: View {
                     WalletAppIconMark()
                         .frame(width: 70, height: 70)
 
-                    Text("小荷包移动工作台")
+                    Text("GalaCredit Mobile Workspace")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(AppTheme.text)
                 }

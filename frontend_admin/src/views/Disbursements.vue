@@ -10,25 +10,25 @@
 
     <el-card class="panel-card filter-card">
       <el-form :inline="true" :model="filters">
-        <el-form-item label="搜索">
+        <el-form-item :label="tr('搜索', 'Search')">
           <el-input
             v-model="filters.phone"
-            placeholder="手机号 / 姓名 / 身份证号"
+            :placeholder="tr('手机号 / 姓名 / 身份证号', 'Phone / name / ID')"
             clearable
             @keyup.enter="fetchData"
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="fetchData">查询</el-button>
-          <el-button @click="resetFilters">重置</el-button>
+          <el-button type="primary" @click="fetchData">{{ tr('查询', 'Search') }}</el-button>
+          <el-button @click="resetFilters">{{ tr('重置', 'Reset') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
 
     <el-card class="panel-card">
       <el-table v-loading="loading" :data="tableData" stripe>
-        <el-table-column prop="id" label="订单号" width="96" />
-        <el-table-column label="客户信息" min-width="220">
+        <el-table-column prop="id" :label="tr('订单号', 'Loan ID')" width="96" />
+        <el-table-column :label="tr('客户信息', 'Borrower')" min-width="220">
           <template #default="{ row }">
             <div class="customer-name-row">
               <span>{{ row.user_name || '未实名' }}</span>
@@ -43,12 +43,12 @@
             <div class="sub-text">{{ row.user_phone }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="IP审查" width="100">
+        <el-table-column :label="tr('IP审查', 'IP review')" width="100">
           <template #default="{ row }">
             <IpAuditTag @click="openIpAudit(row)" />
           </template>
         </el-table-column>
-        <el-table-column label="复购次数" width="120">
+        <el-table-column :label="tr('复购次数', 'Repeat loans')" width="120">
           <template #default="{ row }">
             <div>{{ row.relend_label || '首购' }}</div>
             <el-button
@@ -58,40 +58,40 @@
               class="history-link"
               @click="openHistoryDialog(row)"
             >
-              历史账单
+              {{ tr('历史账单', 'Loan history') }}
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column label="E卡面值" min-width="126">
+        <el-table-column :label="tr('名义本金', 'Nominal principal')" min-width="126">
           <template #default="{ row }">
-            {{ formatCurrency(resolveEcardFaceValue(row)) }}
+            {{ formatCurrency(resolveNominalAmount(row)) }}
           </template>
         </el-table-column>
-        <el-table-column label="商品信息" min-width="220">
+        <el-table-column :label="tr('贷款产品', 'Loan product')" min-width="220">
           <template #default="{ row }">
             <div>{{ row.product_name || '--' }}</div>
             <div class="sub-text">
-              旅游权益 {{ formatCurrency(row.rights_price) }} · 账期 {{ row.product_term_days || row.term_days || '--' }} 天
+              {{ tr('上扣费用', 'Upfront fee') }} {{ formatCurrency(row.upfront_fee_amount || row.fee_amount) }} · {{ tr('到期日第', 'Due on day') }} {{ row.repayment_due_day || row.term_days || '--' }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="支付/账单" min-width="150">
+        <el-table-column :label="tr('MoMo到账 / 应还', 'MoMo received / due')" min-width="150">
           <template #default="{ row }">
             <div>{{ formatCurrency(resolvePaymentAmount(row)) }}</div>
-            <div class="sub-text">账单总额 {{ formatCurrency(resolvePaymentAmount(row)) }}</div>
+            <div class="sub-text">{{ tr('应还总额', 'Total repayment') }} {{ formatCurrency(resolvePaymentAmount(row)) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="风控报告" width="140">
+        <el-table-column :label="tr('风控报告', 'Risk report')" width="140">
           <template #default="{ row }">
             <el-button link type="primary" @click="openRiskReport(row)">查询</el-button>
           </template>
         </el-table-column>
-        <el-table-column label="风险管理" width="110">
+        <el-table-column :label="tr('风险管理', 'Risk actions')" width="110">
           <template #default="{ row }">
             <el-button link type="danger" :disabled="row.user_blacklist_hit" @click="handleBlacklist(row)">一键拉黑</el-button>
           </template>
         </el-table-column>
-        <el-table-column label="下单时间" min-width="150">
+        <el-table-column :label="tr('申请时间', 'Application time')" min-width="150">
           <template #default="{ row }">
             <div v-if="getOrderTime(row)" class="date-cell">
               <div>{{ formatDate(getOrderTime(row)) }}</div>
@@ -100,7 +100,7 @@
             <span v-else>--</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="310" fixed="right" align="center">
+        <el-table-column :label="tr('操作', 'Actions')" width="310" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-action-cell">
               <el-button
@@ -110,11 +110,11 @@
                 :disabled="row.user_blacklist_hit"
                 @click="handleDisburse(row)"
               >
-                发卡GO
+                {{ tr('MoMo放款', 'Disburse via MoMo') }}
               </el-button>
-              <el-button size="small" text type="danger" @click="handleRejectCard(row)">拒绝发卡</el-button>
-              <el-button size="small" text type="warning" @click="handleCloseCard(row)">退回待下单</el-button>
-              <el-button size="small" text type="primary" @click="openDrawer(row)">查看更多</el-button>
+              <el-button size="small" text type="danger" @click="handleRejectCard(row)">{{ tr('拒绝放款', 'Reject') }}</el-button>
+              <el-button size="small" text type="warning" @click="handleCloseCard(row)">{{ tr('退回待下单', 'Return to product selection') }}</el-button>
+              <el-button size="small" text type="primary" @click="openDrawer(row)">{{ tr('查看更多', 'Details') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -132,7 +132,7 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="drawerVisible" size="1080px" title="待发卡处理" destroy-on-close>
+    <el-drawer v-model="drawerVisible" size="1080px" title="待MoMo放款处理" destroy-on-close>
       <div v-if="form.id" class="identity-drawer-layout">
         <IdentityImagePanel :row="currentRow || {}" />
         <div class="detail-stack">
@@ -141,11 +141,11 @@
           <el-descriptions :column="2" border>
             <el-descriptions-item label="用户">{{ currentRow?.user_name || '--' }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ currentRow?.user_phone || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="状态">待发卡</el-descriptions-item>
+            <el-descriptions-item label="状态">待MoMo放款</el-descriptions-item>
             <el-descriptions-item label="下单商品">{{ currentRow?.product_name || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="E卡面值">{{ formatCurrency(currentSummary.ecardFaceValue) }}</el-descriptions-item>
-            <el-descriptions-item label="旅游权益">{{ formatCurrency(currentSummary.rightsPrice) }}</el-descriptions-item>
-            <el-descriptions-item label="信用支付金额">{{ formatCurrency(currentSummary.paymentAmount) }}</el-descriptions-item>
+            <el-descriptions-item label="名义本金">{{ formatCurrency(currentSummary.nominalAmount) }}</el-descriptions-item>
+            <el-descriptions-item label="上扣费用">{{ formatCurrency(currentSummary.upfrontFeeAmount) }}</el-descriptions-item>
+            <el-descriptions-item label="MoMo到账">{{ formatCurrency(currentSummary.disbursementAmount) }}</el-descriptions-item>
             <el-descriptions-item label="账期">{{ currentSummary.termDays ? `${currentSummary.termDays} 天` : '--' }}</el-descriptions-item>
             <el-descriptions-item label="预计付款日">{{ currentSummary.dueDateText }}</el-descriptions-item>
             <el-descriptions-item label="下单时间">{{ formatDateTime(getOrderTime(currentRow)) }}</el-descriptions-item>
@@ -160,23 +160,23 @@
                 v-model="form.review_note"
                 type="textarea"
                 :rows="3"
-                placeholder="填写发卡前确认信息、卡池核验说明或审批备注"
+                placeholder="填写放款前确认信息、MoMo核验说明或审批备注"
               />
             </el-form-item>
           </el-form>
 
           <div class="preview-grid">
             <article class="preview-card">
-              <span>E卡面值</span>
-              <strong>{{ formatCurrency(currentSummary.ecardFaceValue) }}</strong>
+              <span>名义本金</span>
+              <strong>{{ formatCurrency(currentSummary.nominalAmount) }}</strong>
             </article>
             <article class="preview-card">
-              <span>旅游权益</span>
-              <strong>{{ formatCurrency(currentSummary.rightsPrice) }}</strong>
+              <span>上扣费用</span>
+              <strong>{{ formatCurrency(currentSummary.upfrontFeeAmount) }}</strong>
             </article>
             <article class="preview-card">
-              <span>信用支付金额</span>
-              <strong>{{ formatCurrency(currentSummary.paymentAmount) }}</strong>
+              <span>MoMo到账</span>
+              <strong>{{ formatCurrency(currentSummary.disbursementAmount) }}</strong>
             </article>
             <article class="preview-card">
               <span>到期应付</span>
@@ -187,7 +187,7 @@
           <div class="due-preview">
             <span class="due-preview-label">预计付款日</span>
             <strong>{{ currentSummary.dueDateText }}</strong>
-            <p>规则：按审批期限生成到期日，发卡日计为第 1 天，期限第 N 天为付款日。</p>
+            <p>规则：放款日为第 1 天，按起息日与到期日参数生成还款计划。</p>
           </div>
 
           <div class="drawer-footer">
@@ -197,10 +197,10 @@
         </section>
 
         <section class="detail-card">
-          <h3>发卡确认</h3>
+          <h3>MoMo 放款确认</h3>
           <div class="callout-card">
-            <div class="callout-title">发卡前请核对</div>
-            <p>当前页面只处理待发卡订单。确认后将从卡池按面额完全匹配分配E卡，并生成正式账单。</p>
+            <div class="callout-title">放款前请核对</div>
+            <p>当前页面只处理待放款订单。确认后将通过 MoMo provider 支付实际到账金额，并生成正式还款账单。</p>
           </div>
           <div class="action-row">
             <el-button
@@ -208,7 +208,7 @@
               :loading="actionLoading === getDisburseActionKey(form.id)"
               @click="handleDisburse()"
             >
-              发卡GO
+              MoMo放款
             </el-button>
           </div>
         </section>
@@ -254,6 +254,7 @@ import RiskReportDialog from '../components/RiskReportDialog.vue';
 import CompositeRiskReportDialog from '../components/CompositeRiskReportDialog.vue';
 import { blacklistUser, closeCardReissue, disburseLoan, getAdminStats, getCompositeRiskReportByUser, getLoans, getRiskReportByUser, getUserDetail, getUserIpAudit, rejectCardLoan, updateLoan } from '../api';
 import { formatCurrency, formatDate, formatDateTime, formatTime } from '../utils/format';
+import { tr } from '../i18n/adminLocale';
 
 const loading = ref(false);
 const saving = ref(false);
@@ -289,9 +290,12 @@ const form = reactive({
 });
 
 const resolveEcardFaceValue = (source) => Number(source?.ecard_face_value ?? source?.credit_limit ?? 0);
+const resolveNominalAmount = (source) => Number(source?.nominal_loan_amount || source?.total_repayment_amount || source?.credit_limit || resolveEcardFaceValue(source));
+const resolveUpfrontFeeAmount = (source) => Number(source?.upfront_fee_amount || source?.fee_amount || resolveNominalAmount(source) * Number(source?.fee_rate || 0));
+const resolveDisbursementAmount = (source) => Number(source?.actual_disbursement_amount || Math.max(resolveNominalAmount(source) - resolveUpfrontFeeAmount(source), 0));
 const resolveRightsPrice = (source) => Number(source?.rights_price || 0);
 const resolvePaymentAmount = (source) => {
-  const fromSnapshot = Number(source?.product_total_price || source?.total_repayment_amount || 0);
+  const fromSnapshot = Number(source?.total_repayment_amount || source?.product_total_price || 0);
   if (fromSnapshot > 0) {
     return fromSnapshot;
   }
@@ -312,7 +316,7 @@ const resolveTermDays = (source) => {
   const ecardFaceValue = Math.round(resolveEcardFaceValue(source));
   return Number(TERM_DAYS_FALLBACK_BY_ECARD_FACE_VALUE[ecardFaceValue] || 0);
 };
-const resolveInstallmentPeriods = (termDays) => (Number(termDays || 0) > 0 ? 1 : 0);
+const resolveInstallmentPeriods = (source) => Math.max(Number(source?.installment_count || source?.installment_periods || 1), 1);
 const resolveDueDateText = (termDays) => {
   if (!termDays) {
     return '--';
@@ -326,7 +330,7 @@ const resolveInstallmentAmount = (paymentAmount, installmentPeriods) => (
 );
 
 const visiblePrincipalAmount = computed(() =>
-  tableData.value.reduce((sum, row) => sum + resolveEcardFaceValue(row), 0)
+  tableData.value.reduce((sum, row) => sum + resolveNominalAmount(row), 0)
 );
 
 const visibleRepaymentAmount = computed(() =>
@@ -337,24 +341,24 @@ const getOrderTime = (row) => row?.ordered_at || row?.created_at || null;
 
 const summaryCards = computed(() => [
   {
-    label: '待发卡订单',
-    value: `${stats.value.withdrawing_loans || 0} 单`,
-    tip: '待客户完成信用下单后的卡池发卡确认'
+    label: tr('待MoMo放款订单', 'Pending MoMo loans'),
+    value: `${stats.value.withdrawing_loans || 0} ${tr('单', 'loans')}`,
+    tip: tr('等待审核确认后向借款人支付实际到账金额', 'Awaiting approval to send the actual disbursement amount')
   },
   {
-    label: '当前页E卡面值',
+    label: tr('当前页名义本金', 'Visible nominal principal'),
     value: formatCurrency(visiblePrincipalAmount.value),
-    tip: '按当前筛选结果统计'
+    tip: tr('按当前筛选结果统计', 'Based on the current filter')
   },
   {
-    label: '当前页支付总额',
+    label: tr('当前页应还总额', 'Visible total repayment'),
     value: formatCurrency(visibleRepaymentAmount.value),
-    tip: '发卡后将进入正式账单'
+    tip: tr('放款确认后将进入正式还款账单', 'The repayment schedule starts after disbursement confirmation')
   },
   {
-    label: '卡池库存余额',
-    value: formatCurrency(stats.value.ecard_pool_available_amount || 0),
-    tip: `可用E卡 ${stats.value.ecard_pool_available_count || 0} 张`
+    label: tr('MoMo渠道状态', 'MoMo provider status'),
+    value: tr('待连接', 'Ready for integration'),
+    tip: tr('当前使用可替换的模拟MoMo provider', 'Using a replaceable mock MoMo provider')
   }
 ]);
 
@@ -363,9 +367,12 @@ const buildSummary = (source) => {
   const rightsPrice = resolveRightsPrice(source);
   const paymentAmount = resolvePaymentAmount(source);
   const termDays = resolveTermDays(source);
-  const installmentPeriods = resolveInstallmentPeriods(termDays);
+  const installmentPeriods = resolveInstallmentPeriods(source);
 
   return {
+    nominalAmount: resolveNominalAmount(source),
+    upfrontFeeAmount: resolveUpfrontFeeAmount(source),
+    disbursementAmount: resolveDisbursementAmount(source),
     ecardFaceValue,
     rightsPrice,
     paymentAmount,
@@ -479,7 +486,7 @@ const handleBlacklist = async (row) => {
 
 const handleRejectCard = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认拒绝 ${row.user_name || row.user_phone} 的发卡？`, '拒绝发卡', {
+    await ElMessageBox.confirm(`确认拒绝 ${row.user_name || row.user_phone} 的放款？`, '拒绝放款', {
       type: 'warning',
       confirmButtonText: '确认拒绝',
       cancelButtonText: '取消'
@@ -487,8 +494,8 @@ const handleRejectCard = async (row) => {
   } catch (error) {
     return;
   }
-  await rejectCardLoan(row.id, { note: '后台拒绝发卡' });
-  ElMessage.success('已拒绝发卡');
+  await rejectCardLoan(row.id, { note: '后台拒绝MoMo放款' });
+  ElMessage.success('已拒绝放款');
   fetchData();
 };
 
@@ -542,33 +549,33 @@ const createMetric = (label, value, extraClass = '') =>
 const createConfirmMessage = (row, summary) => h('div', { class: 'confirm-shell' }, [
   h('div', { class: 'confirm-banner' }, [
     h('div', { class: 'confirm-banner-top' }, [
-      h('span', { class: 'confirm-tag' }, '京东E卡发放指令'),
+    h('span', { class: 'confirm-tag' }, tr('MoMo放款指令', 'MoMo disbursement instruction')),
       h('span', { class: 'confirm-order' }, `订单 ${row.id || '--'}`)
     ]),
     h('div', { class: 'confirm-head' }, [
       h('strong', { class: 'confirm-name' }, row.user_name || '未实名'),
       h('span', { class: 'confirm-phone' }, row.user_phone || '--')
     ]),
-    h('p', { class: 'confirm-desc' }, '确认后该订单会从待发卡切换为已发卡，并立即生成正式账单。')
+    h('p', { class: 'confirm-desc' }, tr('确认后将通过MoMo provider支付实际到账金额，并立即生成正式还款账单。', 'The MoMo provider will send the actual amount and create the repayment schedule.'))
   ]),
   h('div', { class: 'confirm-grid' }, [
-    createMetric('E卡面值', formatCurrency(summary.ecardFaceValue), 'confirm-metric-primary'),
-    createMetric('旅游权益', formatCurrency(summary.rightsPrice))
+    createMetric(tr('名义本金', 'Nominal principal'), formatCurrency(summary.nominalAmount), 'confirm-metric-primary'),
+    createMetric(tr('上扣费用', 'Upfront fee'), formatCurrency(summary.upfrontFeeAmount))
   ]),
   h('div', { class: 'confirm-grid confirm-grid-detail' }, [
-    createMetric('信用支付金额', formatCurrency(summary.paymentAmount)),
+    createMetric(tr('MoMo到账', 'MoMo received'), formatCurrency(summary.disbursementAmount)),
     createMetric(
       '期限',
       summary.termDays && summary.installmentPeriods
         ? `${summary.termDays} 天`
         : '待确认'
     ),
-    createMetric('到期应付', formatCurrency(summary.installmentAmount))
+    createMetric(tr('本期应还', 'Current installment due'), formatCurrency(summary.installmentAmount))
   ]),
   h('div', { class: 'confirm-note' }, [
-    h('span', { class: 'confirm-note-label' }, '预计付款日'),
+    h('span', { class: 'confirm-note-label' }, tr('预计还款日', 'Expected repayment date')),
     h('strong', { class: 'confirm-note-value' }, summary.dueDateText),
-    h('p', { class: 'confirm-note-desc' }, '按实际发卡时间计为第 1 天，账期第 N 天为付款日。确认前请再次核对卡池库存和有效期。')
+    h('p', { class: 'confirm-note-desc' }, tr('按实际放款时间计算起息日与到期日。确认前请再次核对金额和还款参数。', 'Interest and due dates use the actual disbursement time. Recheck amounts and repayment parameters before confirming.'))
   ])
 ]);
 
@@ -581,27 +588,21 @@ const handleDisburse = async (row = null) => {
   }
 
   const summary = buildSummary(targetRow);
-  if (!summary.ecardFaceValue || !summary.paymentAmount) {
-    if (!summary.paymentAmount) {
-      ElMessage.warning('订单快照不完整，请先核对商品配置');
-      return;
-    }
-  }
-  if (targetRow.user_blacklist_hit) {
-    ElMessage.warning('该用户命中黑名单，不能继续发卡');
+  if (summary.nominalAmount <= 0 || summary.disbursementAmount < 0 || summary.paymentAmount <= 0) {
+    ElMessage.warning(tr('订单快照不完整，请先核对贷款金额、上扣费用和还款总额', 'Loan snapshot is incomplete. Check principal, upfront fee and total repayment.'));
     return;
   }
-  if (!summary.ecardFaceValue && summary.rightsPrice <= 0) {
-    ElMessage.warning('订单快照不完整，请先核对商品配置');
+  if (targetRow.user_blacklist_hit) {
+    ElMessage.warning(tr('该用户命中黑名单，不能继续放款', 'This borrower is blacklisted and cannot be disbursed.'));
     return;
   }
   try {
     await ElMessageBox({
-      title: '确认发放京东E卡',
+      title: tr('确认MoMo放款', 'Confirm MoMo disbursement'),
       message: createConfirmMessage(targetRow, summary),
       showCancelButton: true,
-      confirmButtonText: '确认发卡',
-      cancelButtonText: '取消',
+      confirmButtonText: tr('确认放款', 'Confirm disbursement'),
+      cancelButtonText: tr('取消', 'Cancel'),
       customClass: 'disburse-confirm-dialog'
     });
   } catch (error) {
@@ -612,7 +613,7 @@ const handleDisburse = async (row = null) => {
   try {
     const payload = summary.termDays ? { term_days: summary.termDays } : {};
     await disburseLoan(targetId, payload);
-    ElMessage.success('发卡已确认');
+    ElMessage.success(tr('MoMo放款已确认', 'MoMo disbursement confirmed'));
     drawerVisible.value = false;
     await fetchData();
   } finally {

@@ -1,6 +1,6 @@
 <template>
   <div class="page-shell detail-page">
-    <van-nav-bar left-arrow title="信用下单" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="Loan Application" @click-left="router.back()" />
 
     <div class="page-inner detail-inner">
       <div v-if="loading" class="loading-box">
@@ -9,60 +9,60 @@
 
       <template v-else>
         <section class="credit-card page-card">
-          <p class="credit-label">可用信用额度</p>
+          <p class="credit-label">Available Credit</p>
           <div class="credit-value">
-            <span>¥</span>
+            <span>GHS</span>
             <strong>{{ formatAmount(approvedLimit) }}</strong>
           </div>
-          <p class="credit-tip">下单无需实际支付，将按商品总价占用信用额度，后台发卡后生成账单。</p>
+          <p class="credit-tip">No payment is required to apply. Approved funds will be sent to your MoMo wallet.</p>
         </section>
 
         <section v-if="discountAmount > 0" class="coupon-card page-card">
           <div>
-            <strong>¥{{ formatAmount(discountAmount) }} 抵扣券</strong>
-            <p>仅抵扣旅游权益金额，京东E卡金额不变。</p>
+            <strong>GHS {{ formatAmount(discountAmount) }} discount</strong>
+            <p>Fees are deducted once before disbursement. Your cash received is shown before confirmation.</p>
           </div>
-          <van-checkbox v-model="useDiscount" checked-color="#2f7ef7">使用</van-checkbox>
+          <van-checkbox v-model="useDiscount" checked-color="#2f7ef7">Apply</van-checkbox>
         </section>
 
         <section class="product-card page-card" v-if="selectedProduct">
           <div class="product-card-head">
-            <h2 class="page-section-title">可选商品</h2>
-            <span>{{ selectedProduct.ecard_face_value > 0 ? '京东E卡 + 韶关丹霞山旅游权益' : '纯权益包' }}</span>
+            <h2 class="page-section-title">Available Loan</h2>
+              <span>{{ selectedProduct.product_type === 'CASH_LOAN' ? 'Ghana short-term cash loan' : (selectedProduct.ecard_face_value > 0 ? 'Legacy E-card service' : 'Service package') }}</span>
           </div>
 
           <article class="product-showcase">
             <div class="showcase-top">
               <div class="showcase-title-block">
                 <h3>{{ selectedProduct.name }}</h3>
-                <p>{{ selectedProduct.rights_title || '韶关丹霞山旅游权益' }}</p>
+                <p>{{ selectedProduct.product_type === 'CASH_LOAN' ? 'MoMo cash disbursement' : (selectedProduct.rights_title || 'Service package') }}</p>
               </div>
               <div class="showcase-price">
-                <span>总售价</span>
-                <strong>¥{{ formatAmount(displayPaymentAmount) }}</strong>
+                <span>Loan Amount</span>
+                <strong>GHS {{ formatAmount(displayPaymentAmount) }}</strong>
               </div>
             </div>
 
             <div class="showcase-tags">
-              <span>{{ selectedProduct.ecard_face_value > 0 ? `京东E卡额度 ¥${formatAmount(selectedProduct.ecard_face_value)}` : '无E卡' }}</span>
-              <span>账期 {{ selectedProduct.term_days }} 天</span>
-              <span>额度按总价扣减</span>
+              <span>{{ selectedProduct.product_type === 'CASH_LOAN' ? `Cash received: GHS ${formatAmount(selectedProduct.nominal_loan_amount * (1 - selectedProduct.upfront_fee_rate))}` : (selectedProduct.ecard_face_value > 0 ? `Value: GHS ${formatAmount(selectedProduct.ecard_face_value)}` : 'No cash disbursement') }}</span>
+              <span>Term: {{ selectedProduct.term_days }} days</span>
+              <span>Uses your available credit limit</span>
             </div>
 
             <div class="showcase-benefits">
               <div class="benefits-head">
-                <div class="benefits-label">权益说明</div>
-                <button type="button" class="benefits-detail-btn" @click.stop="openRightsDialog">点我查看详情</button>
+                <div class="benefits-label">Loan Details</div>
+                <button type="button" class="benefits-detail-btn" @click.stop="openRightsDialog">View Details</button>
               </div>
-              <p>{{ selectedProduct.rights_desc || '权益内容以订单快照为准' }}</p>
+              <p>{{ selectedProduct.rights_desc || 'The terms shown at confirmation will be saved with your application.' }}</p>
             </div>
           </article>
         </section>
 
         <section class="other-products-card page-card" v-if="otherProducts.length">
           <div class="other-head">
-            <h3>其他商品</h3>
-            <span>点击进入详情</span>
+            <h3>Other Options</h3>
+            <span>Tap to view</span>
           </div>
 
           <div class="other-grid">
@@ -75,8 +75,8 @@
             >
               <p class="other-item-title">{{ item.name }}</p>
               <div class="other-item-meta">
-                <span>额度 ¥{{ formatAmount(item.ecard_face_value) }}</span>
-                <strong>¥{{ formatAmount(item.payment_amount) }}</strong>
+                <span>Amount GHS {{ formatAmount(item.payment_amount || item.ecard_face_value) }}</span>
+                <strong>GHS {{ formatAmount(item.payment_amount) }}</strong>
               </div>
             </button>
           </div>
@@ -86,8 +86,8 @@
           <div v-if="smsPanelVisible" class="sms-verify-box">
             <van-field
               v-model="smsCode"
-              label="短信验证码"
-              placeholder="请输入6位短信验证码"
+              label="Verification Code"
+              placeholder="Enter the 6-digit code"
               maxlength="6"
               type="digit"
             />
@@ -100,7 +100,7 @@
                 :loading="submitting"
                 @click="handleConfirmOrder"
               >
-                确认下单
+                Confirm Application
               </van-button>
               <van-button
                 plain
@@ -123,7 +123,7 @@
             :loading="submitting"
             @click="handleOrderAction"
           >
-            信用支付下单
+          Submit Loan Application
           </van-button>
           <button
             v-if="!smsPanelVisible"
@@ -133,9 +133,9 @@
             @click="openContractDialog"
           >
             <span class="contract-checkbox">{{ contractAgreed ? '✓' : '' }}</span>
-            <span>我已阅读并同意《小荷包商品购销合同》</span>
+            <span>I have read and agree to the GalaCredit Loan Agreement</span>
           </button>
-          <p class="order-tip">下单后等待后台发卡，付款日按商品账期自动生成</p>
+          <p class="order-tip">After approval, funds will be sent by MoMo and your repayment schedule will be created.</p>
         </div>
       </template>
     </div>
@@ -150,13 +150,13 @@
     >
       <div class="rights-dialog-inner">
         <div class="rights-dialog-header">
-          <h3 class="rights-dialog-title">权益详细介绍</h3>
-          <button type="button" class="rights-close-btn" @click="rightsDialogVisible = false">关闭</button>
+          <h3 class="rights-dialog-title">Loan Details</h3>
+          <button type="button" class="rights-close-btn" @click="rightsDialogVisible = false">Close</button>
         </div>
 
         <div class="rights-dialog-scroll">
           <div class="rights-provider">
-            <p>客服电话：{{ rightsDetail.contact_phone || '13800138000' }}</p>
+            <p>Support phone: {{ rightsDetail.contact_phone || 'Not available' }}</p>
           </div>
 
           <div v-for="(section, index) in rightsSections" :key="index" class="rights-section">
@@ -173,7 +173,7 @@
           </div>
 
           <div v-if="!rightsSections.length" class="rights-empty">
-            <p>当前商品暂未配置权益图片和说明。</p>
+            <p>No additional information is available for this option.</p>
           </div>
         </div>
 
@@ -185,7 +185,7 @@
             :disabled="readCountdown > 0"
             @click="confirmRightsRead"
           >
-            {{ readCountdown > 0 ? `${readCountdown}s 后可点击` : '我已阅读并理解' }}
+            {{ readCountdown > 0 ? `Available in ${readCountdown}s` : 'I Have Read and Understood' }}
           </van-button>
         </div>
       </div>
@@ -201,8 +201,8 @@
     >
       <div class="contract-dialog-inner">
         <div class="contract-dialog-header">
-          <h3 class="contract-dialog-title">小荷包商品购销合同</h3>
-          <button type="button" class="rights-close-btn" @click="contractDialogVisible = false">关闭</button>
+          <h3 class="contract-dialog-title">GalaCredit Loan Agreement</h3>
+          <button type="button" class="rights-close-btn" @click="contractDialogVisible = false">Close</button>
         </div>
 
         <div ref="contractScrollRef" class="contract-dialog-scroll" @scroll="handleContractScroll">
@@ -212,13 +212,13 @@
 
         <div class="contract-dialog-footer">
           <p class="contract-read-tip">
-            {{ contractScrolledToBottom ? '已阅读至合同底部，可以选择同意或拒绝。' : '请先翻动并阅读至合同底部。' }}
+            {{ contractScrolledToBottom ? 'You have reached the end. You may accept or decline.' : 'Scroll to the end and read the full agreement.' }}
           </p>
           <van-checkbox v-model="contractCarefulRead" :disabled="!contractScrolledToBottom" checked-color="#2f7ef7">
-            我已认真阅读并同意合同全部条款
+            I have read and agree to all terms of this agreement
           </van-checkbox>
           <div class="contract-actions">
-            <van-button plain class="contract-reject-btn" @click="rejectContract">拒绝</van-button>
+            <van-button plain class="contract-reject-btn" @click="rejectContract">Decline</van-button>
             <van-button
               type="primary"
               class="primary-action contract-agree-btn"
@@ -226,7 +226,7 @@
               :loading="contractSigning"
               @click="agreeContract"
             >
-              同意
+              Accept
             </van-button>
           </div>
         </div>
@@ -275,7 +275,7 @@ const useDiscount = ref(true);
 let readTimer = null;
 let smsCooldownTimer = null;
 
-const formatAmount = (value) => Number(value || 0).toLocaleString('zh-CN', {
+const formatAmount = (value) => Number(value || 0).toLocaleString('en-GH', {
   minimumFractionDigits: Number(value || 0) % 1 === 0 ? 0 : 2,
   maximumFractionDigits: 2
 });
@@ -330,27 +330,27 @@ const defaultRightsDetail = {
   contact_phone: '13800138000',
   sections: [
     {
-      title: '图片组1（酒店内景，2张）',
+      title: 'Loan information',
       images: [
         'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=900&q=80',
         'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=900&q=80'
       ],
-      desc: '酒店介绍：入住舒适酒店客房，周边交通便利，适合丹霞山行程入住与休整。'
+      desc: 'Review the loan amount, upfront fees, cash received and repayment schedule before applying.'
     },
     {
-      title: '图片组2（旅游景点照片，2张）',
+      title: 'MoMo disbursement',
       images: [
         'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=900&q=80',
         'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=900&q=80'
       ],
-      desc: '景点介绍：丹霞地貌自然景观丰富，行程包含核心观景区域游览与打卡路线建议。'
+      desc: 'Approved funds are sent to the mobile money account linked to your registered number.'
     },
     {
-      title: '图片组3（餐饮介绍）',
+      title: 'Repayment',
       images: [
         'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1200&q=80'
       ],
-      desc: '餐饮简介：安排当地特色风味餐，覆盖正餐场景，具体菜单以实际安排为准。'
+      desc: 'Repayments must be made according to the schedule shown in your bill.'
     }
   ]
 };
@@ -360,7 +360,7 @@ const rightsSections = computed(() => {
   const sections = Array.isArray(rightsDetail.value?.sections) ? rightsDetail.value.sections : [];
   return sections
     .map((section) => ({
-      title: section?.title || '权益图片',
+      title: section?.title || 'Loan information',
       images: Array.isArray(section?.images) ? section.images.filter(Boolean) : [],
       desc: section?.desc || ''
     }))
@@ -371,7 +371,7 @@ const initData = async () => {
   try {
     const loan = await getLoanStatus();
     if (loan.status !== 'APPROVED' && !extensionSourceLoanId.value) {
-      showToast('当前状态不可下单');
+      showToast('A loan application cannot be submitted in the current status');
       router.replace(
         loan.status === 'WITHDRAWING' || loan.status === 'DISBURSED' || loan.status === 'OVERDUE'
           ? '/bill'
@@ -485,7 +485,7 @@ const agreeContract = async () => {
     contractAgreed.value = Boolean(contractSignatureId.value);
     contractDialogVisible.value = false;
     if (contractAgreed.value) {
-      showToast('合同已签署');
+      showToast('Agreement accepted');
     }
   } catch (error) {
     // handled by interceptor
@@ -535,7 +535,7 @@ const requestOrderSmsCode = async () => {
     const resp = await sendOrderSmsCode();
     smsPanelVisible.value = true;
     startSmsCooldown(Number(resp?.cooldown_seconds || 60));
-    showToast(resp?.msg || '验证码发送成功');
+    showToast('Verification code sent');
     return true;
   } catch (error) {
     return false;
@@ -590,7 +590,7 @@ const handleConfirmOrder = async () => {
       extension_source_loan_id: extensionSourceLoanId.value || undefined,
       contract_signature_id: contractSignatureId.value
     });
-    showToast('下单成功');
+    showToast('Loan application submitted');
     router.replace('/bill');
   } catch (error) {
     // handled by interceptor

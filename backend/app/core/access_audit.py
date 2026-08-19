@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+from typing import Optional
 
 from fastapi import Request
 from jose import JWTError, jwt
@@ -54,7 +55,7 @@ ACTION_CONTEXT = {
 }
 
 
-def _clean_header(value: str | None, max_length: int = 80) -> str:
+def _clean_header(value: Optional[str], max_length: int = 80) -> str:
     value = (value or "").strip()
     if not value:
         return ""

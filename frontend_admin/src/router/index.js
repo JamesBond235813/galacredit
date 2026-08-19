@@ -52,7 +52,7 @@ const routes = [
         component: Applications,
         meta: {
           title: '申请审批',
-          description: '集中完成实名资料复核、额度授予、期限确认和总费率配置审批',
+          description: '集中完成实名资料复核、额度授予、期限确认和现金贷费用配置审批',
           permission: 'applications'
         }
       },
@@ -60,8 +60,8 @@ const routes = [
         path: 'disbursements',
         component: Disbursements,
         meta: {
-          title: '待发卡',
-          description: '集中核对待发卡订单和商品配置，确认京东E卡发放',
+          title: '待MoMo放款',
+          description: '集中核对待放款订单和贷款快照，确认 MoMo 到账金额',
           permission: 'disbursements'
         }
       },
@@ -70,7 +70,7 @@ const routes = [
         component: Repayments,
         meta: {
           title: '还款管理',
-          description: '处理正常在贷账单的到期提醒、跟进记录和财务跳转',
+          description: '处理正常在贷账单的到期提醒、分期应还和财务跳转',
           permission: 'repayments'
         }
       },
@@ -97,7 +97,7 @@ const routes = [
         component: RiskSingleQuery,
         meta: {
           title: '风控报告单查',
-          description: '输入姓名、身份证号或手机号查询小荷包风险报告，并查看历史查询记录',
+          description: '输入姓名、身份证号或手机号查询 GalaCredit 风险报告，并查看历史查询记录',
           permission: 'risk-single-query'
         }
       },
@@ -123,8 +123,8 @@ const routes = [
         path: 'products',
         component: Products,
         meta: {
-          title: '商品管理',
-          description: '维护京东E卡+旅游权益商品组合、账期与支付金额',
+          title: '贷款产品',
+          description: '维护名义本金、上扣费用、MoMo 到账、期限和分期参数',
           permission: 'products'
         }
       },
@@ -132,8 +132,8 @@ const routes = [
         path: 'ecard-pool',
         component: EcardPool,
         meta: {
-          title: '卡池管理',
-          description: '管理京东E卡库存，按面额和有效期支持后台发卡',
+          title: '历史卡池兼容',
+          description: '保留历史 E-card 库存查询，不参与现金贷 MoMo 放款主流程',
           permission: 'ecard-pool'
         }
       },

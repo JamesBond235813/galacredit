@@ -167,7 +167,7 @@ public class MainActivity extends Activity {
     private void showUpdateDialog(JSONObject update) {
         boolean force = update.optBoolean("force", false);
         String versionName = update.optString("versionName", "");
-        String notes = update.optString("notes", "发现新版小荷包管理端，请更新后继续使用。");
+        String notes = update.optString("notes", "发现新版 GalaCredit 管理端，请更新后继续使用。");
         updateDialogVisible = true;
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
             .setTitle(isBlank(versionName) ? "发现新版本" : "发现新版本 " + versionName)
@@ -281,7 +281,7 @@ public class MainActivity extends Activity {
     private void validateDownloadedApk(File apk, int expectedVersionCode) {
         PackageInfo info = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
         if (info == null || !getPackageName().equals(info.packageName)) {
-            throw new IllegalStateException("升级包不是小荷包管理端");
+            throw new IllegalStateException("升级包不是 GalaCredit 管理端");
         }
         int apkVersionCode = versionCodeOf(info);
         if (expectedVersionCode > 0 && apkVersionCode != expectedVersionCode) {
@@ -311,7 +311,7 @@ public class MainActivity extends Activity {
     private void installApk(File apk) {
         if (!canInstallDownloadedApk()) {
             pendingUpdateApk = apk;
-            toast("请先允许小荷包安装应用更新");
+            toast("请先允许 GalaCredit 安装应用更新");
             Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
             settings.setData(Uri.parse("package:" + getPackageName()));
             startActivity(settings);
@@ -346,7 +346,7 @@ public class MainActivity extends Activity {
         root.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
 
         TextView title = new TextView(this);
-        title.setText("小荷包移动工作台");
+        title.setText("GalaCredit Mobile Workspace");
         title.setTextSize(28);
         title.setTextColor(Ui.TEXT);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -418,7 +418,7 @@ public class MainActivity extends Activity {
 
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
-        TextView brand = text("小荷包", 13, Ui.MUTED, 1);
+        TextView brand = text("GalaCredit", 13, Ui.MUTED, 1);
         TextView title = text(tabTitle(activeTab), 28, Ui.TEXT, 1);
         TextView subtitle = text("运营管理工作台", 11, Ui.MUTED, Typeface.NORMAL);
         titleBox.addView(brand);

@@ -12,51 +12,51 @@ const request = axios.create({
 let isRedirectingToLogin = false;
 
 const pageTitleMap = {
-  '/home': '我的授信',
-  '/profile': '个人中心',
-  '/ocr': '实名认证',
-  '/face': '人脸识别',
-  '/face-mismatch': '人脸识别结果',
-  '/application-form': '补充资料',
-  '/review': '授信审核中',
-  '/withdraw': '信用下单',
-  '/bill': '付款账单',
-  '/support': '客服帮助',
-  '/orders': '我的订单',
-  '/change-password': '修改密码',
-  '/agreement': '用户协议',
-  '/personal-info-authorization': '个人信息授权协议'
+  '/home': 'My Credit',
+  '/profile': 'My Account',
+  '/ocr': 'Identity Verification',
+  '/face': 'Face Verification',
+  '/face-mismatch': 'Verification Result',
+  '/application-form': 'Additional Information',
+  '/review': 'Application Review',
+  '/withdraw': 'Loan Application',
+  '/bill': 'Repayment Bill',
+  '/support': 'Customer Support',
+  '/orders': 'My Applications',
+  '/change-password': 'Change Password',
+  '/agreement': 'User Agreement',
+  '/personal-info-authorization': 'Personal Data Authorization'
 };
 
 const actionMap = {
-  'GET /user/info': ['页面初始化', '读取用户基础资料'],
-  'POST /user/location': ['位置风控', '提交当前位置授权'],
-  'POST /user/ocr': ['身份证上传区', '提交身份证正反面识别'],
-  'POST /user/face-auth': ['人脸识别区', '提交人脸照片核验'],
-  'POST /user/application': ['亲友联系人表单', '提交补充资料并申请授信'],
-  'POST /user/channel-bind': ['渠道入口区', '绑定/识别专属渠道'],
-  'POST /user/change-password': ['密码表单', '修改登录密码'],
-  'GET /loan/status': ['额度状态区', '查看当前申请/账单状态'],
-  'GET /loan/products': ['商品列表区', '查看可选商品'],
-  'POST /loan/order-sms-code': ['下单确认区', '获取下单验证码'],
-  'POST /loan/withdraw': ['下单确认区', '提交信用下单'],
-  'GET /loan/bill': ['账单详情区', '查看还款账单'],
-  'POST /loan/repay-attempt': ['还款操作区', '点击已还款/还款反馈'],
-  'GET /loan/ecard-secret': ['E卡信息区', '查看E卡卡密']
+  'GET /user/info': ['Page setup', 'Load customer profile'],
+  'POST /user/location': ['Location check', 'Submit location permission'],
+  'POST /user/ocr': ['ID upload', 'Submit identity documents'],
+  'POST /user/face-auth': ['Face verification', 'Submit face image'],
+  'POST /user/application': ['Contact form', 'Submit credit application'],
+  'POST /user/channel-bind': ['Invitation access', 'Bind invitation channel'],
+  'POST /user/change-password': ['Password form', 'Change sign-in password'],
+  'GET /loan/status': ['Credit status', 'View application or bill status'],
+  'GET /loan/products': ['Loan options', 'View available loan products'],
+  'POST /loan/order-sms-code': ['Application confirmation', 'Request confirmation code'],
+  'POST /loan/withdraw': ['Application confirmation', 'Submit loan application'],
+  'GET /loan/bill': ['Bill details', 'View repayment bill'],
+  'POST /loan/repay-attempt': ['Repayment action', 'Request repayment support'],
+  'GET /loan/ecard-secret': ['Legacy e-card', 'View legacy e-card details']
 };
 
 const resolveAuditContext = (config) => {
   const pagePath = window.location.pathname || '/';
-  const pageTitle = pageTitleMap[pagePath] || document.title || '前端页面';
+  const pageTitle = pageTitleMap[pagePath] || document.title || 'Customer page';
   const urlPath = String(config.url || '').split('?')[0];
   const key = `${String(config.method || 'GET').toUpperCase()} ${urlPath}`;
-  const [space, action] = actionMap[key] || ['服务请求', '访问服务接口'];
+  const [space, action] = actionMap[key] || ['Service request', 'Access service API'];
   return { pagePath, pageTitle, space, action };
 };
 
 const encodeAuditHeader = (value) => encodeURIComponent(String(value || ''));
 
-// 请求拦截器
+// Request interceptor
 request.interceptors.request.use(
   config => {
     config.headers = config.headers || {};
@@ -76,7 +76,7 @@ request.interceptors.request.use(
   error => Promise.reject(error)
 );
 
-// 响应拦截器
+// Response interceptor
 request.interceptors.response.use(
   response => response.data,
   error => {
@@ -85,13 +85,13 @@ request.interceptors.response.use(
 
       if (!isRedirectingToLogin) {
         isRedirectingToLogin = true;
-        showToast('登录已失效，请重新登录');
+        showToast('Your session has expired. Please sign in again.');
         window.setTimeout(() => {
           window.location.replace('/login');
         }, 120);
       }
     } else {
-      showToast(error.response?.data?.detail || '网络异常');
+      showToast(error.response?.data?.msg || 'Request failed. Please try again.');
     }
     return Promise.reject(error);
   }

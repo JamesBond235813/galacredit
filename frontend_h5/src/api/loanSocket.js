@@ -58,7 +58,7 @@ export const createLoanSnapshotSubscriber = ({ onSnapshot, onAuthFailed } = {}) 
           onSnapshot(payload.data);
         }
       } catch (error) {
-        // 忽略非预期消息，避免影响页面主流程。
+        // Ignore unexpected messages so they do not interrupt the page flow.
       }
     };
 

@@ -56,8 +56,8 @@ function renderLogin() {
   return `
     <main class="login-page">
       <section class="login-hero">
-        <img src="/logo.svg" alt="小荷包" class="login-icon" />
-        <h1>小荷包移动工作台</h1>
+        <img src="/logo.svg" alt="GalaCredit" class="login-icon" />
+        <h1>GalaCredit Mobile Workspace</h1>
       </section>
       <form class="login-card" id="loginForm">
         <label>账号<input name="username" autocomplete="username" /></label>
@@ -76,7 +76,7 @@ function renderShell() {
     <main class="phone-shell">
       <header class="top-bar">
         <div>
-          <span class="label">小荷包</span>
+          <span class="label">GalaCredit</span>
           <h1>${html(tab.title)}</h1>
         </div>
         <div class="top-actions">

@@ -2,12 +2,12 @@ export const isOrderSmsCodeValid = (value) => /^\d{6}$/.test(String(value || '')
 
 export const getOrderSmsResendText = (sending, cooldownSeconds) => {
   if (sending) {
-    return '发送中...';
+    return 'Sending...';
   }
   if (Number(cooldownSeconds || 0) > 0) {
-    return `${Number(cooldownSeconds)}s后重试`;
+    return `Retry in ${Number(cooldownSeconds)}s`;
   }
-  return '重新发送验证码';
+  return 'Resend code';
 };
 
 export const isOrderSmsResendDisabled = (sending, cooldownSeconds) =>

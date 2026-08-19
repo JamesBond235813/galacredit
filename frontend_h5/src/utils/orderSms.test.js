@@ -10,9 +10,9 @@ describe('order sms utils', () => {
   });
 
   it('formats resend button text', () => {
-    expect(getOrderSmsResendText(true, 0)).toBe('发送中...');
-    expect(getOrderSmsResendText(false, 59)).toBe('59s后重试');
-    expect(getOrderSmsResendText(false, 0)).toBe('重新发送验证码');
+    expect(getOrderSmsResendText(true, 0)).toBe('Sending...');
+    expect(getOrderSmsResendText(false, 59)).toBe('Retry in 59s');
+    expect(getOrderSmsResendText(false, 0)).toBe('Resend code');
   });
 
   it('controls resend button disabled state', () => {

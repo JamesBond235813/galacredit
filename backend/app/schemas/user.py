@@ -1,10 +1,12 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.schemas.loan import LoanFundFlowSummaryResponse, LoanHistoryResponse, LoanInstallmentItemResponse
 
-EMERGENCY_CONTACT_RELATION_OPTIONS = ("配偶", "父母", "子女", "兄弟姐妹", "同事", "朋友")
+FAMILY_CONTACT_RELATIONS = ("Parents", "Brothers or sisters", "Grandparents", "Couple", "Children")
+SOCIAL_CONTACT_RELATIONS = ("Friends", "Classmates", "Colleagues")
+AUTH_PHONE_PATTERN = r"^(?:\d{11}|233\d{9})$"
 
 
 class UserBase(BaseModel):
@@ -102,12 +104,12 @@ class Token(BaseModel):
 
 
 class SendCodeRequest(BaseModel):
-    phone: str = Field(..., pattern=r"^\d{11}$")
+    phone: str = Field(..., pattern=AUTH_PHONE_PATTERN)
     captcha_ticket: str = Field(..., min_length=10, max_length=128)
 
 
 class LoginRequest(BaseModel):
-    phone: str = Field(..., pattern=r"^\d{11}$")
+    phone: str = Field(..., pattern=AUTH_PHONE_PATTERN)
     password: str = Field(..., min_length=6, max_length=50)
     channel_name: Optional[str] = None
     latitude: Optional[float] = None
@@ -116,7 +118,7 @@ class LoginRequest(BaseModel):
 
 
 class SmsLoginRequest(BaseModel):
-    phone: str = Field(..., pattern=r"^\d{11}$")
+    phone: str = Field(..., pattern=AUTH_PHONE_PATTERN)
     sms_code: str = Field(..., pattern=r"^\d{6}$")
     invite_code: Optional[str] = Field(None, pattern=r"^[a-z0-9]{24,32}$")
     latitude: Optional[float] = None
@@ -125,7 +127,7 @@ class SmsLoginRequest(BaseModel):
 
 
 class SliderCaptchaCreateRequest(BaseModel):
-    phone: str = Field(..., pattern=r"^\d{11}$")
+    phone: str = Field(..., pattern=AUTH_PHONE_PATTERN)
     width: int = Field(..., ge=1, le=2000)
 
 
@@ -141,7 +143,7 @@ class SliderCaptchaCreateResponse(BaseModel):
 
 
 class SliderCaptchaVerifyRequest(BaseModel):
-    phone: str = Field(..., pattern=r"^\d{11}$")
+    phone: str = Field(..., pattern=AUTH_PHONE_PATTERN)
     captcha_id: str = Field(..., min_length=8, max_length=128)
     offset_x: float = Field(...)
     elapsed_ms: int = Field(..., ge=0, le=60000)
@@ -169,7 +171,9 @@ class ChangePasswordRequest(BaseModel):
 class EmergencyContactRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     relation: str = Field(..., min_length=1, max_length=20)
-    phone: str = Field(..., pattern=r"^\d{11}$")
+    phone: str = Field(..., pattern=r"^(?:233\d{9}|\d{11})$")
+    source: Literal["CONTACT_PICKER"] = Field(..., description="联系人必须来自设备通讯录选择器")
+    category: Literal["FAMILY", "SOCIAL"]
 
     @field_validator("relation", mode="before")
     @classmethod
@@ -186,6 +190,19 @@ class EmergencyContactRequest(BaseModel):
 
 class ApplicationSubmitRequest(BaseModel):
     emergency_contacts: List[EmergencyContactRequest] = Field(..., min_length=2, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_contact_categories(self):
+        """校验两位紧急联系人的类别和关系。
+
+        :return: 校验通过的申请请求
+        """
+        family_contact, social_contact = self.emergency_contacts
+        if family_contact.category != "FAMILY" or family_contact.relation not in FAMILY_CONTACT_RELATIONS:
+            raise ValueError("Emergency contact 1 must be a family member")
+        if social_contact.category != "SOCIAL" or social_contact.relation not in SOCIAL_CONTACT_RELATIONS:
+            raise ValueError("Emergency contact 2 must be a friend, classmate, or colleague")
+        return self
 
 
 class UserLocationUpsertRequest(BaseModel):

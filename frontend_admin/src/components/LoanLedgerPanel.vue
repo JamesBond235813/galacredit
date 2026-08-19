@@ -14,7 +14,7 @@
         <article class="ledger-summary-card">
           <span>剩余待还</span>
           <strong>{{ formatCurrency(ledger.fund_flow_summary?.remaining_amount) }}</strong>
-          <p>其中E卡面值 {{ formatCurrency(ledger.fund_flow_summary?.principal_balance_amount) }}</p>
+          <p>其中名义本金 {{ formatCurrency(ledger.fund_flow_summary?.principal_balance_amount) }}</p>
         </article>
         <article class="ledger-summary-card">
           <span>已实现收益</span>
@@ -24,7 +24,7 @@
         <article class="ledger-summary-card">
           <span>逾期账期</span>
           <strong>{{ ledger.fund_flow_summary?.overdue_installment_count || 0 }} 期</strong>
-          <p>权益余额 {{ formatCurrency(ledger.fund_flow_summary?.fee_balance_amount) }}</p>
+          <p>上扣费用余额 {{ formatCurrency(ledger.fund_flow_summary?.fee_balance_amount) }}</p>
         </article>
       </div>
 
@@ -81,7 +81,7 @@
               <span>{{ formatCurrency(item.amount) }}</span>
             </div>
             <div class="transaction-breakdown">
-              E卡面值 {{ formatCurrency(item.principal_amount) }} · 权益金额 {{ formatCurrency(Number(item.interest_amount || 0) + Number(item.guarantee_fee_amount || 0)) }} · 违约金 {{ formatCurrency(item.penalty_amount) }}
+              名义本金 {{ formatCurrency(item.principal_amount) }} · 上扣费用 {{ formatCurrency(Number(item.interest_amount || 0) + Number(item.guarantee_fee_amount || 0)) }} · 逾期费用 {{ formatCurrency(item.penalty_amount) }}
             </div>
             <div class="transaction-meta">
               <span>{{ item.operator_name || '系统' }}</span>

@@ -6,11 +6,11 @@
 
     <section v-loading="loading" class="metrics-grid">
       <article v-for="card in cards" :key="card.key" class="metric-card">
-        <h3>{{ card.title }}</h3>
+        <h3>{{ translateInsightText(card.title) }}</h3>
         <strong class="metric-value">{{ formatCardValue(card.value, card.value_type) }}</strong>
 
         <div class="metric-foot">
-          <span>{{ card.sub_label }}</span>
+          <span>{{ translateInsightText(card.sub_label) }}</span>
           <strong>{{ formatSubValue(card) }}</strong>
         </div>
       </article>
@@ -24,6 +24,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { getProjectCashInsights } from '../api';
 import { formatCurrency } from '../utils/format';
+import { tr } from '../i18n/adminLocale';
 
 const loading = ref(false);
 const insightSummary = ref({
@@ -47,6 +48,27 @@ const formatSubValue = (card) => {
     return '--';
   }
   return formatCardValue(card?.sub_value, card?.value_type);
+};
+
+const translateInsightText = (value) => {
+  const map = {
+    '注册数': ['注册数', 'Registrations'], '今日注册数': ['今日注册数', "Today's registrations"],
+    '下单数': ['申请数', 'Applications'], '今日下单数': ['今日申请数', "Today's applications"],
+    'E卡发放总额': ['MoMo放款总额', 'Total MoMo disbursement'],
+    '今日E卡发放总额': ['今日MoMo放款总额', "Today's MoMo disbursement"],
+    '发卡单数': ['放款单数', 'Disbursement count'],
+    '今日发卡单数': ['今日放款单数', "Today's disbursement count"],
+    '权益成本': ['上扣费用', 'Upfront fees'],
+    '今日权益成本': ['今日上扣费用', "Today's upfront fees"],
+    '逾期总额': ['逾期总额', 'Total overdue'], '昨日累计逾期金额': ['昨日累计逾期金额', "Yesterday's overdue amount"],
+    '订单总额': ['应还总额', 'Total repayment'], '今日订单总额': ['今日应还总额', "Today's total repayment"],
+    '收款金额': ['收款金额', 'Collected amount'], '今日收款金额': ['今日收款金额', "Today's collections"],
+    '其他费用': ['其他费用', 'Other fees'], '今日其他费用': ['今日其他费用', "Today's other fees"],
+    '应收金额': ['应收金额', 'Receivables'], '今日新增应收金额': ['今日新增应收金额', "Today's new receivables"],
+    '待回收未逾期总资金': ['待回收未逾期资金', 'Pending non-overdue receivables']
+  };
+  const pair = map[value];
+  return pair ? tr(pair[0], pair[1]) : value;
 };
 
 const loadData = async () => {

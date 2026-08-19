@@ -231,16 +231,16 @@
           <h3>账单概览</h3>
           <div class="bill-grid">
             <article class="bill-cell">
-              <span>E卡面值</span>
-              <strong>{{ formatCurrency(resolveEcardFaceValue(currentRow)) }}</strong>
+              <span>名义本金</span>
+              <strong>{{ formatCurrency(resolveNominalAmount(currentRow)) }}</strong>
             </article>
             <article class="bill-cell">
-              <span>权益金额</span>
-              <strong>{{ formatCurrency(resolveRightsPrice(currentRow)) }}</strong>
+              <span>上扣费用</span>
+              <strong>{{ formatCurrency(resolveUpfrontFee(currentRow)) }}</strong>
             </article>
             <article class="bill-cell">
-              <span>信用支付金额</span>
-              <strong>{{ formatCurrency(resolvePaymentAmount(currentRow)) }}</strong>
+              <span>MoMo到账</span>
+              <strong>{{ formatCurrency(resolveDisbursementAmount(currentRow)) }}</strong>
             </article>
             <article class="bill-cell">
               <span>总还款额</span>
@@ -439,7 +439,10 @@ const adminProfile = ref(readStoredAdminProfile());
 const isSuperAdmin = computed(() => (adminProfile.value?.roles || []).includes('ADMIN'));
 
 const resolveEcardFaceValue = (row) => Number(row?.ecard_face_value || row?.credit_limit || 0);
+const resolveNominalAmount = (row) => Number(row?.nominal_loan_amount || row?.total_repayment_amount || row?.credit_limit || resolveEcardFaceValue(row));
 const resolveRightsPrice = (row) => Number(row?.rights_price || row?.fee_amount || 0);
+const resolveUpfrontFee = (row) => Number(row?.upfront_fee_amount || row?.fee_amount || resolveRightsPrice(row));
+const resolveDisbursementAmount = (row) => Number(row?.actual_disbursement_amount || row?.ecard_face_value || Math.max(resolveNominalAmount(row) - resolveUpfrontFee(row), 0));
 const resolvePaymentAmount = (row) => Number(
   row?.product_total_price
   || row?.total_repayment_amount

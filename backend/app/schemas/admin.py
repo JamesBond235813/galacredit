@@ -72,3 +72,12 @@ class AdminChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=6, max_length=50)
     new_password: str = Field(..., min_length=6, max_length=50)
     confirm_password: str = Field(..., min_length=6, max_length=50)
+
+
+class ComplianceRuleCreateRequest(BaseModel):
+    rule_name: str = Field(..., min_length=1, max_length=100)
+    max_upfront_fee_rate: Optional[float] = Field(None, ge=0, le=1)
+    max_effective_apr: Optional[float] = Field(None, ge=0)
+    max_daily_overdue_fee: Optional[float] = Field(None, ge=0)
+    effective_at: datetime
+    note: Optional[str] = Field(None, max_length=255)

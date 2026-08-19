@@ -12,8 +12,8 @@ describe('ecardDisplay', () => {
     });
 
     expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ id: 57, index: 0, title: '京东E卡1', faceValue: 500 });
-    expect(items[1]).toMatchObject({ id: 58, index: 1, title: '京东E卡2', faceValue: 1000 });
+    expect(items[0]).toMatchObject({ id: 57, index: 0, title: 'Legacy E-card 1', faceValue: 500 });
+    expect(items[1]).toMatchObject({ id: 58, index: 1, title: 'Legacy E-card 2', faceValue: 1000 });
   });
 
   it('should fallback to legacy masked fields', () => {

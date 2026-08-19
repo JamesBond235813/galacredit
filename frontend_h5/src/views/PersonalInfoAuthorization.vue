@@ -1,9 +1,9 @@
 <template>
   <div class="page-shell agreement-page">
     <section class="page-card agreement-card">
-      <h1 class="agreement-title">个人信息授权协议</h1>
-      <p class="agreement-tip">以下内容依据平台最新协议文本展示。</p>
-      <div v-if="loading" class="agreement-loading">协议加载中...</div>
+      <h1 class="agreement-title">Personal Data Authorization</h1>
+      <p class="agreement-tip">The latest version of the authorization terms is shown below.</p>
+      <div v-if="loading" class="agreement-loading">Loading authorization...</div>
       <div v-else class="agreement-content">
         <p v-for="(item, index) in paragraphs" :key="index">{{ item }}</p>
       </div>
@@ -29,7 +29,7 @@ onMounted(async () => {
     const resp = await fetch('/personal-info-authorization.txt', { cache: 'no-cache' });
     content.value = await resp.text();
   } catch (error) {
-    content.value = '个人信息授权协议加载失败，请稍后重试。';
+    content.value = 'The Personal Data Authorization could not be loaded. Please try again later.';
   } finally {
     loading.value = false;
   }

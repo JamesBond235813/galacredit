@@ -1,12 +1,12 @@
 <template>
   <div class="page-shell application-page">
-    <van-nav-bar left-arrow title="补充资料" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="Additional Information" @click-left="router.back()" />
 
     <div class="page-inner application-inner">
       <header class="application-hero">
-        <span class="hero-chip">流程 3 / 4</span>
-        <h1 class="hero-title">补充联系人信息</h1>
-        <p class="hero-desc">请填写两位紧急联系人信息，提交后系统自动进入审核。</p>
+        <span class="hero-chip">Step 3 of 4</span>
+        <h1 class="hero-title">Emergency Contacts</h1>
+        <p class="hero-desc">Provide two emergency contacts from your address book.</p>
       </header>
 
       <div class="contact-grid">
@@ -17,20 +17,12 @@
           :class="{ 'contact-card-active': relationPickerIndex === index }"
         >
           <div class="contact-head">
-            <span class="contact-index">联系人 {{ index + 1 }}</span>
+            <span class="contact-index">Emergency contact {{ index + 1 }} ({{ contact.categoryLabel }})</span>
           </div>
 
           <div class="contact-fields">
-            <label class="field-block contact-field">
-              <input
-                v-model.trim="contact.name"
-                type="text"
-                maxlength="12"
-                placeholder="请输入联系人姓名"
-              />
-            </label>
-
-            <label class="field-block contact-field">
+            <label class="contact-display-field contact-field">
+              <span class="contact-display-label">Relatives</span>
               <div class="relation-field" @click.stop>
                 <button
                   type="button"
@@ -38,7 +30,7 @@
                   :class="{ 'relation-trigger-empty': !contact.relation }"
                   @click="toggleRelationPicker(index)"
                 >
-                  <span>{{ contact.relation || '请选择与本人关系' }}</span>
+                  <span>{{ contact.relation || 'Select relationship' }}</span>
                   <van-icon
                     name="arrow-down"
                     class="relation-arrow"
@@ -53,7 +45,7 @@
                     :class="{ 'relation-menu-upward': index === contacts.length - 1 }"
                   >
                     <button
-                      v-for="item in relationOptions"
+                      v-for="item in contact.relationOptions"
                       :key="item"
                       type="button"
                       class="relation-option"
@@ -67,21 +59,22 @@
               </div>
             </label>
 
-            <label class="field-block contact-field">
-              <input
-                :value="contact.phone"
-                type="tel"
-                inputmode="numeric"
-                maxlength="11"
-                placeholder="请输入联系人手机号"
-                @input="onContactPhoneInput(index, $event)"
-              />
-            </label>
+            <button type="button" class="contact-display-field contact-action-field" @click="pickContact(index)">
+              <span class="contact-display-label">PhoneNumber</span>
+              <strong :class="{ 'contact-display-empty': !contact.phone }">
+                {{ displayLocalPhone(contact.phone) || 'Select contact' }}
+              </strong>
+              <van-icon name="arrow" class="contact-display-arrow" />
+            </button>
+
+            <button type="button" class="contact-display-field contact-action-field" @click="pickContact(index)">
+              <span class="contact-display-label">Full Name</span>
+              <strong :class="{ 'contact-display-empty': !contact.name }">{{ contact.name || 'Select contact' }}</strong>
+              <van-icon name="arrow" class="contact-display-arrow" />
+            </button>
           </div>
         </article>
       </div>
-
-      <p class="submit-note">提交后预计几分钟内返回审核结果，请保持手机畅通。</p>
 
       <van-button
         block
@@ -90,7 +83,7 @@
         :loading="submitting"
         @click="submitForm"
       >
-        提交审核
+        Submit Application
       </van-button>
     </div>
   </div>
@@ -101,23 +94,46 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { closeToast, showToast } from 'vant';
 import { getLoanStatus, getUserInfo, submitApplication } from '../api';
+import { formatGhanaContactLocalPhone, normalizeGhanaContactPhone, selectSingleContact } from '../utils/contactPicker';
 
 const router = useRouter();
 const submitting = ref(false);
 
+const familyRelationOptions = ['Parents', 'Brothers or sisters', 'Grandparents', 'Couple', 'Children'];
+const socialRelationOptions = ['Friends', 'Classmates', 'Colleagues'];
 const contacts = reactive([
-  { key: 'primary', name: '', phone: '', relation: '' },
-  { key: 'secondary', name: '', phone: '', relation: '' }
+  { key: 'primary', category: 'FAMILY', categoryLabel: 'family', relationOptions: familyRelationOptions, name: '', phone: '', relation: '' },
+  { key: 'secondary', category: 'SOCIAL', categoryLabel: 'friend', relationOptions: socialRelationOptions, name: '', phone: '', relation: '' }
 ]);
 
-const relationOptions = ['父母', '子女', '兄弟姐妹', '同事', '朋友'];
 const relationPickerIndex = ref(null);
 
-const normalizePhone = (value) => value.replace(/\D/g, '').slice(0, 11);
-
-const onContactPhoneInput = (index, event) => {
-  contacts[index].phone = normalizePhone(event.target.value || '');
+/**
+ * Pick one contact from the device address book and fill the name and phone together.
+ *
+ * :param index: Contact position in the form
+ * :return: Promise<void>
+ */
+const pickContact = async (index) => {
+  try {
+    const selected = await selectSingleContact();
+    if (!selected) {
+      return;
+    }
+    contacts[index].name = selected.name;
+    contacts[index].phone = selected.phone;
+  } catch (error) {
+    showToast(error?.message || 'Unable to access your contacts');
+  }
 };
+
+/**
+ * Convert a normalized Ghana international phone number to a 9-digit local display value.
+ *
+ * :param value: Normalized phone number
+ * :return: 9-digit local phone number
+ */
+const displayLocalPhone = (value) => formatGhanaContactLocalPhone(value);
 
 const toggleRelationPicker = (index) => {
   relationPickerIndex.value = relationPickerIndex.value === index ? null : index;
@@ -157,11 +173,11 @@ const loadCurrentUserData = async () => {
   try {
     const user = await getUserInfo();
     contacts[0].name = user.emergency_contact1_name || '';
-    contacts[0].relation = user.emergency_contact1_relation || '';
-    contacts[0].phone = user.emergency_contact1_phone || '';
+    contacts[0].relation = familyRelationOptions.includes(user.emergency_contact1_relation) ? user.emergency_contact1_relation : '';
+    contacts[0].phone = normalizeGhanaContactPhone(user.emergency_contact1_phone) || user.emergency_contact1_phone || '';
     contacts[1].name = user.emergency_contact2_name || '';
-    contacts[1].relation = user.emergency_contact2_relation || '';
-    contacts[1].phone = user.emergency_contact2_phone || '';
+    contacts[1].relation = socialRelationOptions.includes(user.emergency_contact2_relation) ? user.emergency_contact2_relation : '';
+    contacts[1].phone = normalizeGhanaContactPhone(user.emergency_contact2_phone) || user.emergency_contact2_phone || '';
   } catch (error) {
     // handled by interceptor
   }
@@ -171,20 +187,24 @@ const validateForm = () => {
   for (let index = 0; index < contacts.length; index += 1) {
     const contact = contacts[index];
     if (!contact.name.trim()) {
-      showToast(`请填写联系人 ${index + 1} 姓名`);
+      showToast(`Enter the name of contact ${index + 1}`);
       return false;
     }
-    if (!/^\d{11}$/.test(contact.phone.trim())) {
-      showToast(`请输入联系人 ${index + 1} 的11位手机号`);
+    if (!/^233\d{9}$/.test(contact.phone.trim()) && !/^\d{11}$/.test(contact.phone.trim())) {
+      showToast(`Select a valid contact ${index + 1} from your address book`);
       return false;
     }
     if (!contact.relation.trim()) {
-      showToast(`请填写联系人 ${index + 1} 与您的关系`);
+      showToast(`Select your relationship with contact ${index + 1}`);
+      return false;
+    }
+    if (!contact.relationOptions.includes(contact.relation)) {
+      showToast(`Select a valid ${contact.categoryLabel} relationship for contact ${index + 1}`);
       return false;
     }
   }
   if (contacts[0].phone.trim() === contacts[1].phone.trim()) {
-    showToast('两位紧急联系人手机号不能相同');
+    showToast('The two contacts must use different mobile numbers');
     return false;
   }
   return true;
@@ -197,16 +217,18 @@ const submitForm = async () => {
 
   submitting.value = true;
   try {
-    showToast({ type: 'loading', duration: 0, message: '资料提交中...' });
+    showToast({ type: 'loading', duration: 0, message: 'Submitting application...' });
     await submitApplication({
       emergency_contacts: contacts.map((contact) => ({
         name: contact.name.trim(),
         relation: contact.relation.trim(),
-        phone: contact.phone.trim()
+        phone: contact.phone.trim(),
+        source: 'CONTACT_PICKER',
+        category: contact.category
       }))
     });
     closeToast();
-    showToast('资料已提交');
+    showToast('Application submitted');
     router.replace('/review');
   } catch (error) {
     closeToast();
@@ -237,8 +259,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
-  padding: calc(env(safe-area-inset-top, 0px) + 6px) 12px 10px;
+  gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 12px;
 }
 
 .application-hero {
@@ -258,16 +280,16 @@ onBeforeUnmount(() => {
 }
 
 .hero-title {
-  margin: 8px 0 0;
-  font-size: 19px;
+  margin: 10px 0 0;
+  font-size: 24px;
   line-height: 1.16;
   font-weight: 800;
   color: var(--app-text);
 }
 
 .hero-desc {
-  margin: 5px 0 0;
-  font-size: 11px;
+  margin: 6px 0 0;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--app-text-soft);
 }
@@ -275,14 +297,14 @@ onBeforeUnmount(() => {
 .contact-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 12px;
 }
 
 .contact-card {
   position: relative;
   z-index: 1;
   overflow: visible;
-  padding: 10px 12px;
+  padding: 14px 12px;
 }
 
 .contact-card-active {
@@ -296,45 +318,74 @@ onBeforeUnmount(() => {
 .contact-index {
   display: inline-flex;
   align-items: center;
-  min-height: 21px;
-  padding: 0 8px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
   background: rgba(47, 126, 247, 0.08);
   color: var(--app-primary-deep);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1.3;
 }
 
 .contact-fields {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 5px;
+  gap: 8px;
 }
 
-.field-block {
-  display: block;
-  padding: 7px 10px;
+.contact-display-field {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 14px;
+  border: 1px solid #e8eef8;
   border-radius: 12px;
   background: #f7faff;
-  border: 1px solid #e8eef8;
+  text-align: left;
+}
+
+.contact-display-label {
+  flex-shrink: 0;
+  width: 104px;
+  color: var(--app-text-faint);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.contact-display-field strong {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--app-text);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-display-empty {
+  color: #b2bed0 !important;
+  font-weight: 600 !important;
+}
+
+.contact-action-field {
+  cursor: pointer;
+}
+
+.contact-display-arrow {
+  flex-shrink: 0;
+  color: #92a4c0;
+  font-size: 14px;
 }
 
 .contact-field {
-  min-height: 38px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-}
-
-.field-block input {
-  width: 100%;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--app-text);
-  font-size: 12px;
+  background: #ffffff;
+  border-color: #d8e2f0;
 }
 
 .relation-field {
@@ -344,13 +395,14 @@ onBeforeUnmount(() => {
 
 .relation-trigger {
   width: 100%;
-  min-height: 18px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   color: var(--app-text);
-  font-size: 12px;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1.25;
 }
 
@@ -360,7 +412,7 @@ onBeforeUnmount(() => {
 
 .relation-arrow {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 14px;
   color: #92a4c0;
   transition: transform 0.2s ease, color 0.2s ease;
 }
@@ -391,12 +443,12 @@ onBeforeUnmount(() => {
 
 .relation-option {
   width: 100%;
-  min-height: 34px;
+  min-height: 40px;
   padding: 0 10px;
   border-radius: 10px;
   text-align: left;
   color: var(--app-text);
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -420,18 +472,9 @@ onBeforeUnmount(() => {
   transform: translateY(-4px);
 }
 
-.submit-note {
-  width: 100%;
-  margin: 0;
-  text-align: center;
-  font-size: 10px;
-  line-height: 1.3;
-  color: var(--app-text-faint);
-}
-
 .submit-btn {
   width: 100%;
-  height: 42px !important;
-  font-size: 15px !important;
+  height: 48px !important;
+  font-size: 17px !important;
 }
 </style>

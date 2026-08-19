@@ -5,24 +5,24 @@ const GEO_PROMPT_TIMEOUT = 5000;
 
 export const getLocationErrorMessage = (error) => {
   if (error?.message === 'GEO_INSECURE_CONTEXT') {
-    return '当前访问地址不是HTTPS安全环境，浏览器禁止读取定位。请使用HTTPS地址后重试。';
+    return 'Location access requires a secure HTTPS connection. Please use the secure site and try again.';
   }
   if (error?.message === 'GEO_PROMPT_TIMEOUT') {
-    return '浏览器定位授权长时间未响应，请检查地址栏证书状态，并在浏览器权限中允许位置。';
+    return 'The location request did not respond. Check the site certificate and allow location access in your browser settings.';
   }
   if (error?.message === 'GEO_UNSUPPORTED') {
-    return '当前浏览器不支持定位，请更换浏览器后重试';
+    return 'This browser does not support location services. Please try another browser.';
   }
   if (error?.code === 1) {
-    return '请在手机系统或浏览器中开启位置权限后重试';
+    return 'Enable location permission in your phone or browser settings, then try again.';
   }
   if (error?.code === 2) {
-    return '暂时无法获取当前位置，请确认定位服务已开启';
+    return 'Your location is unavailable. Make sure location services are enabled.';
   }
   if (error?.code === 3) {
-    return '获取当前位置超时，请开启定位后重试';
+    return 'The location request timed out. Enable location services and try again.';
   }
-  return error?.response?.data?.detail || error?.message || '暂时无法获取当前位置';
+  return error?.response?.data?.msg || error?.response?.data?.detail || error?.message || 'Your location is currently unavailable.';
 };
 
 const getCurrentPosition = () =>

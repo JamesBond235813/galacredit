@@ -18,20 +18,20 @@
 
       <section class="history-grid">
         <article class="history-card">
-          <span>E卡面值</span>
-          <strong>{{ formatCurrency(resolveEcardFaceValue(loan)) }}</strong>
+          <span>名义本金</span>
+          <strong>{{ formatCurrency(resolveNominalAmount(loan)) }}</strong>
         </article>
         <article class="history-card">
           <span>账期</span>
           <strong>{{ loan.term_days ? `${loan.term_days} 天` : '--' }}</strong>
         </article>
         <article class="history-card">
-          <span>权益金额</span>
-          <strong>{{ formatCurrency(resolveRightsPrice(loan)) }}</strong>
+          <span>上扣费用</span>
+          <strong>{{ formatCurrency(resolveUpfrontFee(loan)) }}</strong>
         </article>
         <article class="history-card">
-          <span>信用支付金额</span>
-          <strong>{{ formatCurrency(resolvePaymentAmount(loan)) }}</strong>
+          <span>MoMo到账</span>
+          <strong>{{ formatCurrency(resolveDisbursementAmount(loan)) }}</strong>
         </article>
         <article class="history-card">
           <span>总还款额</span>
@@ -93,13 +93,9 @@ const dialogVisible = computed({
 });
 
 const resolveEcardFaceValue = (row) => Number(row?.ecard_face_value || row?.credit_limit || 0);
-const resolveRightsPrice = (row) => Number(row?.rights_price || row?.fee_amount || 0);
-const resolvePaymentAmount = (row) => Number(
-  row?.product_total_price
-  || row?.total_repayment_amount
-  || (resolveEcardFaceValue(row) + resolveRightsPrice(row))
-  || 0
-);
+const resolveNominalAmount = (row) => Number(row?.nominal_loan_amount || row?.total_repayment_amount || row?.credit_limit || resolveEcardFaceValue(row));
+const resolveDisbursementAmount = (row) => Number(row?.actual_disbursement_amount || row?.ecard_face_value || 0);
+const resolveUpfrontFee = (row) => Number(row?.upfront_fee_amount || row?.fee_amount || Math.max(resolveNominalAmount(row) - resolveDisbursementAmount(row), 0));
 </script>
 
 <style scoped>

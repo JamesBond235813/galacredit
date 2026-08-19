@@ -5,7 +5,7 @@ from sqlalchemy import Column, DateTime, Float, Integer, String, Text
 from app.core.database import Base
 
 
-class PurchaseContractSignature(Base):
+class LoanAgreementSignature(Base):
     __tablename__ = "purchase_contract_signatures"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -16,7 +16,7 @@ class PurchaseContractSignature(Base):
     product_id = Column(Integer, nullable=False, index=True)
     extension_source_loan_id = Column(Integer, nullable=True, index=True)
 
-    contract_title = Column(String(100), nullable=False, default="小荷包商品购销合同")
+    contract_title = Column(String(100), nullable=False, default="GalaCredit Loan Agreement")
     contract_content = Column(Text, nullable=False)
     contract_text = Column(Text, nullable=True)
     party_a_name = Column(String(100), nullable=False)
@@ -38,3 +38,7 @@ class PurchaseContractSignature(Base):
     ip = Column(String(64), nullable=True)
     user_agent = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
+# 保留旧名称，兼容已存在的接口、历史数据和客户端调用。
+PurchaseContractSignature = LoanAgreementSignature

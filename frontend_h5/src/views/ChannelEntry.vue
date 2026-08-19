@@ -1,8 +1,8 @@
 <template>
   <div class="channel-entry-page">
     <div class="channel-entry-card">
-      <img src="../assets/logo.svg" class="entry-logo" alt="小荷包 logo" />
-      <h1>专属邀请通道</h1>
+      <img src="../assets/logo.svg" class="entry-logo" alt="GalaCredit logo" />
+      <h1>Invitation Access</h1>
       <p>{{ message }}</p>
       <van-loading size="24px" color="#1a56a6" />
     </div>
@@ -15,7 +15,7 @@ import { useRoute } from 'vue-router';
 import { saveEntryInviteCode, isValidInviteCode } from '../utils/channel';
 
 const route = useRoute();
-const message = ref('正在识别专属链接，请稍候...');
+const message = ref('Checking your invitation link...');
 
 const redirectToLogin = () => {
   window.setTimeout(() => {
@@ -27,7 +27,7 @@ onMounted(() => {
   const inviteCode = String(route.params.inviteCode || '').trim().toLowerCase();
   if (isValidInviteCode(inviteCode)) {
     saveEntryInviteCode(inviteCode);
-    message.value = '已识别专属邀请码，正在跳转登录...';
+    message.value = 'Invitation confirmed. Redirecting to sign in...';
   }
   redirectToLogin();
 });

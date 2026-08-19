@@ -2,9 +2,9 @@
   <div class="page-shell home-page">
     <div class="page-inner home-inner">
       <header class="home-header">
-        <div>
-          <p class="home-eyebrow">授信服务</p>
-          <h1 class="home-title">小荷包</h1>
+        <div class="brand-lockup">
+          <img :src="brandLogo" class="home-brand-logo" alt="GalaCredit logo" />
+          <h1 class="home-title">GalaCredit</h1>
         </div>
       </header>
 
@@ -17,46 +17,45 @@
           <div class="status-icon">
             <van-icon name="warning-o" />
           </div>
-          <h1>{{ blacklistHit ? '对不起，您当前无可用信用额度' : '抱歉 您当前无法使用信用购物额度' }}</h1>
-          <p>如需帮助，请联系在线客服处理。</p>
+          <h1>{{ blacklistHit ? 'No credit is currently available' : 'This service is currently unavailable' }}</h1>
+          <p>Please contact customer support for assistance.</p>
         </section>
 
         <template v-else>
         <section class="home-hero page-card">
-          <div class="hero-tags">
-            <span class="hero-tag"><van-icon name="gift-o" /> 京东E卡</span>
-            <span class="hero-tag"><van-icon name="passed" /> 信用支付</span>
-            <span class="hero-tag"><van-icon name="flag-o" /> 旅游权益</span>
-          </div>
-
           <div class="hero-content">
             <p class="hero-label">{{ limitTitle }}</p>
             <div class="hero-amount">{{ limitAmount }}</div>
-            <p class="hero-rate" v-if="['INIT', 'REJECTED', 'SETTLED'].includes(loanStatus)">
-              <van-icon name="info-o" style="margin-right: 2px" /> 上传完全部资料后将获得真实信用额度
-            </p>
-            <p class="hero-rate" v-else>先享后付 · 商品总价按账期生成付款账单</p>
           </div>
 
           <van-button block class="primary-action hero-btn" @click="onActionClick">
             {{ actionText }}
           </van-button>
 
-          <p class="hero-note">{{ limitSubtitle }}</p>
+          <div class="hero-note">
+            <div class="hero-note-row">
+              <span>0.05%</span>
+              <span>180days</span>
+            </div>
+            <div class="hero-note-row">
+              <span>Min daily interest rate</span>
+              <span>Max loan period.</span>
+            </div>
+          </div>
         </section>
 
         <section class="service-section">
           <div class="panel-head">
             <div>
-              <h2 class="page-section-title">更多服务</h2>
+              <h2 class="page-section-title">More Services</h2>
             </div>
           </div>
 
           <div class="service-grid">
             <button type="button" class="service-card" @click="router.push('/support')">
               <span class="service-copy">
-                <span class="service-name">客服帮助</span>
-                <span class="service-desc">客服中心与在线客服</span>
+                <span class="service-name">Customer Support</span>
+                <span class="service-desc">Help centre and assistance</span>
               </span>
               <span class="service-icon">
                 <van-icon name="service-o" />
@@ -65,8 +64,8 @@
 
             <button type="button" class="service-card" @click="router.push('/orders')">
               <span class="service-copy">
-                <span class="service-name">我的订单</span>
-                <span class="service-desc">历史申请订单信息</span>
+                <span class="service-name">My Applications</span>
+                <span class="service-desc">View application history</span>
               </span>
               <span class="service-icon service-icon-warm">
                 <van-icon name="orders-o" />
@@ -75,8 +74,8 @@
 
             <button v-if="loanStatus === 'REVIEWING'" type="button" class="service-card" @click="router.push('/ocr')">
               <span class="service-copy">
-                <span class="service-name">更新实名信息</span>
-                <span class="service-desc">手机号本人可重新实名</span>
+                <span class="service-name">Update Identity</span>
+                <span class="service-desc">Resubmit your identity details</span>
               </span>
               <span class="service-icon service-icon-soft">
                 <van-icon name="idcard" />
@@ -90,8 +89,8 @@
               @click="router.push({ path: '/withdraw', query: { extension_source_loan_id: String(currentLoanId) } })"
             >
               <span class="service-copy">
-                <span class="service-name">展期权益包</span>
-                <span class="service-desc">使用可用额度下单纯权益商品</span>
+                <span class="service-name">Loan Extension</span>
+                <span class="service-desc">Review available extension options</span>
               </span>
               <span class="service-icon service-icon-soft">
                 <van-icon name="coupon-o" />
@@ -110,6 +109,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { getUserInfo } from '../api';
 import { createLoanSnapshotSubscriber } from '../api/loanSocket';
+import brandLogo from '../assets/logo.svg';
 
 const router = useRouter();
 const loading = ref(true);
@@ -122,12 +122,12 @@ let loanSnapshotSubscriber = null;
 
 const limitTitle = computed(() => {
   if (['INIT', 'REJECTED', 'SETTLED'].includes(loanStatus.value)) {
-    return '拟授信额度（元）';
+    return 'Estimated Credit Limit (GHS)';
   }
   if (loanStatus.value === 'REVIEWING') {
-    return '最高可用信用额度（元）';
+    return 'Maximum Available Credit (GHS)';
   }
-  return '当前可用额度（元）';
+  return 'Available Credit (GHS)';
 });
 
 const limitAmount = computed(() => {
@@ -135,10 +135,10 @@ const limitAmount = computed(() => {
     return '8,000';
   }
   if (loanStatus.value === 'REVIEWING') {
-    return '审核中';
+    return 'Under review';
   }
   if (loanStatus.value === 'REJECTED') {
-    return '重新提交';
+    return 'Resubmit';
   }
   if (loanStatus.value === 'SETTLED') {
     return '8,000';
@@ -148,30 +148,30 @@ const limitAmount = computed(() => {
 
 const limitSubtitle = computed(() => {
   if (loanStatus.value === 'INIT') {
-    return '仅需 3 步完成授信申请，审批后即可在商品列表进行信用下单。';
+    return 'Complete the application steps to receive a credit decision.';
   }
   if (loanStatus.value === 'REJECTED') {
-    return '当前资料未通过审核，可修改补充资料后重新提交。';
+    return 'Your application was not approved. Update your information and try again.';
   }
   if (loanStatus.value === 'SETTLED') {
-    return '上一笔订单已结清，可重新发起新一轮授信申请。';
+    return 'Your previous loan is settled. You may submit a new application.';
   }
-  return '页面会实时同步您的额度、下单、发卡与账单状态。';
+  return 'Your credit, disbursement and repayment status updates automatically.';
 });
 
 const actionText = computed(() => {
   const map = {
-    INIT: '立即申请',
-    REVIEWING: '查看审核进度',
-    REJECTED: '重新提交资料',
-    APPROVED: '立即选购',
-    WITHDRAWING: '待发卡进度',
-    DISBURSED: '我的账单',
-    SETTLED: '立即申请',
-    OVERDUE: '处理逾期账单',
-    CARD_REJECTED: '暂不可用'
+    INIT: 'Apply Now',
+    REVIEWING: 'View Review Status',
+    REJECTED: 'Resubmit Application',
+    APPROVED: 'Choose a Loan',
+    WITHDRAWING: 'View Disbursement',
+    DISBURSED: 'View Repayment Bill',
+    SETTLED: 'Apply Again',
+    OVERDUE: 'Resolve Overdue Bill',
+    CARD_REJECTED: 'Unavailable'
   };
-  return map[loanStatus.value] || '处理中';
+  return map[loanStatus.value] || 'Processing';
 });
 
 const applyLoanSnapshot = (snapshot) => {
@@ -238,12 +238,16 @@ onBeforeUnmount(() => {
   margin-bottom: 18px;
 }
 
-.home-eyebrow {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--app-text-faint);
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.home-brand-logo {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
 }
 
 .home-title {
@@ -288,25 +292,8 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.86);
 }
 
-.hero-tags {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.hero-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  font-size: 12px;
-}
-
 .hero-content {
-  padding: 28px 6px 22px;
+  padding: 20px 6px 28px;
   text-align: center;
 }
 
@@ -323,12 +310,6 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
 }
 
-.hero-rate {
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.76);
-}
-
 .hero-btn {
   background: #ffffff !important;
   color: var(--app-primary-deep) !important;
@@ -336,11 +317,21 @@ onBeforeUnmount(() => {
 }
 
 .hero-note {
-  margin: 14px 0 0;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 4px 0;
   font-size: 12px;
   line-height: 1.7;
   color: rgba(255, 255, 255, 0.84);
+}
+
+.hero-note-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
 }
 
 .service-section {
@@ -349,7 +340,7 @@ onBeforeUnmount(() => {
 
 .service-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
   margin-top: 18px;
 }

@@ -1,14 +1,16 @@
+import { adminLocale } from '../i18n/adminLocale';
+
 export const statusTextMap = {
-  INIT: '待补资料',
-  REVIEWING: '审核中',
-  APPROVED: '待下单',
-  REJECTED: '未通过',
-  WITHDRAWING: '待发卡',
-  DISBURSED: '待付款',
-  FIRST_BORROW: '首借',
-  SETTLED: '已结清',
-  OVERDUE: '已逾期',
-  CARD_REJECTED: '拒发卡'
+  'zh-CN': {
+    INIT: '待补资料', REVIEWING: '审核中', APPROVED: '待下单', REJECTED: '未通过',
+    WITHDRAWING: '待MoMo放款', DISBURSED: '已放款', FIRST_BORROW: '首借',
+    SETTLED: '已结清', OVERDUE: '已逾期', CARD_REJECTED: '审批退回'
+  },
+  'en-GH': {
+    INIT: 'Profile incomplete', REVIEWING: 'Under review', APPROVED: 'Awaiting confirmation', REJECTED: 'Rejected',
+    WITHDRAWING: 'Pending MoMo disbursement', DISBURSED: 'Disbursed', FIRST_BORROW: 'First loan',
+    SETTLED: 'Settled', OVERDUE: 'Overdue', CARD_REJECTED: 'Returned by approval'
+  }
 };
 
 export const statusTagMap = {
@@ -24,15 +26,23 @@ export const statusTagMap = {
   CARD_REJECTED: 'danger'
 };
 
-export const getStatusText = (status) => statusTextMap[status] || status || '--';
+export const getStatusText = (status) => statusTextMap[adminLocale.value]?.[status] || status || '--';
 export const getStatusTagType = (status) => statusTagMap[status] || 'info';
 
 export const formatCurrency = (value) => {
   const amount = Number(value || 0);
-  return `￥${amount.toLocaleString('zh-CN', {
+  return `GHS ${amount.toLocaleString('en-GH', {
     minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2
   })}`;
+};
+
+export const formatPhone = (value) => {
+  const phone = String(value || '').trim();
+  if (/^233\d{9}$/.test(phone)) {
+    return `+233 ${phone.slice(3, 5)} ${phone.slice(5)}`;
+  }
+  return phone || '--';
 };
 
 export const formatRate = (value) => `${(Number(value || 0) * 100).toFixed(0)}%`;
@@ -42,7 +52,7 @@ export const formatDateTime = (value) => {
     return '--';
   }
 
-  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+  return new Date(value).toLocaleString(adminLocale.value, { hour12: false });
 };
 
 export const formatDate = (value) => {
@@ -50,7 +60,7 @@ export const formatDate = (value) => {
     return '--';
   }
 
-  return new Date(value).toLocaleDateString('zh-CN');
+  return new Date(value).toLocaleDateString(adminLocale.value);
 };
 
 export const formatTime = (value) => {
@@ -58,7 +68,7 @@ export const formatTime = (value) => {
     return '--';
   }
 
-  return new Date(value).toLocaleTimeString('zh-CN', { hour12: false });
+  return new Date(value).toLocaleTimeString(adminLocale.value, { hour12: false });
 };
 
 export const maskCard = (value) => {

@@ -1,4 +1,5 @@
-from typing import Any, Optional
+import json
+from typing import Any, Dict, List, Optional
 
 from app.services.approved_credit_expiry import APPROVED_CREDIT_VALID_DAYS, get_approved_credit_expires_at
 
@@ -6,6 +7,7 @@ from app.services.approved_credit_expiry import APPROVED_CREDIT_VALID_DAYS, get_
 DEFAULT_FEE_RATE = 0.6
 LOAN_PERIOD_DAYS = 7
 MONTHLY_INTEREST_RATE = 0.02
+DEFAULT_UPFRONT_FEE_RATE = 0.4
 
 
 def round_money(value: Any) -> float:
@@ -24,6 +26,65 @@ def calculate_fee_amount(credit_limit: Any, fee_rate: Any) -> float:
     principal = round_money(credit_limit)
     rate = normalize_fee_rate(fee_rate)
     return round_money(principal * rate)
+
+
+def normalize_installment_ratios(value: Any, installment_count: Any = 1) -> List[float]:
+    """规范化分期比例，并将空配置转换为等比例分期。
+
+    :param value: JSON、列表或逗号分隔的比例值
+    :param installment_count: 分期期数
+    :return: 和为1的比例列表
+    """
+    try:
+        count = max(int(installment_count or 1), 1)
+    except (TypeError, ValueError):
+        count = 1
+    raw = value
+    if isinstance(value, str):
+        try:
+            raw = json.loads(value)
+        except (TypeError, ValueError):
+            raw = [item.strip() for item in value.split(",") if item.strip()]
+    if not isinstance(raw, (list, tuple)) or len(raw) != count:
+        return [round(1 / count, 8)] * count
+    numbers = [max(float(item or 0), 0) for item in raw]
+    total = sum(numbers)
+    if total <= 0:
+        return [round(1 / count, 8)] * count
+    return [round(item / total, 8) for item in numbers]
+
+
+def calculate_cash_loan_amounts(nominal_amount: Any, upfront_fee_rate: Any) -> Dict[str, float]:
+    """计算加纳现金贷的名义金额、上扣费用和实际到账金额。
+
+    :param nominal_amount: 用户名义借款额，也是正常总应还金额
+    :param upfront_fee_rate: 上扣费用率，例如40%传入0.4
+    :return: 金额快照字典
+    """
+    nominal = round_money(nominal_amount)
+    rate = max(float(upfront_fee_rate or 0), 0)
+    fee = round_money(nominal * rate)
+    return {
+        "nominal_loan_amount": nominal,
+        "upfront_fee_amount": fee,
+        "actual_disbursement_amount": round_money(max(nominal - fee, 0)),
+        "total_repayment_amount": nominal,
+    }
+
+
+def calculate_installment_amounts(total_amount: Any, ratios: Any, installment_count: Any = 1) -> List[float]:
+    """按后台配置比例拆分总应还金额，并把分币误差放入最后一期。
+
+    :param total_amount: 总应还金额
+    :param ratios: 每期比例配置
+    :param installment_count: 分期期数
+    :return: 每期应还金额列表
+    """
+    normalized = normalize_installment_ratios(ratios, installment_count)
+    total_cents = int(round(float(total_amount or 0) * 100))
+    amounts = [int(total_cents * ratio) for ratio in normalized]
+    amounts[-1] += total_cents - sum(amounts)
+    return [round_money(item / 100) for item in amounts]
 
 
 def calculate_interest_amount(credit_limit: Any, term_days: Any) -> float:
@@ -100,6 +161,9 @@ def calculate_installment_by_values(
 
 
 def calculate_total_repayment_amount(loan: Any) -> float:
+    snapshot_total = round_money(getattr(loan, "total_repayment_amount_snapshot", 0))
+    if snapshot_total > 0:
+        return round_money(snapshot_total + getattr(loan, "penalty_amount", 0))
     return calculate_total_repayment_by_values(
         getattr(loan, "credit_limit", 0),
         getattr(loan, "fee_rate", DEFAULT_FEE_RATE),
@@ -108,6 +172,14 @@ def calculate_total_repayment_amount(loan: Any) -> float:
 
 
 def calculate_installment_amount(loan: Any) -> float:
+    snapshot_total = round_money(getattr(loan, "total_repayment_amount_snapshot", 0))
+    if snapshot_total > 0:
+        amounts = calculate_installment_amounts(
+            snapshot_total,
+            getattr(loan, "installment_ratios_json", None),
+            getattr(loan, "installment_count", 1),
+        )
+        return amounts[0] if amounts else 0.0
     return calculate_installment_by_values(
         getattr(loan, "credit_limit", 0),
         getattr(loan, "fee_rate", DEFAULT_FEE_RATE),
@@ -213,6 +285,16 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "due_date": getattr(loan, "due_date", None),
         "fee_rate": fee_rate,
         "fee_amount": fee_amount,
+        "nominal_loan_amount": round_money(getattr(loan, "nominal_loan_amount", 0) or credit_limit),
+        "upfront_fee_amount": round_money(getattr(loan, "upfront_fee_amount", 0) or fee_amount),
+        "actual_disbursement_amount": round_money(
+            getattr(loan, "actual_disbursement_amount", 0)
+            or max(round_money(getattr(loan, "nominal_loan_amount", 0) or credit_limit) - fee_amount, 0)
+        ),
+        "interest_start_day": int(getattr(loan, "interest_start_day", 1) or 1),
+        "repayment_due_day": int(getattr(loan, "repayment_due_day", 7) or 7),
+        "installment_count": int(getattr(loan, "installment_count", 1) or 1),
+        "momo_disbursement_reference": getattr(loan, "momo_disbursement_reference", None),
         "interest_amount": interest_amount,
         "guarantee_fee_amount": guarantee_fee_amount,
         "installment_amount": calculate_installment_by_values(
@@ -266,6 +348,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "collection_transferred_at": getattr(loan, "collection_transferred_at", None),
         "repay_attempt_count": int(getattr(loan, "repay_attempt_count", 0) or 0),
         "product_id": getattr(loan, "product_id", None),
+        "product_type": getattr(loan, "product_type", None),
         "product_name": getattr(loan, "product_name", None),
         "rights_title": getattr(loan, "rights_title", None),
         "rights_desc": getattr(loan, "rights_desc", None),

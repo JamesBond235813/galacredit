@@ -8,6 +8,7 @@ from app.models.loan import Loan
 from app.models.loan_installment import LoanInstallment
 from app.models.loan_transaction import LoanTransaction
 from app.services.loan_amounts import (
+    calculate_installment_amounts,
     calculate_guarantee_fee_amount,
     calculate_installment_periods,
     calculate_interest_amount,
@@ -17,7 +18,7 @@ from app.services.loan_amounts import (
 
 ACTIVE_LEDGER_STATUSES = {"DISBURSED", "OVERDUE", "SETTLED"}
 TRANSACTION_TYPE_LABELS = {
-    "DISBURSEMENT": "发卡",
+    "DISBURSEMENT": "放款",
     "REPAYMENT": "收款登记",
     "REDUCTION": "减免登记",
     "SETTLEMENT": "结清补录",
@@ -96,9 +97,37 @@ def build_installment_blueprint(loan: Loan) -> List[Dict[str, Any]]:
         return []
 
     try:
-        periods = calculate_installment_periods(loan.term_days)
-    except ValueError:
+        periods = max(int(getattr(loan, "installment_count", 0) or 0), 1)
+        if not getattr(loan, "total_repayment_amount_snapshot", 0):
+            periods = calculate_installment_periods(loan.term_days)
+    except (TypeError, ValueError):
         return []
+
+    snapshot_total = round_money(getattr(loan, "total_repayment_amount_snapshot", 0))
+    if snapshot_total > 0:
+        amounts = calculate_installment_amounts(
+            snapshot_total,
+            getattr(loan, "installment_ratios_json", None),
+            periods,
+        )
+        items = []
+        total_days = max(int(getattr(loan, "term_days", 1) or 1), 1)
+        for index, due_amount in enumerate(amounts):
+            due_day = max(1, round(total_days * (index + 1) / periods))
+            due_date = loan.disbursed_at + timedelta(days=due_day)
+            if index == periods - 1 and loan.due_date:
+                due_date = loan.due_date
+            items.append(
+                {
+                    "period_no": index + 1,
+                    "due_date": due_date,
+                    "principal_amount": due_amount,
+                    "interest_amount": 0.0,
+                    "guarantee_fee_amount": 0.0,
+                    "due_amount": due_amount,
+                }
+            )
+        return items
 
     principal_parts = split_money(getattr(loan, "credit_limit", 0), periods)
     interest_total = calculate_interest_amount(getattr(loan, "credit_limit", 0), getattr(loan, "term_days", 0))
@@ -587,12 +616,17 @@ async def create_disbursement_transaction_async(
     operator_name: Optional[str] = None,
     note: Optional[str] = None,
 ) -> LoanTransaction:
+    disbursement_amount = round_money(
+        getattr(loan, "actual_disbursement_amount", 0)
+        if getattr(loan, "total_repayment_amount_snapshot", 0)
+        else getattr(loan, "credit_limit", 0)
+    )
     transaction = LoanTransaction(
         loan_id=loan.id,
         user_id=loan.user_id,
         transaction_type="DISBURSEMENT",
-        amount=round_money(getattr(loan, "credit_limit", 0)),
-        principal_amount=round_money(getattr(loan, "credit_limit", 0)),
+        amount=disbursement_amount,
+        principal_amount=disbursement_amount,
         operator_name=operator_name,
         note=note,
     )

@@ -123,7 +123,7 @@
               type="primary"
               @click="handleReissue(row)"
             >
-              二次发卡
+              重新放款
             </el-button>
             <el-button
               v-if="row.current_loan_status === 'CARD_REJECTED'"
@@ -219,21 +219,21 @@
             <el-descriptions-item label="订单状态">
               <el-tag :type="getStatusTagType(detail.latest_loan?.status)">{{ getStatusText(detail.latest_loan?.status) }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="授信额度">
+            <el-descriptions-item label="审批额度">
               {{ detail.latest_loan ? formatCurrency(detail.latest_loan.credit_limit) : '--' }}
             </el-descriptions-item>
             <el-descriptions-item label="账期">{{ detail.latest_loan?.term_days ? `${detail.latest_loan.term_days} 天` : '--' }}</el-descriptions-item>
             <el-descriptions-item label="总费率">
               {{ detail.latest_loan ? `${(Number(detail.latest_loan.fee_rate || 0) * 100).toFixed(0)}%` : '--' }}
             </el-descriptions-item>
-            <el-descriptions-item label="E卡面值">
-              {{ detail.latest_loan ? formatCurrency(resolveEcardFaceValue(detail.latest_loan)) : '--' }}
+            <el-descriptions-item label="名义本金">
+              {{ detail.latest_loan ? formatCurrency(resolveNominalAmount(detail.latest_loan)) : '--' }}
             </el-descriptions-item>
-            <el-descriptions-item label="权益金额">
-              {{ detail.latest_loan ? formatCurrency(resolveRightsPrice(detail.latest_loan)) : '--' }}
+            <el-descriptions-item label="上扣费用">
+              {{ detail.latest_loan ? formatCurrency(resolveUpfrontFee(detail.latest_loan)) : '--' }}
             </el-descriptions-item>
-            <el-descriptions-item label="信用支付金额">
-              {{ detail.latest_loan ? formatCurrency(resolvePaymentAmount(detail.latest_loan)) : '--' }}
+            <el-descriptions-item label="MoMo到账">
+              {{ detail.latest_loan ? formatCurrency(resolveDisbursementAmount(detail.latest_loan)) : '--' }}
             </el-descriptions-item>
             <el-descriptions-item label="成交时间">{{ formatDateTime(detail.latest_loan?.disbursed_at) }}</el-descriptions-item>
             <el-descriptions-item label="还款日">{{ formatDateTime(detail.latest_loan?.due_date) }}</el-descriptions-item>
@@ -279,21 +279,21 @@
             <el-descriptions-item label="订单状态">
               <el-tag :type="getStatusTagType(detail.first_deal_loan?.status)">{{ getStatusText(detail.first_deal_loan?.status) }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="授信额度">
+            <el-descriptions-item label="审批额度">
               {{ detail.first_deal_loan ? formatCurrency(detail.first_deal_loan.credit_limit) : '--' }}
             </el-descriptions-item>
             <el-descriptions-item label="账期">{{ detail.first_deal_loan?.term_days ? `${detail.first_deal_loan.term_days} 天` : '--' }}</el-descriptions-item>
             <el-descriptions-item label="总费率">
               {{ detail.first_deal_loan ? `${(Number(detail.first_deal_loan.fee_rate || 0) * 100).toFixed(0)}%` : '--' }}
             </el-descriptions-item>
-            <el-descriptions-item label="E卡面值">
-              {{ detail.first_deal_loan ? formatCurrency(resolveEcardFaceValue(detail.first_deal_loan)) : '--' }}
+            <el-descriptions-item label="名义本金">
+              {{ detail.first_deal_loan ? formatCurrency(resolveNominalAmount(detail.first_deal_loan)) : '--' }}
             </el-descriptions-item>
-            <el-descriptions-item label="权益金额">
-              {{ detail.first_deal_loan ? formatCurrency(resolveRightsPrice(detail.first_deal_loan)) : '--' }}
+            <el-descriptions-item label="上扣费用">
+              {{ detail.first_deal_loan ? formatCurrency(resolveUpfrontFee(detail.first_deal_loan)) : '--' }}
             </el-descriptions-item>
-            <el-descriptions-item label="信用支付金额">
-              {{ detail.first_deal_loan ? formatCurrency(resolvePaymentAmount(detail.first_deal_loan)) : '--' }}
+            <el-descriptions-item label="MoMo到账">
+              {{ detail.first_deal_loan ? formatCurrency(resolveDisbursementAmount(detail.first_deal_loan)) : '--' }}
             </el-descriptions-item>
             <el-descriptions-item label="成交时间">{{ formatDateTime(detail.first_deal_loan?.disbursed_at) }}</el-descriptions-item>
             <el-descriptions-item label="还款日">{{ formatDateTime(detail.first_deal_loan?.due_date) }}</el-descriptions-item>
@@ -323,7 +323,9 @@
     >
       <el-form label-position="top">
         <el-form-item label="手机号" required>
-          <el-input v-model="createForm.phone" maxlength="11" placeholder="请输入11位手机号" />
+          <el-input v-model="createForm.phone" maxlength="9" placeholder="请输入9位加纳本地手机号">
+            <template #prepend>🇬🇭 +233</template>
+          </el-input>
         </el-form-item>
         <el-form-item label="密码" required>
           <el-input v-model="createForm.password" type="password" maxlength="50" show-password placeholder="请输入至少6位密码" />
@@ -368,7 +370,7 @@
         <el-button type="primary" :loading="resetting" @click="submitResetPassword">确认重置</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="contractDialogVisible" width="760px" title="小荷包商品购销合同" append-to-body destroy-on-close>
+    <el-dialog v-model="contractDialogVisible" width="760px" title="GalaCredit Loan Agreement" append-to-body destroy-on-close>
       <div v-loading="contractLoading" class="admin-contract-view">
         <div v-if="purchaseContract" class="admin-contract-meta">
           <span>合同编号：{{ purchaseContract.signature_no || '--' }}</span>
@@ -436,14 +438,9 @@ const resetting = ref(false);
 const resetTarget = reactive({ id: null, phone: '', name: '' });
 const resetForm = reactive({ password: '', confirmPassword: '' });
 
-const resolveEcardFaceValue = (row) => Number(row?.ecard_face_value || row?.credit_limit || 0);
-const resolveRightsPrice = (row) => Number(row?.rights_price || row?.fee_amount || 0);
-const resolvePaymentAmount = (row) => Number(
-  row?.product_total_price
-  || row?.total_repayment_amount
-  || (resolveEcardFaceValue(row) + resolveRightsPrice(row))
-  || 0
-);
+const resolveNominalAmount = (row) => Number(row?.nominal_loan_amount || row?.ecard_face_value || row?.credit_limit || 0);
+const resolveUpfrontFee = (row) => Number(row?.upfront_fee_amount || row?.fee_amount || row?.rights_price || 0);
+const resolveDisbursementAmount = (row) => Number(row?.actual_disbursement_amount || Math.max(resolveNominalAmount(row) - resolveUpfrontFee(row), 0));
 
 const filters = reactive({
   keyword: '',
@@ -602,7 +599,7 @@ const handleReissue = async (row) => {
     return;
   }
   await reissueCardLoan(row.current_loan_id);
-  ElMessage.success('已进入待发卡列表');
+  ElMessage.success('已进入待MoMo放款列表');
   fetchData();
 };
 
@@ -641,8 +638,8 @@ const openCreateDrawer = async () => {
 };
 
 const submitCreateUser = async () => {
-  if (!/^\d{11}$/.test(createForm.phone)) {
-    ElMessage.warning('请输入11位手机号');
+  if (!/^\d{9}$/.test(createForm.phone)) {
+    ElMessage.warning('请输入9位加纳本地手机号');
     return;
   }
   if (!createForm.password || createForm.password.length < 6) {
@@ -652,7 +649,7 @@ const submitCreateUser = async () => {
   creating.value = true;
   try {
     const payload = {
-      phone: createForm.phone,
+      phone: `233${createForm.phone}`,
       password: createForm.password
     };
     if (createForm.sourceChannelId) {

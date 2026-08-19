@@ -1,25 +1,51 @@
 <template>
   <div class="login-container" ref="loginContainerRef">
     <div class="login-stage" ref="loginStageRef">
+      <div class="logo-box brand-header">
+        <img src="../assets/logo.svg" class="brand-logo" alt="GalaCredit logo" />
+        <div class="brand-copy">
+          <h1 class="brand-title">GalaCredit</h1>
+          <p class="brand-slogan">Credit when it matters</p>
+        </div>
+      </div>
+
       <section class="login-main">
         <van-form @submit="onSubmit" class="login-form">
           <van-cell-group inset class="login-fields">
-            <van-field
-              v-model="phone"
-              name="phone"
-              type="tel"
-              maxlength="11"
-              placeholder="请输入手机号"
-              :formatter="normalizePhone"
-              clearable
-              class="login-field"
-            />
+            <div class="phone-field-wrapper">
+              <div class="phone-zero-placeholder" aria-hidden="true">
+                <span
+                  v-for="index in GHANA_PHONE_DIGITS"
+                  :key="index"
+                  :class="{ 'phone-digit-entered': index <= phone.length }"
+                >{{ phone[index - 1] || '0' }}</span>
+              </div>
+              <van-field
+                v-model="phone"
+                name="phone"
+                type="tel"
+                :maxlength="GHANA_PHONE_DIGITS"
+                :formatter="normalizePhone"
+                clearable
+                class="login-field phone-field"
+              >
+                <template #left-icon>
+                  <span class="ghana-phone-prefix" aria-label="Ghana country code">
+                    <span class="ghana-flag" aria-hidden="true">🇬🇭</span>
+                    <span>+233</span>
+                  </span>
+                </template>
+                <template #right-icon>
+                  <span class="phone-counter" aria-label="Mobile number digit count">{{ phone.length }}/9</span>
+                </template>
+              </van-field>
+            </div>
             <van-field
               v-model="smsCode"
               name="smsCode"
               type="digit"
               maxlength="6"
-              placeholder="请输入短信验证码"
+              placeholder="Enter the 6-digit code"
               clearable
               class="login-field"
             >
@@ -39,25 +65,18 @@
           </van-cell-group>
           <div class="submit-wrap">
             <van-button round block type="primary" native-type="submit" :loading="loading" class="submit-btn">
-              登录
+              Sign In
             </van-button>
           </div>
         </van-form>
       </section>
 
-      <div class="logo-box brand-footer">
-        <img src="../assets/logo.svg" class="brand-logo" alt="小荷包 logo" />
-        <div class="brand-copy">
-          <h1 class="brand-title">小荷包</h1>
-          <p class="brand-slogan">解生活之所急</p>
-        </div>
-      </div>
     </div>
 
     <div v-if="captchaVisible" class="captcha-layer" @click.self="captchaVisible = false">
       <div class="captcha-popup">
         <div class="captcha-box" ref="captchaContainerRef">
-          <div class="captcha-title">请完成滑块验证</div>
+          <div class="captcha-title">Complete the security check</div>
           <div
             class="simple-slider"
             :class="{ 'simple-slider--done': sliderVerified }"
@@ -71,7 +90,7 @@
               class="simple-slider-thumb"
               :style="{ transform: `translateX(${sliderOffsetX}px)` }"
               :disabled="captchaVerifying"
-              aria-label="向右滑动验证"
+              aria-label="Slide right to verify"
               @mousedown.prevent="onSliderDragStart"
               @touchstart.prevent="onSliderDragStart"
             >
@@ -79,7 +98,7 @@
             </button>
           </div>
           <div class="captcha-actions">
-            <button type="button" class="captcha-refresh-link" @click="refreshCaptcha">刷新</button>
+            <button type="button" class="captcha-refresh-link" @click="refreshCaptcha">Refresh</button>
           </div>
         </div>
     </div>
@@ -93,7 +112,7 @@ import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
 import { createSliderCaptcha, sendCode, smsLogin, verifySliderCaptcha } from '../api';
 import { clearEntryChannel, getEntryInviteCode } from '../utils/channel';
-import { isValidPhone, normalizePhone } from '../utils/passwordAuth';
+import { GHANA_PHONE_DIGITS, isValidPhone, normalizePhone, toGhanaPhone } from '../utils/passwordAuth';
 import { getSmsButtonText, isValidSmsCode, normalizeSmsCode } from '../utils/smsLogin';
 
 const router = useRouter();
@@ -129,13 +148,14 @@ const dragStartClientX = ref(0);
 const dragStartOffsetX = ref(0);
 
 const smsButtonText = computed(() => getSmsButtonText(smsSending.value, cooldownSeconds.value));
+const apiPhone = computed(() => toGhanaPhone(phone.value));
 const maxSliderOffset = computed(() => Math.max(captcha.value.width - captcha.value.blockSize, 0));
 const sliderProgressWidth = computed(() => Math.min(sliderOffsetX.value + captcha.value.blockSize, captcha.value.width));
 const sliderHintText = computed(() => {
   if (captchaVerifying.value) {
-    return '验证中...';
+    return 'Verifying...';
   }
-  return sliderVerified.value ? '验证通过' : '向右滑动发送验证码';
+  return sliderVerified.value ? 'Verified' : 'Slide right to send the code';
 });
 
 const startCooldown = (seconds) => {
@@ -160,10 +180,10 @@ const getCaptchaRequestWidth = () => {
 
 const refreshCaptcha = async () => {
   if (!isValidPhone(phone.value)) {
-    showToast('请输入11位手机号');
+    showToast('Enter a valid mobile number');
     return;
   }
-  const payload = await createSliderCaptcha({ phone: phone.value, width: getCaptchaRequestWidth() });
+  const payload = await createSliderCaptcha({ phone: apiPhone.value, width: getCaptchaRequestWidth() });
   captcha.value = {
     captchaId: payload.captcha_id,
     width: payload.width,
@@ -182,7 +202,7 @@ const refreshCaptcha = async () => {
 
 const openCaptchaDialog = async () => {
   if (!isValidPhone(phone.value)) {
-    showToast('请输入11位手机号');
+    showToast('Enter a valid mobile number');
     return;
   }
   captchaVisible.value = true;
@@ -201,18 +221,18 @@ const verifyCaptchaAndSendSms = async () => {
   captchaVerifying.value = true;
   try {
     const verifyRes = await verifySliderCaptcha({
-      phone: phone.value,
+      phone: apiPhone.value,
       captcha_id: captcha.value.captchaId,
       offset_x: sliderOffsetX.value,
       elapsed_ms: Math.max(sliderMoveElapsedMs.value, captcha.value.minElapsedMs || 0)
     });
     smsSending.value = true;
     const smsRes = await sendCode({
-      phone: phone.value,
+      phone: apiPhone.value,
       captcha_ticket: verifyRes.captcha_ticket
     });
     startCooldown(smsRes.cooldown_seconds || 60);
-    showToast('验证码已发送');
+    showToast('Verification code sent');
     captchaVisible.value = false;
   } catch (error) {
     sliderOffsetX.value = 0;
@@ -220,7 +240,7 @@ const verifyCaptchaAndSendSms = async () => {
     sliderMoveElapsedMs.value = 0;
     sliderVerified.value = false;
     const detail = String(error?.response?.data?.detail || '');
-    if (detail.includes('过期') || detail.includes('失效')) {
+    if (detail.includes('expired') || detail.includes('invalid') || detail.includes('\u8fc7\u671f') || detail.includes('\u5931\u6548')) {
       await refreshCaptcha();
     }
   } finally {
@@ -283,20 +303,20 @@ const onSliderDragStart = (event) => {
 
 const onSubmit = async () => {
   if (!isValidPhone(phone.value)) {
-    showToast('请输入11位手机号');
+    showToast('Enter a valid mobile number');
     return;
   }
 
   smsCode.value = normalizeSmsCode(String(smsCode.value || ''));
   if (!isValidSmsCode(smsCode.value)) {
-    showToast('请输入6位短信验证码');
+    showToast('Enter the 6-digit verification code');
     return;
   }
 
   loading.value = true;
   try {
     const res = await smsLogin({
-      phone: phone.value,
+      phone: apiPhone.value,
       sms_code: smsCode.value,
       invite_code: entryInviteCode.value || undefined
     });
@@ -306,10 +326,10 @@ const onSubmit = async () => {
     }
     sessionStorage.removeItem('h5_location_authorized');
     clearEntryChannel();
-    showToast('登录成功');
+    showToast('Signed in successfully');
     router.replace('/home');
   } catch (error) {
-    if (error.response?.data?.detail === '渠道链接不存在或已停用') {
+    if (error.response?.data?.detail === '\u6e20\u9053\u94fe\u63a5\u4e0d\u5b58\u5728\u6216\u5df2\u505c\u7528') {
       clearEntryChannel();
       entryInviteCode.value = '';
     }
@@ -346,7 +366,13 @@ onBeforeUnmount(() => {
   min-height: calc(100vh - 46px);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+}
+
+.brand-header {
+  margin: clamp(28px, 8vh, 72px) 0 0;
+  padding: 8px 0;
+  transform: translateX(-10px);
 }
 
 .login-main {
@@ -354,7 +380,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding-top: clamp(148px, 26vh, 260px);
+  padding-top: clamp(72px, 13vh, 132px);
 }
 
 .login-form {
@@ -368,6 +394,77 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   box-shadow: 0 10px 22px rgba(28, 71, 142, 0.08);
   backdrop-filter: blur(8px);
+}
+
+.phone-field-wrapper {
+  position: relative;
+}
+
+.phone-zero-placeholder {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 102px;
+  display: flex;
+  transform: translateY(-50%);
+  color: rgba(116, 132, 151, 0.42);
+  font-size: 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
+  pointer-events: none;
+  white-space: pre;
+}
+
+.phone-field {
+  position: relative;
+  z-index: 2;
+}
+
+:deep(.phone-field .van-field__control) {
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  color: transparent;
+  caret-color: #23344f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
+  -webkit-text-fill-color: transparent;
+}
+
+:deep(.phone-field .van-field__left-icon) {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  height: auto !important;
+}
+
+.ghana-phone-prefix {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 84px;
+  color: #23344f;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.phone-digit-entered {
+  color: #23344f;
+}
+
+.ghana-flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.phone-counter {
+  min-width: 24px;
+  color: #7a8ba1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .submit-wrap {
@@ -494,20 +591,9 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
-.brand-footer {
-  margin-top: 18px;
-  margin-bottom: clamp(24px, 6vh, 56px);
-  padding: 8px 0;
-  transform: translateX(-10px);
-}
-
 @media (max-height: 760px) {
   .login-main {
-    padding-top: 118px;
-  }
-
-  .brand-footer {
-    margin-bottom: 24px;
+    padding-top: 56px;
   }
 }
 

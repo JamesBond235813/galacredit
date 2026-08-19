@@ -296,7 +296,7 @@ async def test_composite_risk_payload_has_sources_without_recommendation_action(
     )
 
     assert payload["report_type"] == "XIAOHEBAO_RISK"
-    assert payload["title"] == "小荷包风险报告"
+    assert payload["title"] == "GalaCredit Risk Report"
     assert payload["panorama"]["source"] == "PANORAMA"
     assert "current_report_detail" not in payload["panorama"]["payload"]["data"]
     assert payload["probe_c"]["result_label"] == "正常履约"
@@ -328,7 +328,7 @@ async def test_composite_risk_report_should_mark_latest_loan_checked(monkeypatch
             name=user.name,
             id_card=user.id_card_num,
             phone="13900000000",
-            report_json='{"title":"小荷包风险报告"}',
+            report_json='{"title":"GalaCredit Risk Report"}',
             query_time=now,
             created_at=now,
             updated_at=now,
@@ -361,8 +361,8 @@ async def test_composite_risk_report_should_mark_latest_loan_checked(monkeypatch
     )
 
     result_payload = json.loads(result["report_json"])
-    assert result_payload["title"] == "小荷包风险报告"
+    assert result_payload["title"] == "GalaCredit Risk Report"
     assert result_payload["report_type"] == "XIAOHEBAO_RISK"
     assert loan.risk_report_checked_at is not None
     assert loan.risk_report_checked_by == "review01"
-    assert events[0]["title"] == "查询小荷包风险报告"
+    assert events[0]["title"] == "查询 GalaCredit 风险报告"

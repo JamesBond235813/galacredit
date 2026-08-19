@@ -2,10 +2,10 @@
   <div class="login-wrapper">
     <el-card class="login-card">
       <div class="system-logo">
-        <img :src="brandLogo" class="brand-logo" alt="小荷包 logo" />
+        <img :src="brandLogo" class="brand-logo" alt="GalaCredit logo" />
         <div>
-          <h2>小荷包管理后台</h2>
-          <p>审批、发卡、付款提醒、催收统一处理</p>
+          <h2>GalaCredit Admin</h2>
+          <p>审批、MoMo放款、还款提醒、催收统一处理</p>
         </div>
       </div>
       <el-form :model="form" ref="loginForm" label-position="top">

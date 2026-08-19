@@ -58,6 +58,51 @@ def build_contract_payload(
         spec = f"京东E卡{_money(ecard_face_value)}元 + {product.rights_title or '旅游权益'} 1 份"
     address = getattr(user, "id_address", None) or "虚拟商品，以卡密形式交付，无需实际物流发货"
 
+    if getattr(product, "product_type", None) == "CASH_LOAN":
+        due_date_text = f"{due_date.strftime('%Y-%m-%d')} (from actual disbursement date)"
+        rows = [
+            ("Agreement type", "GalaCredit Loan Agreement"),
+            ("Lender", PARTY_A_NAME),
+            ("Borrower", user.name or ""),
+            ("Ghana Card / ID", user.id_card_num or ""),
+            ("MoMo phone", user.phone or ""),
+            ("Nominal loan amount", f"{_money(product.nominal_loan_amount or product.payment_amount)}"),
+            ("Upfront fee", f"{_money(rights_price)}"),
+            ("Expected MoMo disbursement", f"{_money(max(float(product.nominal_loan_amount or product.payment_amount) - rights_price, 0))}"),
+            ("Total repayment", f"{_money(payment_amount)}"),
+            ("Term", f"{term_days} days"),
+            ("Due date", due_date_text),
+            ("Signed at", now.strftime("%Y-%m-%d %H:%M:%S")),
+        ]
+        summary_html = "".join(
+            f"<tr><th>{_safe(label)}</th><td>{_safe(value)}</td></tr>"
+            for label, value in rows
+        )
+        html_content = f"""
+<article class="loan-agreement">
+  <h1>GalaCredit Loan Agreement</h1>
+  <table class="contract-summary"><tbody>{summary_html}</tbody></table>
+  <section><h2>1. Loan terms</h2><p>The lender provides the borrower with the approved nominal loan amount. The upfront fee is deducted before disbursement. The amount received through MoMo is the nominal loan amount less the upfront fee.</p></section>
+  <section><h2>2. Repayment</h2><p>The borrower must repay the total repayment amount on or before the due date. Any installment schedule shown in the application is part of this agreement. The repayment date is calculated from the actual MoMo disbursement date.</p></section>
+  <section><h2>3. MoMo authorization</h2><p>The borrower authorizes GalaCredit and its appointed payment provider to send the approved disbursement and, where the provider supports it, initiate repayment collection using the confirmed MoMo number. The borrower may request revocation subject to outstanding obligations and provider rules.</p></section>
+  <section><h2>4. Data and identity verification</h2><p>The borrower authorizes the platform to verify the submitted Ghana Card information, identity details, contacts and risk information for credit assessment, servicing, collections and legal compliance.</p></section>
+  <section><h2>5. Electronic acceptance</h2><p>The borrower confirms that the information is accurate, has read this agreement, and accepts it by electronic signature, checkbox or equivalent confirmation.</p></section>
+  <section class="contract-sign-area"><p>Borrower: {_safe(user.name)}</p><p>MoMo number: {_safe(user.phone)}</p><p>Signed at: {now.strftime('%Y-%m-%d %H:%M:%S')}</p></section>
+</article>
+""".strip()
+        return {
+            "contract_content": html_content,
+            "contract_text": "\n".join([f"{label}: {value}" for label, value in rows]),
+            "party_b_address": address,
+            "product_name": product_name,
+            "ecard_face_value": 0,
+            "rights_price": rights_price,
+            "discount_amount": discount_amount,
+            "payment_amount": payment_amount,
+            "term_days": term_days,
+            "due_date_text": due_date_text,
+        }
+
     rows = [
         ("甲方", PARTY_A_NAME),
         ("法人", PARTY_A_LEGAL_PERSON),

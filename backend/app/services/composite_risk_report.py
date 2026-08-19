@@ -58,7 +58,7 @@ def serialize_composite_risk_report(report: RiskCompositeReport) -> Dict[str, An
         "name": report.name,
         "id_card": report.id_card,
         "phone": report.phone,
-        "report_json": _normalize_xiaohebao_report_json(report.report_json),
+        "report_json": _normalize_galacredit_report_json(report.report_json),
         "query_time": report.query_time,
         "created_at": report.created_at,
         "updated_at": report.updated_at,
@@ -330,7 +330,7 @@ async def build_composite_risk_payload_async(
 
     return {
         "report_type": "XIAOHEBAO_RISK",
-        "title": "小荷包风险报告",
+        "title": "GalaCredit Risk Report",
         "query_time": datetime.now().isoformat(timespec="seconds"),
         "cache_days": min(int(getattr(settings, "RISK_REPORT_CACHE_DAYS", 14) or 14), 14),
         "user_profile": {
@@ -496,15 +496,15 @@ def _strip_panorama_credit_detail(value: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-def _normalize_xiaohebao_report_json(value: Any) -> str:
-    """规范化旧缓存报告为小荷包风险报告输出格式。
+def _normalize_galacredit_report_json(value: Any) -> str:
+    """规范化旧缓存报告为 GalaCredit 风险报告输出格式。
 
     :param value: 报告JSON文本或对象
     :return: 规范化后的JSON文本
     """
     payload = _parse_report_json(value)
     payload["report_type"] = "XIAOHEBAO_RISK"
-    payload["title"] = "小荷包风险报告"
+    payload["title"] = "GalaCredit Risk Report"
     if isinstance(payload.get("panorama"), dict):
         payload["panorama"]["payload"] = _strip_panorama_credit_detail(payload["panorama"].get("payload") or {})
     return json.dumps(payload, ensure_ascii=False, default=_json_default)

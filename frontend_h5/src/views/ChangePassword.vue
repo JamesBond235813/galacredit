@@ -1,34 +1,34 @@
 <template>
   <div class="page-shell change-password-page">
     <section class="page-card form-card">
-      <h2 class="section-title">修改登录密码</h2>
+      <h2 class="section-title">Change Sign-in Password</h2>
       <van-form @submit="onSubmit">
         <van-cell-group inset>
           <van-field
             v-model="form.oldPassword"
             type="password"
             name="oldPassword"
-            placeholder="请输入原密码"
+            placeholder="Current password"
             maxlength="50"
           />
           <van-field
             v-model="form.newPassword"
             type="password"
             name="newPassword"
-            placeholder="请输入新密码（至少6位）"
+            placeholder="New password (at least 6 characters)"
             maxlength="50"
           />
           <van-field
             v-model="form.confirmPassword"
             type="password"
             name="confirmPassword"
-            placeholder="请再次输入新密码"
+            placeholder="Confirm new password"
             maxlength="50"
           />
         </van-cell-group>
 
         <div class="submit-wrap">
-          <van-button block round type="primary" native-type="submit" :loading="loading">确认修改</van-button>
+          <van-button block round type="primary" native-type="submit" :loading="loading">Update Password</van-button>
         </div>
       </van-form>
     </section>
@@ -51,15 +51,15 @@ const form = reactive({
 
 const onSubmit = async () => {
   if (!form.oldPassword || form.oldPassword.length < 6) {
-    showToast('请输入原密码');
+    showToast('Enter your current password');
     return;
   }
   if (!form.newPassword || form.newPassword.length < 6) {
-    showToast('请输入至少6位新密码');
+    showToast('Enter a new password with at least 6 characters');
     return;
   }
   if (form.newPassword !== form.confirmPassword) {
-    showToast('两次输入的新密码不一致');
+    showToast('The new passwords do not match');
     return;
   }
 
@@ -70,7 +70,7 @@ const onSubmit = async () => {
       new_password: form.newPassword,
       confirm_password: form.confirmPassword
     });
-    showToast('密码修改成功，请重新登录');
+    showToast('Password updated. Please sign in again.');
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     router.replace('/login');

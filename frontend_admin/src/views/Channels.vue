@@ -69,9 +69,16 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="放款方式" width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.disbursement_mode === 'AUTO_DISBURSE' ? 'success' : 'warning'">
+              {{ getDisbursementModeLabel(row.disbursement_mode) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="attributed_user_count" label="归属用户" width="100" />
         <el-table-column prop="application_count" label="申请量" width="90" />
-        <el-table-column label="发卡表现" min-width="160">
+        <el-table-column label="放款表现" min-width="160">
           <template #default="{ row }">
             <div>{{ row.disbursed_user_count }} 人</div>
             <div class="sub-text">{{ formatCurrency(row.disbursed_amount) }}</div>
@@ -83,7 +90,7 @@
             <div class="sub-text">{{ formatCurrency(row.overdue_amount) }} · {{ formatRateValue(row.overdue_rate) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="最近进件 / 发卡" min-width="180">
+        <el-table-column label="最近进件 / 放款" min-width="180">
           <template #default="{ row }">
             <div>{{ formatDateTime(row.latest_application_at) }}</div>
             <div class="sub-text">{{ formatDateTime(row.latest_disbursed_at) }}</div>
@@ -123,13 +130,13 @@
     >
       <div class="qr-dialog-shell">
         <div class="qr-brand">
-          <strong>小荷包</strong>
+          <strong>GalaCredit</strong>
           <span>解生活之所急</span>
         </div>
         <div class="qr-card">
           <div class="qr-canvas-wrap">
             <canvas ref="qrCanvasRef" class="qr-canvas" aria-label="专属链接二维码"></canvas>
-            <img :src="logoUrl" class="qr-logo" alt="小荷包 logo" />
+            <img :src="logoUrl" class="qr-logo" alt="GalaCredit logo" />
           </div>
         </div>
         <div class="qr-actions">
@@ -164,6 +171,13 @@
                 <el-radio value="ACTIVE">启用中</el-radio>
                 <el-radio value="INACTIVE">已停用</el-radio>
               </el-radio-group>
+            </el-form-item>
+            <el-form-item label="放款方式">
+              <el-radio-group v-model="form.disbursement_mode">
+                <el-radio value="MANUAL_DISBURSE">人工放款 / Manual</el-radio>
+                <el-radio value="AUTO_DISBURSE">自动放款 / Auto</el-radio>
+              </el-radio-group>
+              <div class="form-help">自动放款渠道在用户提交订单后调用 MoMo 放款；默认人工放款。</div>
             </el-form-item>
             <el-form-item label="业务顾问">
               <el-select
@@ -218,7 +232,7 @@
               <strong>{{ activeRow?.application_count || 0 }}</strong>
             </article>
             <article class="channel-preview-card">
-              <span>发卡金额</span>
+              <span>放款金额</span>
               <strong>{{ formatCurrency(activeRow?.disbursed_amount || 0) }}</strong>
             </article>
             <article class="channel-preview-card">
@@ -245,6 +259,7 @@ import logoUrl from '../assets/logo.svg';
 import { generateChannelInviteCode } from '../utils/channel';
 import { renderChannelQr } from '../utils/channelQr';
 import { formatCurrency, formatDateTime } from '../utils/format';
+import { tr } from '../i18n/adminLocale';
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -274,6 +289,7 @@ const form = reactive({
   channel_name: '',
   invite_code: '',
   status: 'ACTIVE',
+  disbursement_mode: 'MANUAL_DISBURSE',
   note: '',
   admin_user_id: null
 });
@@ -308,6 +324,10 @@ const sanitizedDomain = computed(() => {
 
 const drawerTitle = computed(() => (form.mode === 'edit' ? '编辑渠道' : '新增渠道'));
 
+const getDisbursementModeLabel = (mode) => mode === 'AUTO_DISBURSE'
+  ? tr('自动放款', 'Automatic')
+  : tr('人工放款', 'Manual');
+
 const metricCards = computed(() => [
   {
     label: '渠道总数',
@@ -325,9 +345,9 @@ const metricCards = computed(() => [
     tip: '按归属渠道统计全部申请订单'
   },
   {
-    label: '发卡人数',
+    label: '放款人数',
     value: summary.value.disbursed_user_count || 0,
-    tip: `发卡金额 ${formatCurrency(summary.value.disbursed_amount || 0)}`
+    tip: `放款金额 ${formatCurrency(summary.value.disbursed_amount || 0)}`
   },
   {
     label: '逾期人数',
@@ -337,7 +357,7 @@ const metricCards = computed(() => [
   {
     label: '整体逾期率',
     value: formatRateValue(summary.value.overdue_rate || 0),
-    tip: '逾期人数 / 发卡人数'
+    tip: '逾期人数 / 放款人数'
   }
 ]);
 
@@ -420,6 +440,7 @@ const resetForm = () => {
   form.channel_name = '';
   form.invite_code = '';
   form.status = 'ACTIVE';
+  form.disbursement_mode = 'MANUAL_DISBURSE';
   form.note = '';
   form.admin_user_id = null;
   activeRow.value = null;
@@ -438,6 +459,7 @@ const openEditDrawer = (row) => {
   form.channel_name = row.channel_name;
   form.invite_code = row.invite_code || '';
   form.status = row.status;
+  form.disbursement_mode = row.disbursement_mode || 'MANUAL_DISBURSE';
   form.note = row.note || '';
   form.admin_user_id = row.admin_user_id || null;
   upsertAdvisorOption({
@@ -480,6 +502,7 @@ const submitForm = async () => {
       await updateChannel(form.id, {
         sales_name: form.sales_name.trim(),
         status: form.status,
+        disbursement_mode: form.disbursement_mode,
         note: form.note,
         admin_user_id: form.admin_user_id
       });
@@ -490,6 +513,7 @@ const submitForm = async () => {
         channel_name: form.channel_name,
         invite_code: form.invite_code,
         status: form.status,
+        disbursement_mode: form.disbursement_mode,
         note: form.note,
         admin_user_id: form.admin_user_id
       });
@@ -514,6 +538,13 @@ onMounted(() => {
   margin-top: 4px;
   color: #7f8da2;
   font-size: 12px;
+}
+
+.form-help {
+  margin-top: 4px;
+  color: #7f8da2;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .filter-tip {

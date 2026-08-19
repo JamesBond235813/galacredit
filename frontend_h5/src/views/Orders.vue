@@ -1,6 +1,6 @@
 <template>
   <div class="page-shell orders-page">
-    <van-nav-bar left-arrow title="我的订单" @click-left="router.back()" />
+    <van-nav-bar left-arrow title="My Applications" @click-left="router.back()" />
 
     <div class="page-inner orders-inner">
       <div v-if="loading" class="loading-box">
@@ -11,36 +11,36 @@
         <section class="page-card order-card">
           <div class="order-head">
             <div>
-              <p class="order-label">{{ loan?.status === 'INIT' ? '额度审批' : '当前订单' }}</p>
-              <h1 class="order-title">{{ loan?.status === 'INIT' ? '拟授信额度' : '订单信息' }}</h1>
+              <p class="order-label">{{ loan?.status === 'INIT' ? 'Credit Application' : 'Current Loan' }}</p>
+              <h1 class="order-title">{{ loan?.status === 'INIT' ? 'Estimated Credit Limit' : 'Loan Details' }}</h1>
             </div>
             <span class="status-chip" :class="statusClass">{{ statusLabel }}</span>
           </div>
 
           <div class="order-amount">
-            <span>¥</span>
+            <span>GHS</span>
             <strong>{{ amountText }}</strong>
           </div>
 
           <div class="order-notice" v-if="!loan || loan?.status === 'INIT'">
-            <van-icon name="info-o" /> 上传完全部资料后将获得真实信用额度
+            <van-icon name="info-o" /> Complete your application to receive an approved credit limit
           </div>
 
           <div class="order-meta">
             <div class="meta-row">
-              <span>申请时间</span>
+              <span>Application Date</span>
               <span>{{ createdAtText }}</span>
             </div>
             <div class="meta-row" v-if="loan?.product_name">
-              <span>下单商品</span>
+              <span>Loan Option</span>
               <span>{{ loan.product_name }}</span>
             </div>
             <div class="meta-row" v-if="currentInstallmentText">
-              <span>当前账期</span>
+              <span>Current Instalment</span>
               <span>{{ currentInstallmentText }}</span>
             </div>
             <div class="meta-row meta-row-dates" v-if="repaymentDates.length">
-              <span>还款日期</span>
+              <span>Repayment Dates</span>
               <span class="meta-date-list">
                 <span v-for="item in repaymentDates" :key="item.key" class="meta-date-item">
                   {{ item.label }}
@@ -48,35 +48,35 @@
               </span>
             </div>
             <div class="meta-row" v-if="loan?.disbursed_at">
-              <span>发卡时间</span>
+              <span>Disbursement Date</span>
               <span>{{ disbursedAtText }}</span>
             </div>
             <div v-if="loan?.has_issued_ecard" class="meta-ecard-list">
               <div v-for="item in ecardItems" :key="item.key" class="meta-ecard-item">
                 <div class="meta-ecard-title">
                   <span>{{ item.title }}</span>
-                  <strong v-if="item.faceValue">{{ Number(item.faceValue).toLocaleString('zh-CN') }}元</strong>
+                  <strong v-if="item.faceValue">GHS {{ Number(item.faceValue).toLocaleString('en-GH') }}</strong>
                 </div>
                 <div class="meta-row meta-row-card">
-                  <span>卡号</span>
+                  <span>Card Number</span>
                   <span class="meta-card-value">
                     {{ item.accountDisplay }}
                     <button class="meta-copy-btn" type="button" :disabled="copyingKey === copyKey(item, 'account')" @click="copyEcardSecret('account', item)">
-                      复制
+                      Copy
                     </button>
                   </span>
                 </div>
                 <div class="meta-row meta-row-card">
-                  <span>卡密</span>
+                  <span>Card PIN</span>
                   <span class="meta-card-value">
                     {{ item.passwordDisplay }}
                     <button class="meta-copy-btn" type="button" :disabled="copyingKey === copyKey(item, 'password')" @click="copyEcardSecret('password', item)">
-                      复制
+                      Copy
                     </button>
                   </span>
                 </div>
                 <div class="meta-row" v-if="item.expiresAt">
-                  <span>有效期</span>
+                  <span>Expiry Date</span>
                   <span>{{ formatDate(item.expiresAt) }}</span>
                 </div>
               </div>
@@ -91,7 +91,7 @@
         </section>
 
         <section class="page-card timeline-card">
-          <h2 class="page-section-title">订单进度</h2>
+          <h2 class="page-section-title">Application Progress</h2>
           <div class="timeline-list">
             <div
               v-for="item in timeline"
@@ -129,59 +129,59 @@ let loanSnapshotSubscriber = null;
 
 const statusMap = {
   INIT: {
-    label: '待申请',
-    description: '当前额度为拟授信额度，完成实名认证与资料上传后即可获得真实信用额度。',
-    actionText: '去申请真实额度',
+    label: 'Not Started',
+    description: 'Complete identity verification and provide the required information to receive a credit decision.',
+    actionText: 'Start Application',
     actionRoute: '/ocr',
     chipClass: 'status-chip-primary',
     amount: '8,000'
   },
   REVIEWING: {
-    label: '审核中',
-    description: '订单资料已提交，系统正在审核中，请稍后查看最新进度。',
-    actionText: '查看审核进度',
+    label: 'Under Review',
+    description: 'Your application has been submitted and is being reviewed.',
+    actionText: 'View Review Status',
     actionRoute: '/review',
     chipClass: 'status-chip-primary'
   },
   REJECTED: {
-    label: '未通过',
-    description: '当前订单资料未通过审核，请修改补充资料后重新提交。',
-    actionText: '重新提交资料',
+    label: 'Not Approved',
+    description: 'Update your information and submit the application again.',
+    actionText: 'Resubmit Application',
     actionRoute: '/application-form',
     chipClass: 'status-chip-danger'
   },
   APPROVED: {
-    label: '待下单',
-    description: '您的订单已审批通过，请在商品列表中选择组合并完成信用支付下单。',
-    actionText: '立即选购',
+    label: 'Approved',
+    description: 'Your credit application is approved. Select a loan option to continue.',
+    actionText: 'Choose a Loan',
     actionRoute: '/withdraw',
     chipClass: 'status-chip-success'
   },
   WITHDRAWING: {
-    label: '待发卡',
-    description: '订单已提交，后台正在从卡池分配京东E卡，请稍后刷新查看。',
-    actionText: '查看账单',
+    label: 'Disbursing',
+    description: 'Your loan is being processed for MoMo disbursement.',
+    actionText: 'View Bill',
     actionRoute: '/bill',
     chipClass: 'status-chip-primary'
   },
   DISBURSED: {
-    label: '待付款',
-    description: '订单已发卡成功，可进入账单查看付款金额与付款日期。',
-    actionText: '查看账单',
+    label: 'Repayment Due',
+    description: 'Your loan has been disbursed. View the repayment amount and due date.',
+    actionText: 'View Bill',
     actionRoute: '/bill',
     chipClass: 'status-chip-success'
   },
   OVERDUE: {
-    label: '已逾期',
-    description: '当前订单已逾期，请尽快进入账单页处理还款事宜。',
-    actionText: '处理还款',
+    label: 'Overdue',
+    description: 'This loan is overdue. Open the bill and arrange repayment immediately.',
+    actionText: 'Resolve Repayment',
     actionRoute: '/bill',
     chipClass: 'status-chip-danger'
   },
   SETTLED: {
-    label: '已结清',
-    description: '当前订单已完成结清，您可以返回首页查看其他服务。',
-    actionText: '返回首页',
+    label: 'Settled',
+    description: 'This loan has been fully repaid.',
+    actionText: 'Return Home',
     actionRoute: '/home',
     chipClass: 'status-chip-success'
   }
@@ -202,7 +202,7 @@ const amountText = computed(() => {
   }
 
   if (loan.value.status === 'REVIEWING') {
-    return '审核中';
+    return 'Under review';
   }
 
   return Number(loan.value.product_total_price || loan.value.total_repayment_amount || loan.value.credit_limit || 0).toLocaleString();
@@ -215,7 +215,7 @@ const currentInstallmentText = computed(() => {
   if (!currentPeriod) {
     return '';
   }
-  return `第${currentPeriod}期 · 剩余待还 ${Number(loan.value?.fund_flow_summary?.remaining_amount || 0).toLocaleString('zh-CN')}元`;
+  return `Instalment ${currentPeriod} · GHS ${Number(loan.value?.fund_flow_summary?.remaining_amount || 0).toLocaleString('en-GH')} remaining`;
 });
 const repaymentDates = computed(() => {
   const installments = Array.isArray(loan.value?.installments) ? loan.value.installments : [];
@@ -226,7 +226,7 @@ const repaymentDates = computed(() => {
   }
 
   return installments.map((item) => {
-    const labelPrefix = installments.length > 1 ? `第${item.period_no}期 ` : '';
+    const labelPrefix = installments.length > 1 ? `Instalment ${item.period_no}: ` : '';
     return {
       key: `repayment-${item.period_no}`,
       label: `${labelPrefix}${formatDate(item.due_date)}`,
@@ -238,10 +238,10 @@ const ecardItems = computed(() => buildEcardDisplayItems(loan.value));
 const timeline = computed(() => {
   const status = loan.value?.status || 'INIT';
   const steps = [
-    { key: 'INIT', title: '订单创建', desc: '用户登录后生成初始订单' },
-    { key: 'REVIEWING', title: '资料审核', desc: '实名认证完成后进入审核阶段' },
-    { key: 'APPROVED', title: '授信审批', desc: '审批通过后可在商品页下单' },
-    { key: 'DISBURSED', title: '发卡/付款', desc: '后台发卡后进入账单付款阶段' }
+    { key: 'INIT', title: 'Application Created', desc: 'Your initial credit application is ready' },
+    { key: 'REVIEWING', title: 'Information Review', desc: 'Your identity and application details are being reviewed' },
+    { key: 'APPROVED', title: 'Credit Approved', desc: 'Choose a loan option after approval' },
+    { key: 'DISBURSED', title: 'MoMo Disbursement', desc: 'Funds are sent and the repayment bill is created' }
   ];
 
   const activeIndexMap = {
@@ -267,14 +267,14 @@ const formatDate = (value) => {
   if (!value) {
     return '';
   }
-  return new Date(value).toLocaleDateString('zh-CN');
+  return new Date(value).toLocaleDateString('en-GH');
 };
 
 const formatDateTime = (value) => {
   if (!value) {
     return '--';
   }
-  return new Date(value).toLocaleString('zh-CN');
+  return new Date(value).toLocaleString('en-GH');
 };
 
 const applyLoanSnapshot = (snapshot) => {
@@ -285,8 +285,8 @@ const applyLoanSnapshot = (snapshot) => {
 const copyKey = (item, field) => `${field}-${item?.id ?? item?.index ?? 0}`;
 
 const showManualCopyValue = (field, value) => {
-  const label = field === 'account' ? '卡号' : '卡密';
-  window.prompt(`自动复制失败，请长按复制${label}`, value);
+  const label = field === 'account' ? 'card number' : 'card PIN';
+  window.prompt(`Automatic copy failed. Press and hold to copy the ${label}.`, value);
 };
 
 const copyEcardSecret = async (field, item = {}) => {
@@ -295,7 +295,7 @@ const copyEcardSecret = async (field, item = {}) => {
     const res = await getEcardSecret(field, buildEcardSecretParams(item));
     const copied = await copyTextSafely(res.value || '');
     if (copied) {
-      showToast('复制成功');
+      showToast('Copied');
     } else {
       showManualCopyValue(field, res.value || '');
     }

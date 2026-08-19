@@ -14,6 +14,13 @@ class Channel(Base):
     invite_code = Column(String(32), unique=True, index=True, nullable=False, default="", comment="渠道邀请码")
     sales_name = Column(String(50), nullable=False)
     status = Column(String(20), default="ACTIVE", index=True, nullable=False)
+    disbursement_mode = Column(
+        String(24),
+        default="MANUAL_DISBURSE",
+        index=True,
+        nullable=False,
+        comment="渠道放款模式：AUTO_DISBURSE 自动放款，MANUAL_DISBURSE 人工放款",
+    )
     note = Column(String(255), nullable=True)
     admin_user_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)

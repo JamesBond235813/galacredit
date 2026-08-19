@@ -1,6 +1,6 @@
 {
-  "name": "小荷包安卓工作台",
-  "short_name": "小荷包",
+  "name": "GalaCredit Android Workspace",
+  "short_name": "GalaCredit",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

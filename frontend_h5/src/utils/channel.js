@@ -11,7 +11,7 @@ export const saveEntryInviteCode = (inviteCode) => {
   try {
     localStorage.setItem(CHANNEL_STORAGE_KEY, JSON.stringify({ invite_code: code }));
   } catch (error) {
-    // 微信内置浏览器偶发存储异常时，不阻断渠道入口跳转登录。
+    // Storage failures in embedded browsers must not block invitation sign-in.
   }
 };
 

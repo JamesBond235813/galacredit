@@ -1,35 +1,35 @@
 <template>
   <div class="page-shell about-page">
-    <van-nav-bar title="关于我们" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="About Us" left-arrow @click-left="router.back()" />
 
     <div class="about-content">
       <section class="about-card page-card brand-card">
         <div class="brand-header">
-          <img :src="brandLogo" class="brand-logo" alt="小荷包 logo" />
-          <h1 class="brand-title">小荷包</h1>
+          <img :src="brandLogo" class="brand-logo" alt="GalaCredit logo" />
+          <h1 class="brand-title">GalaCredit</h1>
         </div>
         <p class="brand-desc">
-          小荷包为认证用户提供授信申请、信用下单、发卡进度与付款账单查询等服务，页面信息仅用于展示当前业务状态。
+          GalaCredit provides eligible customers with cash loan applications, MoMo disbursement and repayment bill services.
         </p>
       </section>
 
       <section class="about-card page-card info-card">
         <div class="info-row">
-          <span class="info-label">服务说明</span>
-          <span class="info-value">授信与账单信息查询</span>
+          <span class="info-label">Service</span>
+          <span class="info-value">Credit applications and repayment information</span>
         </div>
         <div class="info-row">
-          <span class="info-label">客服时间</span>
-          <span class="info-value">工作日 09:00 - 18:00</span>
+          <span class="info-label">Support Hours</span>
+          <span class="info-value">Weekdays, 09:00 - 18:00</span>
         </div>
         <div class="info-row">
-          <span class="info-label">安全提示</span>
-          <span class="info-value">请勿向私人账户转账</span>
+          <span class="info-label">Security Notice</span>
+          <span class="info-value">Never transfer funds to a private account</span>
         </div>
       </section>
 
       <van-button block class="primary-action logout-btn" @click="handleLogout">
-        退出登录
+        Sign Out
       </van-button>
     </div>
   </div>
@@ -49,7 +49,7 @@ const handleLogout = async () => {
       await logout({ refresh_token: refreshToken });
     }
   } catch (error) {
-    // 无论服务端吊销成功与否，前端都执行本地退出，避免用户卡在登录态。
+    // Always clear local authentication so the customer cannot remain in a stale session.
   } finally {
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');

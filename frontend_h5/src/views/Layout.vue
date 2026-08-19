@@ -1,6 +1,6 @@
 <template>
   <div class="app-layout">
-    <!-- 顶部常态波纹渐变底色 -->
+    <!-- Shared top background texture -->
     <div class="layout-bg"></div>
 
     <div class="layout-content">
@@ -14,25 +14,25 @@
     <!-- Vant Tabbar -->
     <van-tabbar v-model="active" route active-color="#1A56A6" inactive-color="#C0C4CC">
       <van-tabbar-item replace to="/home" icon="balance-list-o">
-        小荷包
+        GalaCredit
       </van-tabbar-item>
       <van-tabbar-item replace to="/profile" icon="user-o">
-        我的
+        My Account
       </van-tabbar-item>
     </van-tabbar>
 
     <div v-if="locationBlocked" class="location-lock">
       <div class="location-lock-panel">
         <div class="location-lock-head">
-          <div class="location-lock-title">位置授权未完成</div>
+          <div class="location-lock-title">Location Permission Required</div>
           <div v-if="!locationRequesting" class="location-lock-actions">
-            <button type="button" class="location-exit-btn" @click="exitService">退出服务</button>
-            <button type="button" class="location-close-btn" aria-label="关闭" @click="closeLocationPanel">×</button>
+            <button type="button" class="location-exit-btn" @click="exitService">Exit</button>
+            <button type="button" class="location-close-btn" aria-label="Close" @click="closeLocationPanel">×</button>
           </div>
         </div>
         <div class="location-lock-text">{{ locationBlockMessage }}</div>
         <van-button round block type="primary" :loading="locationRequesting" @click="startLocationAuthorization">
-          重新授权
+          Allow Location
         </van-button>
       </div>
     </div>
@@ -54,7 +54,7 @@ const active = computed({
 
 const locationBlocked = ref(false);
 const locationRequesting = ref(false);
-const locationBlockMessage = ref('请先授权获取当前位置，授权完成前暂不能继续操作。');
+const locationBlockMessage = ref('Please allow location access to continue using this service.');
 
 const closeLocationPanel = () => {
   if (locationRequesting.value) {
@@ -79,27 +79,27 @@ const startLocationAuthorization = async () => {
   locationBlocked.value = false;
   try {
     await showConfirmDialog({
-      title: '位置授权',
-      message: '为保障账户与额度使用安全，请同意获取当前地理位置。',
-      confirmButtonText: '同意',
-      cancelButtonText: '拒绝',
+      title: 'Location Permission',
+      message: 'Allow location access to help protect your account and credit usage.',
+      confirmButtonText: 'Allow',
+      cancelButtonText: 'Deny',
       confirmButtonColor: '#2f7ef7',
       closeOnClickOverlay: false
     });
   } catch {
     locationBlocked.value = true;
-    locationBlockMessage.value = '您已拒绝位置授权，当前服务已冻结。请重新授权后继续使用。';
+    locationBlockMessage.value = 'Location access was denied. Allow it to continue using this service.';
     locationRequesting.value = false;
     return;
   }
 
   try {
     locationBlocked.value = true;
-    locationBlockMessage.value = '正在等待浏览器位置授权，请在系统弹窗中允许读取位置。';
+    locationBlockMessage.value = 'Waiting for browser permission. Please allow location access in the system prompt.';
     await captureAndUploadLocation();
     sessionStorage.setItem('h5_location_authorized', '1');
     locationBlocked.value = false;
-    showToast('位置授权成功');
+    showToast('Location access granted');
   } catch (error) {
     locationBlocked.value = true;
     locationBlockMessage.value = getLocationErrorMessage(error);
@@ -119,7 +119,7 @@ onMounted(async () => {
 </script>
 
 <style>
-/* 全局波纹纹理定义 */
+/* Shared background texture */
 .app-layout {
   min-height: 100vh;
   position: relative;
@@ -127,7 +127,7 @@ onMounted(async () => {
   padding-bottom: var(--app-tabbar-space);
 }
 
-/* 绘制参考图中的浅色拓扑网格波云纹理效果 */
+/* Subtle topographic texture */
 .layout-bg {
   position: absolute;
   top: 0; left: 0; right: 0;
