@@ -8,6 +8,7 @@ DEFAULT_FEE_RATE = 0.6
 LOAN_PERIOD_DAYS = 7
 MONTHLY_INTEREST_RATE = 0.02
 DEFAULT_UPFRONT_FEE_RATE = 0.4
+CASH_LOAN_INTEREST_RATE_KEY = "interest_rate"
 
 
 def round_money(value: Any) -> float:
@@ -87,22 +88,72 @@ def calculate_installment_amounts(total_amount: Any, ratios: Any, installment_co
     return [round_money(item / 100) for item in amounts]
 
 
-def calculate_interest_amount(credit_limit: Any, term_days: Any) -> float:
-    principal = round_money(credit_limit)
-    if not principal or term_days in (None, ""):
-        return 0.0
+def calculate_interest_days(term_days: Any = None, interest_start_day: Any = None, repayment_due_day: Any = None) -> int:
+    """计算实际计息天数，起息日和到期日均包含在计息区间内。
 
+    :param term_days: 兼容历史订单的期限天数
+    :param interest_start_day: 放款后第几天开始计息
+    :param repayment_due_day: 放款后第几天到期
+    :return: 实际计息天数
+    """
+    if interest_start_day in (None, "") or repayment_due_day in (None, ""):
+        try:
+            return normalize_term_days(term_days, allow_empty=True) or 0
+        except ValueError:
+            return 0
     try:
-        normalized_term_days = normalize_term_days(term_days)
-    except ValueError:
+        start_day = max(int(interest_start_day), 1)
+        due_day = max(int(repayment_due_day), 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(due_day - start_day + 1, 0)
+
+
+def resolve_interest_rate(loan: Any = None, fallback: Any = MONTHLY_INTEREST_RATE) -> float:
+    """读取订单费用快照中的利率，历史订单无快照时使用兼容利率。
+
+    :param loan: 贷款或产品对象
+    :param fallback: 兼容利率
+    :return: 月利率小数
+    """
+    components = getattr(loan, "fee_components_json", None) if loan is not None else None
+    if isinstance(components, str):
+        try:
+            components = json.loads(components)
+        except (TypeError, ValueError):
+            components = None
+    try:
+        return max(float((components or {}).get(CASH_LOAN_INTEREST_RATE_KEY, fallback)), 0.0)
+    except (TypeError, ValueError):
+        return max(float(fallback or 0), 0.0)
+
+
+def calculate_interest_amount(
+    credit_limit: Any,
+    term_days: Any = None,
+    interest_start_day: Any = None,
+    repayment_due_day: Any = None,
+    interest_rate: Any = MONTHLY_INTEREST_RATE,
+) -> float:
+    """按订单快照利率和起息/到期日计算利息。
+
+    :param credit_limit: 名义本金
+    :param term_days: 兼容历史订单期限
+    :param interest_start_day: 放款后起息日
+    :param repayment_due_day: 放款后到期日
+    :param interest_rate: 月利率小数
+    :return: 利息金额
+    """
+    principal = round_money(credit_limit)
+    days = calculate_interest_days(term_days, interest_start_day, repayment_due_day)
+    if not principal or days <= 0:
         return 0.0
+    return round_money(principal * max(float(interest_rate or 0), 0) * days / 30)
 
-    return round_money(principal * MONTHLY_INTEREST_RATE * normalized_term_days / 30)
 
-
-def calculate_guarantee_fee_amount(total_fee_amount: Any, credit_limit: Any, term_days: Any) -> float:
+def calculate_guarantee_fee_amount(total_fee_amount: Any, credit_limit: Any, term_days: Any = None, interest_start_day: Any = None, repayment_due_day: Any = None, interest_rate: Any = MONTHLY_INTEREST_RATE) -> float:
     total_fee = round_money(total_fee_amount)
-    interest_amount = calculate_interest_amount(credit_limit, term_days)
+    interest_amount = calculate_interest_amount(credit_limit, term_days, interest_start_day, repayment_due_day, interest_rate)
     return round_money(max(total_fee - interest_amount, 0.0))
 
 
@@ -268,8 +319,22 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
     term_days = getattr(loan, "term_days", None)
     fee_rate = normalize_fee_rate(getattr(loan, "fee_rate", DEFAULT_FEE_RATE))
     fee_amount = calculate_fee_amount(credit_limit, fee_rate)
-    interest_amount = calculate_interest_amount(credit_limit, term_days)
-    guarantee_fee_amount = calculate_guarantee_fee_amount(fee_amount, credit_limit, term_days)
+    interest_rate = resolve_interest_rate(loan)
+    interest_amount = calculate_interest_amount(
+        credit_limit,
+        term_days,
+        getattr(loan, "interest_start_day", 1),
+        getattr(loan, "repayment_due_day", term_days),
+        interest_rate,
+    )
+    guarantee_fee_amount = calculate_guarantee_fee_amount(
+        fee_amount,
+        credit_limit,
+        term_days,
+        getattr(loan, "interest_start_day", 1),
+        getattr(loan, "repayment_due_day", term_days),
+        interest_rate,
+    )
 
     review_admin = getattr(loan, "__dict__", {}).get("review_admin")
     collection_admin = getattr(loan, "__dict__", {}).get("collection_admin")
@@ -294,14 +359,11 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "interest_start_day": int(getattr(loan, "interest_start_day", 1) or 1),
         "repayment_due_day": int(getattr(loan, "repayment_due_day", 7) or 7),
         "installment_count": int(getattr(loan, "installment_count", 1) or 1),
+        "daily_overdue_fee_snapshot": round_money(getattr(loan, "daily_overdue_fee_snapshot", 0)),
         "momo_disbursement_reference": getattr(loan, "momo_disbursement_reference", None),
         "interest_amount": interest_amount,
         "guarantee_fee_amount": guarantee_fee_amount,
-        "installment_amount": calculate_installment_by_values(
-            credit_limit,
-            fee_rate,
-            term_days,
-        ),
+        "installment_amount": calculate_installment_amount(loan),
         "penalty_amount": round_money(getattr(loan, "penalty_amount", 0)),
         "paid_penalty_amount": round_money(getattr(loan, "paid_penalty_amount", 0)),
         "reduced_penalty_amount": round_money(getattr(loan, "reduced_penalty_amount", 0)),
@@ -309,11 +371,7 @@ def serialize_loan_snapshot(loan: Any, include_user: bool = False, include_ledge
         "reduction_amount": round_money(getattr(loan, "reduction_amount", 0)),
         "other_fee_amount": round_money(getattr(loan, "other_fee_amount", 0)),
         "actual_repayment_date": getattr(loan, "actual_repayment_date", None),
-        "total_repayment_amount": calculate_total_repayment_by_values(
-            credit_limit,
-            fee_rate,
-            getattr(loan, "penalty_amount", 0),
-        ),
+        "total_repayment_amount": calculate_total_repayment_amount(loan),
         "remaining_repayment_amount": calculate_remaining_repayment_amount(loan),
         "review_note": getattr(loan, "review_note", None),
         "approved_at": getattr(loan, "approved_at", None),

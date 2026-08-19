@@ -2,7 +2,7 @@ import contextlib
 import os
 import sys
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -10,10 +10,11 @@ from app import models  # noqa: F401
 from app.api.req_util import resolve_client_ip
 from app.api.router import router
 from app.core.access_audit import AccessAuditMiddleware
-from app.core.database import Base, engine, ensure_database_exists, run_async_database_bootstrap, sync_legacy_schema
+from app.core.database import run_async_database_bootstrap
 from app.core.config import ACTIVE_PROFILE, resolve_profile, settings
 from app.core.logging_config import build_uvicorn_log_config, configure_logging
 from app.core.request_logging import RequestResponseLoggingMiddleware
+from app.core.exceptions import BizException, biz_exception_handler, legacy_http_exception_handler
 from app.services.scheduler import start_scheduler
 from app.services.upload_storage import UPLOAD_ROOT
 
@@ -25,10 +26,6 @@ async def lifespan(app: FastAPI):
     yield
 
 configure_logging()
-ensure_database_exists()
-Base.metadata.create_all(bind=engine)
-sync_legacy_schema()
-
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=None,
@@ -36,6 +33,8 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan
 )
+app.add_exception_handler(BizException, biz_exception_handler)
+app.add_exception_handler(HTTPException, legacy_http_exception_handler)
 
 # 跨域配置
 app.add_middleware(

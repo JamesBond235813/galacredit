@@ -21,6 +21,13 @@ class Channel(Base):
         nullable=False,
         comment="渠道放款模式：AUTO_DISBURSE 自动放款，MANUAL_DISBURSE 人工放款",
     )
+    review_mode = Column(
+        String(20),
+        default="MANUAL_REVIEW",
+        index=True,
+        nullable=False,
+        comment="渠道审核模式：AUTO_REVIEW 自动审核，MANUAL_REVIEW 人工审核",
+    )
     note = Column(String(255), nullable=True)
     admin_user_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)

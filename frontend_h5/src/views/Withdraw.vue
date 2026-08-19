@@ -44,7 +44,7 @@
             </div>
 
             <div class="showcase-tags">
-              <span>{{ selectedProduct.product_type === 'CASH_LOAN' ? `Cash received: GHS ${formatAmount(selectedProduct.nominal_loan_amount * (1 - selectedProduct.upfront_fee_rate))}` : (selectedProduct.ecard_face_value > 0 ? `Value: GHS ${formatAmount(selectedProduct.ecard_face_value)}` : 'No cash disbursement') }}</span>
+              <span>{{ selectedProduct.product_type === 'CASH_LOAN' ? `Cash received: GHS ${formatAmount(selectedProduct.actual_disbursement_amount || (selectedProduct.nominal_loan_amount - selectedProduct.upfront_fee_amount))}` : (selectedProduct.ecard_face_value > 0 ? `Value: GHS ${formatAmount(selectedProduct.ecard_face_value)}` : 'No cash disbursement') }}</span>
               <span>Term: {{ selectedProduct.term_days }} days</span>
               <span>Uses your available credit limit</span>
             </div>
@@ -327,7 +327,7 @@ const otherProducts = computed(() =>
 );
 
 const defaultRightsDetail = {
-  contact_phone: '13800138000',
+  contact_phone: '',
   sections: [
     {
       title: 'Loan information',

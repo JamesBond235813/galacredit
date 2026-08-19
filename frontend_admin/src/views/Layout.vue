@@ -140,6 +140,7 @@ const iconMap = {
   users: User,
   applications: DocumentChecked,
   disbursements: Money,
+  disbursementFailures: WarnTriangleFilled,
   repayments: CreditCard,
   collections: WarnTriangleFilled,
   financials: WalletFilled,

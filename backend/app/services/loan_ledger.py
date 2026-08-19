@@ -12,6 +12,7 @@ from app.services.loan_amounts import (
     calculate_guarantee_fee_amount,
     calculate_installment_periods,
     calculate_interest_amount,
+    resolve_interest_rate,
     round_money,
 )
 
@@ -130,12 +131,21 @@ def build_installment_blueprint(loan: Loan) -> List[Dict[str, Any]]:
         return items
 
     principal_parts = split_money(getattr(loan, "credit_limit", 0), periods)
-    interest_total = calculate_interest_amount(getattr(loan, "credit_limit", 0), getattr(loan, "term_days", 0))
+    interest_total = calculate_interest_amount(
+        getattr(loan, "credit_limit", 0),
+        getattr(loan, "term_days", 0),
+        getattr(loan, "interest_start_day", 1),
+        getattr(loan, "repayment_due_day", getattr(loan, "term_days", 0)),
+        resolve_interest_rate(loan),
+    )
     interest_parts = split_money(interest_total, periods)
     guarantee_total = calculate_guarantee_fee_amount(
         getattr(loan, "fee_amount", 0),
         getattr(loan, "credit_limit", 0),
         getattr(loan, "term_days", 0),
+        getattr(loan, "interest_start_day", 1),
+        getattr(loan, "repayment_due_day", getattr(loan, "term_days", 0)),
+        resolve_interest_rate(loan),
     )
     guarantee_parts = split_money(guarantee_total, periods)
 

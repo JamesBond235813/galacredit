@@ -21,4 +21,16 @@ describe('GalaCredit login layout', () => {
     expect(source).toContain('{{ phone.length }}/9');
     expect(source).toContain("phone[index - 1] || '0'");
   });
+
+  it('raises the login form above the mobile keyboard', () => {
+    expect(source).toContain('window.visualViewport');
+    expect(source).toContain('updateKeyboardOffset');
+    expect(source).toContain('--keyboard-offset');
+    expect(source).toContain('min-height: 100dvh');
+  });
+
+  it('uses high-contrast brand treatment on the gradient background', () => {
+    expect(source).toContain('color: #ffffff');
+    expect(source).toContain('background: rgba(8, 34, 76, 0.28)');
+  });
 });

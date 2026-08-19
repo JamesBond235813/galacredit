@@ -4,7 +4,7 @@
       <img src="../assets/logo.svg" class="entry-logo" alt="GalaCredit logo" />
       <h1>Invitation Access</h1>
       <p>{{ message }}</p>
-      <van-loading size="24px" color="#1a56a6" />
+      <van-loading size="24px" color="#2f7ef7" />
     </div>
   </div>
 </template>
@@ -35,7 +35,7 @@ onMounted(() => {
 
 <style scoped>
 .channel-entry-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -47,7 +47,7 @@ onMounted(() => {
   width: 100%;
   max-width: 360px;
   padding: 32px 24px;
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.24);
   box-shadow: 0 20px 42px rgba(28, 71, 142, 0.18);
@@ -63,7 +63,7 @@ onMounted(() => {
 .channel-entry-card h1 {
   margin: 18px 0 10px;
   font-size: 22px;
-  color: var(--app-primary);
+  color: var(--app-primary-deep);
 }
 
 .channel-entry-card p {

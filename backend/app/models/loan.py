@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Date, Float
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Date, Float, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -12,14 +12,14 @@ class Loan(Base):
     # 状态：INIT, REVIEWING, APPROVED, REJECTED, WITHDRAWING, DISBURSED, SETTLED, OVERDUE
     status = Column(String(50), default="INIT", index=True)
     
-    credit_limit = Column(Float, default=0.0)
-    approved_credit_limit = Column(Float, default=0.0)
-    fee_rate = Column(Float, default=0.6)         # 综合息费率
-    fee_amount = Column(Float, default=0.0)       # 综合息费金额
-    nominal_loan_amount = Column(Float, default=0.0, nullable=False)
-    upfront_fee_amount = Column(Float, default=0.0, nullable=False)
-    actual_disbursement_amount = Column(Float, default=0.0, nullable=False)
-    total_repayment_amount_snapshot = Column(Float, default=0.0, nullable=False)
+    credit_limit = Column(Numeric(18, 2), default=0.0)
+    approved_credit_limit = Column(Numeric(18, 2), default=0.0)
+    fee_rate = Column(Numeric(8, 6), default=0.6)         # 综合息费率
+    fee_amount = Column(Numeric(18, 2), default=0.0)       # 综合息费金额
+    nominal_loan_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+    upfront_fee_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+    actual_disbursement_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+    total_repayment_amount_snapshot = Column(Numeric(18, 2), default=0.0, nullable=False)
     interest_start_day = Column(Integer, default=1, nullable=False)
     repayment_due_day = Column(Integer, default=7, nullable=False)
     installment_count = Column(Integer, default=1, nullable=False)
@@ -29,12 +29,13 @@ class Loan(Base):
     momo_repayment_reference = Column(String(100), nullable=True)
     term_days = Column(Integer, nullable=True)     # 后台设定
     due_date = Column(DateTime, nullable=True)     # 后台发卡时根据 term_days 计算
-    penalty_amount = Column(Float, default=0.0)    # 违约金
-    repaid_amount = Column(Float, default=0.0)     # 已登记收款额
-    reduction_amount = Column(Float, default=0.0)  # 已登记减免额
-    other_fee_amount = Column(Float, default=0.0)  # 已登记其他费用
-    paid_penalty_amount = Column(Float, default=0.0)
-    reduced_penalty_amount = Column(Float, default=0.0)
+    penalty_amount = Column(Numeric(18, 2), default=0.0)    # 违约金
+    daily_overdue_fee_snapshot = Column(Numeric(18, 2), default=0.0, nullable=False, comment="放款时固化的每日逾期费")
+    repaid_amount = Column(Numeric(18, 2), default=0.0)     # 已登记收款额
+    reduction_amount = Column(Numeric(18, 2), default=0.0)  # 已登记减免额
+    other_fee_amount = Column(Numeric(18, 2), default=0.0)  # 已登记其他费用
+    paid_penalty_amount = Column(Numeric(18, 2), default=0.0)
+    reduced_penalty_amount = Column(Numeric(18, 2), default=0.0)
     actual_repayment_date = Column(Date, nullable=True)  # 最近一次实际还款日期
     review_note = Column(String(255), nullable=True)
     approved_at = Column(DateTime, nullable=True)
@@ -49,8 +50,8 @@ class Loan(Base):
     collection_transferred_at = Column(DateTime, nullable=True)
     risk_report_checked_at = Column(DateTime, nullable=True)
     risk_report_checked_by = Column(String(50), nullable=True)
-    approval_discount_amount = Column(Float, default=0.0)
-    order_discount_amount = Column(Float, default=0.0)
+    approval_discount_amount = Column(Numeric(18, 2), default=0.0)
+    order_discount_amount = Column(Numeric(18, 2), default=0.0)
     card_reissue_closed = Column(Boolean, default=False, nullable=False)
     extension_count = Column(Integer, default=0)
     extension_type = Column(String(30), nullable=True)
@@ -68,9 +69,9 @@ class Loan(Base):
     rights_title = Column(String(120), nullable=True)
     rights_desc = Column(String(255), nullable=True)
     rights_contact_phone = Column(String(20), nullable=True)
-    rights_price = Column(Float, default=0.0)
-    ecard_face_value = Column(Float, default=0.0)
-    product_total_price = Column(Float, default=0.0)
+    rights_price = Column(Numeric(18, 2), default=0.0)
+    ecard_face_value = Column(Numeric(18, 2), default=0.0)
+    product_total_price = Column(Numeric(18, 2), default=0.0)
     product_term_days = Column(Integer, nullable=True)
 
     ecard_account = Column(String(100), nullable=True)

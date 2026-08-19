@@ -347,13 +347,13 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
   padding: 22px 18px 20px;
-  border-radius: 22px;
+  border-radius: 18px;
 }
 
 .menu-card {
   margin-top: 18px;
   padding: 22px 18px 12px;
-  border-radius: 22px;
+  border-radius: 18px;
 }
 
 .section-title {

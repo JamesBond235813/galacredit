@@ -3,16 +3,28 @@
     <div class="toolbar">
       <div>
         <h3>逾期费用标准</h3>
-        <p>新标准仅对生效日（含）之后进入逾期的账单生效，历史账单不重算。</p>
+        <p>这里是历史订单没有逾期费快照时的兼容兜底标准，不会覆盖已有订单快照。</p>
       </div>
       <el-button type="primary" @click="openCreateDialog">新增配置</el-button>
     </div>
+
+    <el-alert
+      title="请区分两种逾期费"
+      type="info"
+      :closable="false"
+      show-icon
+      description="产品页的产品默认逾期费用于新订单；本页的全局逾期兜底仅处理历史订单缺少快照的情况。已经放款的订单优先按订单快照计算，修改这里不会重算已有快照。"
+      class="scope-alert"
+    />
 
     <el-card shadow="never">
       <el-table v-loading="loading" :data="items" stripe>
         <el-table-column prop="effective_date" label="生效日" width="140" />
         <el-table-column label="逾期费用" width="160">
           <template #default="{ row }">{{ formatCurrency(row.daily_penalty_amount) }} / 天</template>
+        </el-table-column>
+        <el-table-column label="配置用途" min-width="260">
+          <template #default>历史订单无快照时的兼容兜底</template>
         </el-table-column>
         <el-table-column prop="note" label="备注" min-width="220">
           <template #default="{ row }">{{ row.note || '--' }}</template>
@@ -151,5 +163,9 @@ onMounted(fetchData);
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+.scope-alert {
+  margin-bottom: 16px;
 }
 </style>

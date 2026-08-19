@@ -60,10 +60,12 @@ const handleLogout = async () => {
 
 <style scoped>
 .about-page {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .about-content {
+  width: min(100%, 430px);
+  margin: 0 auto;
   padding: 18px 16px 28px;
 }
 

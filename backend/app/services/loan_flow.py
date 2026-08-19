@@ -50,6 +50,15 @@ def get_relend_count(loans, current_loan_id: Optional[int] = None) -> int:
     return len(get_prior_settled_loans(loans, current_loan_id=current_loan_id))
 
 
+def resolve_borrower_type(loans) -> str:
+    """根据历史成功结清订单判断借款人政策类型。
+
+    :param loans: 用户历史贷款对象列表
+    :return: NEW 或 REPEAT
+    """
+    return "REPEAT" if get_relend_count(loans) > 0 else "NEW"
+
+
 def get_relend_label(loans, current_loan_id: Optional[int] = None) -> str:
     relend_count = get_relend_count(loans, current_loan_id=current_loan_id)
     if relend_count <= 0:

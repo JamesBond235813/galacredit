@@ -882,7 +882,7 @@ onBeforeUnmount(() => {
   transform: translateX(-50%) translateY(16px);
 }
 
-.ocr-page { padding-bottom: calc(150px + var(--app-tabbar-space)); background: #ffffff; }
+.ocr-page { padding-bottom: calc(150px + var(--app-tabbar-space)); background: var(--app-bg-soft); }
 .ocr-page::before { display: none; }
 .ocr-inner { padding-top: 22px; }
 .document-heading { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; color: var(--app-text); }

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Float, Integer, String, Numeric
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -13,12 +13,12 @@ class LoanTransaction(Base):
     loan_id = Column(Integer, nullable=False, index=True)
     user_id = Column(Integer, nullable=False, index=True)
     transaction_type = Column(String(30), nullable=False, index=True)
-    amount = Column(Float, default=0.0, nullable=False)
+    amount = Column(Numeric(18, 2), default=0.0, nullable=False)
 
-    principal_amount = Column(Float, default=0.0, nullable=False)
-    interest_amount = Column(Float, default=0.0, nullable=False)
-    guarantee_fee_amount = Column(Float, default=0.0, nullable=False)
-    penalty_amount = Column(Float, default=0.0, nullable=False)
+    principal_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+    interest_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+    guarantee_fee_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+    penalty_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
 
     operator_name = Column(String(50), nullable=True)
     note = Column(String(255), nullable=True)

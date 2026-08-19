@@ -25,6 +25,7 @@ from app.models.blacklist import BlacklistEntry
 from app.models.channel import Channel
 from app.models.ecard_pool import EcardPool
 from app.models.loan import Loan
+from app.models.momo_transaction import MomoTransaction
 from app.models.loan_ecard import LoanEcard
 from app.models.loan_transaction import LoanTransaction
 from app.models.overdue_fee_config import OverdueFeeConfig
@@ -96,6 +97,7 @@ from app.services.channel_service import (
     get_channel_by_name_async,
     normalize_channel_name,
     normalize_channel_disbursement_mode,
+    normalize_channel_review_mode,
     normalize_channel_status,
     serialize_channel_landing,
 )
@@ -134,7 +136,8 @@ from app.services.loan_assignment import (
     is_collection_stage,
     list_admins_by_role_async,
 )
-from app.services.overdue_fee_config import calculate_penalty_by_repayment_date
+from app.services.overdue_fee_config import calculate_overdue_days, calculate_penalty_by_repayment_date
+from app.services.compliance import validate_cash_loan_compliance_async, normalize_cash_loan_fee_components
 from app.services.risk_report import (
     get_or_create_risk_report_async,
     get_user_for_risk_report_async,
@@ -147,7 +150,6 @@ from app.services.composite_risk_report import (
 )
 from app.services.upload_storage import build_upload_url
 from app.services.momo import complete_momo_transaction, create_or_get_momo_transaction_async, momo_provider
-from app.services.compliance import validate_cash_loan_compliance_async
 from app.services.blacklist_service import (
     add_blacklist_entry,
     blacklist_user,
@@ -810,6 +812,7 @@ def serialize_channel(channel: Channel, advisor: Optional[Admin] = None):
     payload["admin_user_id"] = channel.admin_user_id
     payload["admin_user_name"] = advisor.username if advisor else None
     payload["disbursement_mode"] = normalize_channel_disbursement_mode(getattr(channel, "disbursement_mode", None))
+    payload["review_mode"] = normalize_channel_review_mode(getattr(channel, "review_mode", None))
     return payload
 
 def _generate_channel_invite_code(length: int = 16) -> str:
@@ -926,12 +929,25 @@ def serialize_product(product: Product):
         "payment_amount": round_money(product.payment_amount),
         "nominal_loan_amount": round_money(getattr(product, "nominal_loan_amount", 0) or product.payment_amount),
         "upfront_fee_rate": float(getattr(product, "upfront_fee_rate", 0.4) or 0.4),
+        "upfront_fee_amount": round_money(
+            (getattr(product, "nominal_loan_amount", 0) or product.payment_amount or 0)
+            * (getattr(product, "upfront_fee_rate", 0.4) or 0.4)
+        ) if getattr(product, "product_type", None) == "CASH_LOAN" else 0,
+        "actual_disbursement_amount": round_money(
+            max(
+                (getattr(product, "nominal_loan_amount", 0) or product.payment_amount or 0)
+                - (getattr(product, "nominal_loan_amount", 0) or product.payment_amount or 0)
+                * (getattr(product, "upfront_fee_rate", 0.4) or 0.4),
+                0,
+            )
+        ) if getattr(product, "product_type", None) == "CASH_LOAN" else 0,
         "fee_components": fee_components,
         "interest_start_day": int(getattr(product, "interest_start_day", 1) or 1),
         "repayment_due_day": int(getattr(product, "repayment_due_day", 7) or 7),
         "installment_count": int(getattr(product, "installment_count", 1) or 1),
         "installment_ratios": ratios,
         "daily_overdue_fee": round_money(getattr(product, "daily_overdue_fee", 10) or 10),
+        "borrower_type": getattr(product, "borrower_type", None) or "ALL",
         "product_type": getattr(product, "product_type", None) or "ECARD_RIGHTS",
         "is_active": bool(product.is_active),
         "created_at": product.created_at,
@@ -1954,6 +1970,7 @@ async def _create_channel(db: AsyncSession, current_admin: Admin, req: ChannelCr
         sales_name=sales_name,
         status=normalize_channel_status(req.status),
         disbursement_mode=normalize_channel_disbursement_mode(req.disbursement_mode),
+        review_mode=normalize_channel_review_mode(req.review_mode),
         note=(req.note or "").strip() or None,
         admin_user_id=advisor.id,
     )
@@ -1983,6 +2000,8 @@ async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: in
         channel.status = normalize_channel_status(payload["status"])
     if "disbursement_mode" in payload and payload["disbursement_mode"] is not None:
         channel.disbursement_mode = normalize_channel_disbursement_mode(payload["disbursement_mode"])
+    if "review_mode" in payload and payload["review_mode"] is not None:
+        channel.review_mode = normalize_channel_review_mode(payload["review_mode"])
     if "note" in payload:
         channel.note = (payload["note"] or "").strip() or None
     if "admin_user_id" in payload and payload["admin_user_id"] is not None:
@@ -2038,6 +2057,78 @@ async def _get_products(db: AsyncSession, current_admin: Admin, keyword: Optiona
         "items": [serialize_product(item) for item in items],
     }
 
+
+async def _get_disbursement_failures(
+    db: AsyncSession,
+    current_admin: Admin,
+    keyword: Optional[str],
+    skip: int,
+    limit: int,
+):
+    """查询每笔订单最近一次失败的 MoMo 放款记录。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :param keyword: 手机号、姓名或身份证号筛选词
+    :param skip: 分页偏移量
+    :param limit: 分页数量
+    :return: 放款失败客户分页数据
+    """
+    ensure_admin_page_permission(current_admin, "disbursement-failures")
+    limit = min(max(int(limit or 20), 1), 100)
+    latest_failure_ids = (
+        select(func.max(MomoTransaction.id).label("transaction_id"))
+        .where(
+            MomoTransaction.transaction_type == "DISBURSEMENT",
+            MomoTransaction.status == "FAILED",
+        )
+        .group_by(MomoTransaction.loan_id)
+        .subquery()
+    )
+    stmt = (
+        select(MomoTransaction, Loan, User)
+        .join(Loan, Loan.id == MomoTransaction.loan_id)
+        .join(User, User.id == MomoTransaction.user_id)
+        .where(MomoTransaction.id.in_(select(latest_failure_ids.c.transaction_id)))
+    )
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(User.phone.like(pattern), User.name.like(pattern), User.id_card_num.like(pattern)))
+
+    base_query = stmt.subquery()
+    total = int(await db.scalar(select(func.count()).select_from(base_query)) or 0)
+    amount = float(await db.scalar(select(func.coalesce(func.sum(base_query.c.amount), 0))) or 0)
+    rows = (await db.execute(stmt.order_by(MomoTransaction.id.desc()).offset(skip).limit(limit))).all()
+    return {
+        "total": total,
+        "page": skip // limit + 1,
+        "size": limit,
+        "summary": {"failed_count": total, "failed_amount": round_money(amount)},
+        "items": [
+            {
+                "transaction_id": transaction.id,
+                "loan_id": loan.id,
+                "user_id": user.id,
+                "user_name": user.name,
+                "user_phone": user.phone,
+                "id_card_num": mask_secret(user.id_card_num, left=4, right=2),
+                "loan_status": loan.status,
+                "product_name": loan.product_name,
+                "nominal_loan_amount": round_money(loan.nominal_loan_amount or loan.credit_limit),
+                "actual_disbursement_amount": round_money(loan.actual_disbursement_amount),
+                "amount": round_money(transaction.amount),
+                "provider": transaction.provider,
+                "provider_reference": transaction.provider_reference,
+                "failure_message": transaction.failure_message or "MoMo disbursement failed",
+                "requested_at": transaction.requested_at,
+                "completed_at": transaction.completed_at,
+                "retryable": loan.status == "WITHDRAWING" and not user.blacklist_hit,
+                "user_blacklist_hit": bool(user.blacklist_hit),
+            }
+            for transaction, loan, user in rows
+        ],
+    }
+
 async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCreateRequest):
     ensure_admin_page_permission(current_admin, "products")
     if req.product_type == "ECARD_RIGHTS" and round_money(req.ecard_face_value) <= 0:
@@ -2046,13 +2137,19 @@ async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCr
         raise HTTPException(status_code=400, detail="纯权益包必须填写权益金额")
     payment_amount = round_money(req.nominal_loan_amount or req.payment_amount or resolve_product_payment_amount(req.ecard_face_value, req.rights_price))
     if req.product_type == "CASH_LOAN":
+        fee_components = normalize_cash_loan_fee_components(req.fee_components)
         await validate_cash_loan_compliance_async(
             db,
             nominal_amount=payment_amount,
             upfront_fee_rate=req.upfront_fee_rate,
             repayment_due_day=req.repayment_due_day,
             daily_overdue_fee=req.daily_overdue_fee,
+            term_days=req.term_days,
+            installment_count=req.installment_count,
+            fee_components=fee_components,
         )
+    else:
+        fee_components = req.fee_components
     product = Product(
         name=req.name.strip(),
         ecard_face_value=round_money(req.ecard_face_value),
@@ -2064,12 +2161,13 @@ async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCr
         payment_amount=payment_amount,
         nominal_loan_amount=payment_amount,
         upfront_fee_rate=req.upfront_fee_rate,
-        fee_components_json=json.dumps(req.fee_components, ensure_ascii=False) if req.fee_components else None,
+        fee_components_json=json.dumps(fee_components, ensure_ascii=False) if fee_components else None,
         interest_start_day=req.interest_start_day,
         repayment_due_day=req.repayment_due_day,
         installment_count=req.installment_count,
         installment_ratios_json=json.dumps(req.installment_ratios, ensure_ascii=False) if req.installment_ratios else None,
         daily_overdue_fee=req.daily_overdue_fee,
+        borrower_type=req.borrower_type,
         product_type=req.product_type,
         is_active=req.is_active,
     )
@@ -2117,18 +2215,25 @@ async def _update_product(db: AsyncSession, current_admin: Admin, product_id: in
         product.payment_amount = resolve_product_payment_amount(product.ecard_face_value, product.rights_price)
     if "product_type" in payload and payload["product_type"] is not None:
         product.product_type = payload["product_type"]
+    if "borrower_type" in payload and payload["borrower_type"] is not None:
+        product.borrower_type = payload["borrower_type"]
     if product.product_type == "ECARD_RIGHTS" and round_money(product.ecard_face_value) <= 0:
         raise HTTPException(status_code=400, detail="E卡+权益商品必须填写E卡面值")
     if product.product_type == "RIGHTS_ONLY" and round_money(product.rights_price) <= 0:
         raise HTTPException(status_code=400, detail="纯权益包必须填写权益金额")
     if product.product_type == "CASH_LOAN":
+        fee_components = normalize_cash_loan_fee_components(payload.get("fee_components") if "fee_components" in payload else json.loads(product.fee_components_json or "{}"))
         await validate_cash_loan_compliance_async(
             db,
             nominal_amount=product.nominal_loan_amount or product.payment_amount,
             upfront_fee_rate=product.upfront_fee_rate,
             repayment_due_day=product.repayment_due_day,
             daily_overdue_fee=product.daily_overdue_fee,
+            term_days=product.term_days,
+            installment_count=product.installment_count,
+            fee_components=fee_components,
         )
+        product.fee_components_json = json.dumps(fee_components, ensure_ascii=False)
     await db.commit()
     await db.refresh(product)
     return serialize_product(product)
@@ -2688,6 +2793,10 @@ async def _disburse_loan(db: AsyncSession, current_admin: Admin, loan_id: int, r
     loan.upfront_fee_amount = round_money(loan.upfront_fee_amount or loan.fee_amount)
     loan.actual_disbursement_amount = round_money(loan.actual_disbursement_amount or max(loan.nominal_loan_amount - loan.upfront_fee_amount, 0))
     loan.total_repayment_amount_snapshot = round_money(loan.total_repayment_amount_snapshot or loan.nominal_loan_amount)
+    if round_money(getattr(loan, "daily_overdue_fee_snapshot", 0)) <= 0 and getattr(loan, "product_id", None):
+        loan_product = (await db.execute(select(Product).where(Product.id == loan.product_id))).scalar_one_or_none()
+        if loan_product is not None:
+            loan.daily_overdue_fee_snapshot = round_money(getattr(loan_product, "daily_overdue_fee", 0))
     if not loan.product_total_price:
         loan.product_total_price = round_money(loan.credit_limit + (loan.rights_price or loan.fee_amount))
     loan.disbursed_at = disbursed_at
@@ -3296,7 +3405,17 @@ async def _finance_reconcile_loan(
         raise HTTPException(status_code=400, detail="请填写登记收款、减免金额或其他费用")
 
     # 逾期费按“实际还款日”冻结，避免登记日晚于客户付款日时继续累加。
-    penalty_meta = await calculate_penalty_by_repayment_date(db, loan.due_date, actual_repayment_date)
+    daily_overdue_fee_snapshot = round_money(getattr(loan, "daily_overdue_fee_snapshot", 0))
+    if daily_overdue_fee_snapshot > 0:
+        overdue_days = calculate_overdue_days(loan.due_date, actual_repayment_date)
+        penalty_meta = {
+            "overdue_days": overdue_days,
+            "daily_penalty_amount": daily_overdue_fee_snapshot,
+            "penalty_amount": round(overdue_days * daily_overdue_fee_snapshot, 2),
+        }
+    else:
+        # 历史订单没有快照时，兼容使用按日期生效的全局逾期标准。
+        penalty_meta = await calculate_penalty_by_repayment_date(db, loan.due_date, actual_repayment_date)
     loan.actual_repayment_date = actual_repayment_date
     loan.penalty_amount = penalty_meta["penalty_amount"]
 

@@ -3,6 +3,7 @@ export const ADMIN_PAGE_OPTIONS = [
   { key: 'users', label: '用户档案', route: '/users', iconKey: 'users' },
   { key: 'applications', label: '申请审批', route: '/applications', iconKey: 'applications' },
   { key: 'disbursements', label: '待MoMo放款', route: '/disbursements', iconKey: 'disbursements' },
+  { key: 'disbursement-failures', label: '放款失败客户', route: '/disbursement-failures', iconKey: 'disbursementFailures' },
   { key: 'repayments', label: '还款管理', route: '/repayments', iconKey: 'repayments' },
   { key: 'collections', label: '催收管理', route: '/collections', iconKey: 'collections' },
   { key: 'financials', label: '财务平账', route: '/financials', iconKey: 'financials' },
@@ -19,7 +20,7 @@ export const ADMIN_PAGE_OPTIONS = [
 export const ADMIN_MENU_GROUPS = [
   { key: 'operations', iconKey: 'overview', itemKeys: ['overview'] },
   { key: 'customerRisk', iconKey: 'users', itemKeys: ['users', 'risk-single-query', 'blacklist'] },
-  { key: 'loanOperations', iconKey: 'applications', itemKeys: ['applications', 'disbursements'] },
+  { key: 'loanOperations', iconKey: 'applications', itemKeys: ['applications', 'disbursements', 'disbursement-failures'] },
   { key: 'repaymentCollections', iconKey: 'repayments', itemKeys: ['repayments', 'collections', 'financials'] },
   { key: 'productsChannels', iconKey: 'products', itemKeys: ['products', 'overdue-config', 'channels', 'exclusive-links', 'ecard-pool'] },
   { key: 'system', iconKey: 'adminUsers', itemKeys: ['admin-users'] }
@@ -45,7 +46,7 @@ export const ADMIN_ROLE_OPTIONS = [
 export const ADMIN_ROLE_PERMISSION_MAP = {
   ADMIN: [...ALL_ADMIN_PERMISSION_KEYS],
   REVIEW: ['users', 'applications', 'repayments', 'risk-single-query', 'blacklist', 'loan-review-takeover'],
-  FINANCE: ['disbursements', 'financials', 'products', 'ecard-pool', 'blacklist'],
+  FINANCE: ['disbursements', 'disbursement-failures', 'financials', 'products', 'ecard-pool', 'blacklist'],
   COLLECTION: ['collections', 'blacklist'],
   BUSINESS_CONSULTANT: ['users', 'exclusive-links']
 };

@@ -76,6 +76,13 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="审核方式" width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.review_mode === 'AUTO_REVIEW' ? 'success' : 'warning'">
+              {{ row.review_mode === 'AUTO_REVIEW' ? '自动审核' : '人工审核' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="attributed_user_count" label="归属用户" width="100" />
         <el-table-column prop="application_count" label="申请量" width="90" />
         <el-table-column label="放款表现" min-width="160">
@@ -178,6 +185,13 @@
                 <el-radio value="AUTO_DISBURSE">自动放款 / Auto</el-radio>
               </el-radio-group>
               <div class="form-help">自动放款渠道在用户提交订单后调用 MoMo 放款；默认人工放款。</div>
+            </el-form-item>
+            <el-form-item label="审核方式">
+              <el-radio-group v-model="form.review_mode">
+                <el-radio value="MANUAL_REVIEW">人工审核 / Manual</el-radio>
+                <el-radio value="AUTO_REVIEW">自动审核 / Auto</el-radio>
+              </el-radio-group>
+              <div class="form-help">自动审核当前执行基础身份、黑名单和风险状态校验，并保留审核结果记录。</div>
             </el-form-item>
             <el-form-item label="业务顾问">
               <el-select
@@ -290,6 +304,7 @@ const form = reactive({
   invite_code: '',
   status: 'ACTIVE',
   disbursement_mode: 'MANUAL_DISBURSE',
+  review_mode: 'MANUAL_REVIEW',
   note: '',
   admin_user_id: null
 });
@@ -441,6 +456,7 @@ const resetForm = () => {
   form.invite_code = '';
   form.status = 'ACTIVE';
   form.disbursement_mode = 'MANUAL_DISBURSE';
+  form.review_mode = 'MANUAL_REVIEW';
   form.note = '';
   form.admin_user_id = null;
   activeRow.value = null;
@@ -460,6 +476,7 @@ const openEditDrawer = (row) => {
   form.invite_code = row.invite_code || '';
   form.status = row.status;
   form.disbursement_mode = row.disbursement_mode || 'MANUAL_DISBURSE';
+  form.review_mode = row.review_mode || 'MANUAL_REVIEW';
   form.note = row.note || '';
   form.admin_user_id = row.admin_user_id || null;
   upsertAdvisorOption({
@@ -503,6 +520,7 @@ const submitForm = async () => {
         sales_name: form.sales_name.trim(),
         status: form.status,
         disbursement_mode: form.disbursement_mode,
+        review_mode: form.review_mode,
         note: form.note,
         admin_user_id: form.admin_user_id
       });
@@ -514,6 +532,7 @@ const submitForm = async () => {
         invite_code: form.invite_code,
         status: form.status,
         disbursement_mode: form.disbursement_mode,
+        review_mode: form.review_mode,
         note: form.note,
         admin_user_id: form.admin_user_id
       });

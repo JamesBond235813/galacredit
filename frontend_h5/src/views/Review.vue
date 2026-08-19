@@ -44,7 +44,7 @@
             </div>
             <p class="product-item-subtitle">{{ recommendedProduct.product_type === 'CASH_LOAN' ? 'Ghana short-term cash loan' : (recommendedProduct.rights_title || 'Service package') }}</p>
             <div class="product-item-tags">
-              <span>Cash Received: GHS {{ formatAmount(recommendedProduct.product_type === 'CASH_LOAN' ? recommendedProduct.nominal_loan_amount * (1 - recommendedProduct.upfront_fee_rate) : recommendedProduct.ecard_face_value) }}</span>
+                <span>Cash Received: GHS {{ formatAmount(recommendedProduct.product_type === 'CASH_LOAN' ? (recommendedProduct.actual_disbursement_amount || (recommendedProduct.nominal_loan_amount - recommendedProduct.upfront_fee_amount)) : recommendedProduct.ecard_face_value) }}</span>
               <span>Term: {{ recommendedProduct.term_days }} days</span>
               <span>Upfront Fees: {{ formatAmount(recommendedProduct.upfront_fee_rate * 100) }}%</span>
             </div>
@@ -74,7 +74,7 @@
               </div>
               <p class="product-item-subtitle">{{ item.product_type === 'CASH_LOAN' ? 'Ghana short-term cash loan' : (item.rights_title || 'Service package') }}</p>
               <div class="product-item-tags">
-                <span>Cash Received: GHS {{ formatAmount(item.product_type === 'CASH_LOAN' ? item.nominal_loan_amount * (1 - item.upfront_fee_rate) : item.ecard_face_value) }}</span>
+                <span>Cash Received: GHS {{ formatAmount(item.product_type === 'CASH_LOAN' ? (item.actual_disbursement_amount || (item.nominal_loan_amount - item.upfront_fee_amount)) : item.ecard_face_value) }}</span>
                 <span>Term: {{ item.term_days }} days</span>
                 <span>Upfront Fees: {{ formatAmount(item.upfront_fee_rate * 100) }}%</span>
               </div>
@@ -262,14 +262,14 @@ onBeforeUnmount(() => {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.2px;
-  color: #1f3153;
+  color: var(--app-text);
 }
 
 .review-desc {
   margin: 10px 0 0;
   font-size: 13px;
   line-height: 1.65;
-  color: #5f7396;
+  color: var(--app-text-soft);
 }
 
 .review-loading-card {
@@ -280,7 +280,7 @@ onBeforeUnmount(() => {
   width: 78px;
   height: 78px;
   margin: 2px auto 14px;
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.82);
   display: flex;
   align-items: center;
@@ -301,7 +301,7 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   border-radius: 999px;
   background: #e9f1ff;
-  color: #2f63c7;
+  color: var(--app-primary-deep);
   font-size: 13px;
   font-weight: 600;
 }
@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
 .approval-summary-item span {
   display: block;
   font-size: 12px;
-  color: #6e82a4;
+  color: var(--app-text-soft);
 }
 
 .approval-summary-item strong {
@@ -334,14 +334,14 @@ onBeforeUnmount(() => {
   font-size: 20px;
   line-height: 1.2;
   font-weight: 700;
-  color: #2f5ebc;
+  color: var(--app-primary-deep);
 }
 
 .approval-note {
   margin: 10px 2px 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #5f7396;
+  color: var(--app-text-soft);
 }
 
 .product-item-card {
@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
   line-height: 1.35;
   font-weight: 700;
   letter-spacing: 0.1px;
-  color: #1e3155;
+  color: var(--app-text);
 }
 
 .product-item-price-wrap {
@@ -386,7 +386,7 @@ onBeforeUnmount(() => {
 .product-item-price-label {
   display: block;
   font-size: 11px;
-  color: #7488aa;
+  color: var(--app-text-soft);
 }
 
 .product-item-price {
@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
   margin-top: 3px;
   font-size: 44px;
   line-height: 1;
-  color: #2f56b8;
+  color: var(--app-primary-deep);
   font-weight: 700;
   letter-spacing: 0.2px;
 }
@@ -403,7 +403,7 @@ onBeforeUnmount(() => {
   margin: 11px 0 0;
   font-size: 15px;
   line-height: 1.35;
-  color: #5c7297;
+  color: var(--app-text-soft);
   font-weight: 600;
 }
 
@@ -421,7 +421,7 @@ onBeforeUnmount(() => {
   padding: 0 11px;
   border-radius: 999px;
   background: #edf3ff;
-  color: #43649e;
+  color: var(--app-primary-deep);
   font-size: 12px;
   border: 1px solid #dbe7fb;
   white-space: nowrap;
@@ -452,14 +452,14 @@ onBeforeUnmount(() => {
 .rights-caption {
   margin: 0;
   font-size: 12px;
-  color: #8296b8;
+  color: var(--app-text-faint);
 }
 
 .rights-content {
   margin: 5px 0 0;
   font-size: 14px;
   line-height: 1.55;
-  color: #253b60;
+  color: var(--app-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

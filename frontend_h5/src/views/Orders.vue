@@ -134,7 +134,7 @@ const statusMap = {
     actionText: 'Start Application',
     actionRoute: '/ocr',
     chipClass: 'status-chip-primary',
-    amount: '8,000'
+    amount: '--'
   },
   REVIEWING: {
     label: 'Under Review',

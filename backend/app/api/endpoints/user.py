@@ -15,6 +15,8 @@ from app.core.security import create_access_token, create_refresh_token, get_pas
 from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
 from app.models.user import User
+from app.models.channel import Channel
+from app.models.product import Product
 from app.schemas.channel import ChannelBindRequest, ChannelBindResponse
 from app.schemas.loan import LoanResponse
 from app.schemas.user import (
@@ -29,11 +31,12 @@ from app.services.channel_service import bind_user_source_channel_async, get_cha
 from app.services.esign_identity import ESignIdentityError, esign_identity_client
 from app.services.ghana_identity import GhanaIdentityError, ghana_card_identity_provider
 from app.services.login_location_risk import apply_login_location
-from app.services.loan_amounts import DEFAULT_FEE_RATE, serialize_loan_snapshot
+from app.services.loan_amounts import DEFAULT_FEE_RATE, serialize_loan_snapshot, round_money
 from app.services.loan_flow import (
     create_init_loan_async,
     get_latest_loan_async,
     get_or_create_loan_async,
+    resolve_borrower_type,
 )
 from app.services.loan_ws_notify import notify_loan_snapshot_changed
 from app.services.admin_service import notify_admin_stats_changed
@@ -43,6 +46,50 @@ from app.services.risk_list_service import refresh_user_risk_list_status
 from app.services.upload_storage import build_upload_url, save_user_image
 
 router = APIRouter()
+
+
+def apply_auto_review_product(loan, user: User, product: Product) -> float:
+    """将自动审核选中的现金贷产品固化到授信订单。
+
+    :param loan: 待审核贷款订单
+    :param user: 借款用户
+    :param product: 自动审核选中的现金贷产品
+    :return: 固化后的名义授信额度
+    """
+    approved_amount = round_money(product.nominal_loan_amount or product.payment_amount or 0)
+    if approved_amount <= 0:
+        return 0
+    upfront_fee_rate = float(product.upfront_fee_rate or 0)
+    upfront_fee_amount = round_money(approved_amount * upfront_fee_rate)
+    loan.status = "APPROVED"
+    loan.approved_credit_limit = approved_amount
+    loan.credit_limit = approved_amount
+    loan.nominal_loan_amount = approved_amount
+    loan.upfront_fee_amount = upfront_fee_amount
+    loan.actual_disbursement_amount = round_money(max(approved_amount - upfront_fee_amount, 0))
+    loan.total_repayment_amount_snapshot = approved_amount
+    loan.fee_rate = upfront_fee_rate
+    loan.fee_amount = upfront_fee_amount
+    loan.term_days = product.term_days
+    loan.product_term_days = product.term_days
+    loan.interest_start_day = int(product.interest_start_day or 1)
+    loan.repayment_due_day = int(product.repayment_due_day or product.term_days or 7)
+    loan.installment_count = int(product.installment_count or 1)
+    loan.installment_ratios_json = product.installment_ratios_json
+    loan.fee_components_json = product.fee_components_json
+    loan.daily_overdue_fee_snapshot = round_money(product.daily_overdue_fee)
+    loan.product_id = product.id
+    loan.product_type = product.product_type
+    loan.product_name = product.name
+    loan.product_total_price = approved_amount
+    # 现金贷金额只使用现金贷专属字段，E卡字段仅为历史订单读取保留。
+    loan.rights_price = 0
+    loan.ecard_face_value = 0
+    loan.approved_at = datetime.now()
+    loan.review_note = "Automatic review passed by channel policy"
+    user.approved_limit = int(approved_amount)
+    user.available_credit_limit = approved_amount
+    return approved_amount
 
 
 async def _upsert_oauth_client(db: AsyncSession, client_id: str) -> None:
@@ -580,6 +627,37 @@ async def submit_application(
     loan.order_no = ""
     loan.created_at = db_user.application_submitted_at
     await assign_review_admin_if_needed_async(db, loan)
+
+    source_channel = None
+    if db_user.source_channel_id:
+        source_channel = (await db.execute(select(Channel).where(Channel.id == db_user.source_channel_id))).scalar_one_or_none()
+    if source_channel and getattr(source_channel, "review_mode", "MANUAL_REVIEW") == "AUTO_REVIEW":
+        history = (await db.execute(select(Loan).where(Loan.user_id == current_user.id))).scalars().all()
+        borrower_type = resolve_borrower_type(history)
+        candidate_products = (
+            await db.execute(
+                select(Product)
+                .where(Product.product_type == "CASH_LOAN", Product.is_active.is_(True))
+                .order_by(Product.nominal_loan_amount.asc(), Product.id.asc())
+            )
+        ).scalars().all()
+        candidate_products = [
+            item for item in candidate_products
+            if (getattr(item, "borrower_type", None) or "ALL") in {"ALL", borrower_type}
+        ]
+        if candidate_products and not db_user.blacklist_hit and not db_user.risk_list_hit:
+            selected_product = candidate_products[0]
+            approved_amount = apply_auto_review_product(loan, db_user, selected_product)
+            if approved_amount > 0:
+                await log_user_event_async(
+                    db,
+                    user=db_user,
+                    loan=loan,
+                    actor_type="SYSTEM",
+                    event_type="AUTO_REVIEW_APPROVED",
+                    title="自动审核通过",
+                    detail=f"渠道 {source_channel.channel_name}；借款人类型 {borrower_type}；授信额度 {approved_amount:.2f}",
+                )
 
     await log_user_event_async(
         db,

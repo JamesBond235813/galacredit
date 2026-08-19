@@ -16,6 +16,7 @@
           <el-button type="primary" @click="fetchData">{{ t('search') }}</el-button>
           <el-button @click="resetFilters">{{ t('reset') }}</el-button>
           <el-button type="success" @click="openDialog()">{{ t('addLoanProduct') }}</el-button>
+          <el-button @click="openComplianceDialog">合规参数</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -29,6 +30,11 @@
             <el-tag :type="row.product_type === 'CASH_LOAN' ? 'success' : 'info'">
               {{ row.product_type === 'CASH_LOAN' ? t('cashLoan') : t('legacy') }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="适用用户" width="120">
+          <template #default="{ row }">
+            {{ row.borrower_type === 'NEW' ? '新用户' : row.borrower_type === 'REPEAT' ? '复借用户' : '通用' }}
           </template>
         </el-table-column>
         <el-table-column :label="t('nominalPrincipal')" min-width="120">
@@ -45,6 +51,12 @@
         </el-table-column>
         <el-table-column :label="t('installments')" min-width="170">
           <template #default="{ row }">{{ formatInstallments(row) }}</template>
+        </el-table-column>
+        <el-table-column label="产品默认逾期费" min-width="150">
+          <template #default="{ row }">
+            {{ formatCurrency(row.daily_overdue_fee || 0) }} / 天
+            <div class="inline-tip">仅影响新订单</div>
+          </template>
         </el-table-column>
         <el-table-column :label="t('status')" width="100">
           <template #default="{ row }">
@@ -158,6 +170,13 @@
             <el-radio value="RIGHTS_ONLY">历史兼容·纯权益</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="适用用户">
+          <el-radio-group v-model="form.borrower_type">
+            <el-radio value="NEW">新用户</el-radio>
+            <el-radio value="REPEAT">复借用户</el-radio>
+            <el-radio value="ALL">通用</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item v-if="form.product_type !== 'CASH_LOAN'" label="E卡面值">
           <el-input-number v-model="form.ecard_face_value" :min="0" :step="100" :disabled="form.product_type === 'RIGHTS_ONLY'" />
         </el-form-item>
@@ -181,21 +200,22 @@
           <strong>{{ formatCurrency(calculatedUpfrontFee) }}</strong>
           <span class="inline-tip">根据名义本金和上扣费用率自动计算</span>
         </el-form-item>
-        <el-form-item v-if="form.product_type === 'CASH_LOAN'" :label="t('auditFee')">
-          <el-input-number v-model="form.audit_fee" :min="0" :step="10" />
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="系统服务费率">
+          <el-input-number v-model="form.audit_fee" :min="0" :max="1" :step="0.01" />
+          <span class="inline-tip">10%填写0.1</span>
         </el-form-item>
-        <el-form-item v-if="form.product_type === 'CASH_LOAN'" :label="t('riskControlFee')">
-          <el-input-number v-model="form.risk_control_fee" :min="0" :step="10" />
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="封控费率">
+          <el-input-number v-model="form.risk_control_fee" :min="0" :max="1" :step="0.01" />
         </el-form-item>
-        <el-form-item v-if="form.product_type === 'CASH_LOAN'" :label="t('systemFee')">
-          <el-input-number v-model="form.system_fee" :min="0" :step="10" />
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="通道费率">
+          <el-input-number v-model="form.system_fee" :min="0" :max="1" :step="0.01" />
         </el-form-item>
-        <el-form-item v-if="form.product_type === 'CASH_LOAN'" :label="t('interest')">
-          <el-input-number v-model="form.interest_fee" :min="0" :step="10" />
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="利率">
+          <el-input-number v-model="form.interest_fee" :min="0" :max="1" :step="0.01" />
         </el-form-item>
         <el-form-item v-if="form.product_type === 'CASH_LOAN'" :label="t('feeBreakdownTotal')">
-          <strong :class="{ 'amount-warning': !feeComponentsMatch }">{{ formatCurrency(feeComponentsTotal) }}</strong>
-          <span class="inline-tip">必须与费用总额一致</span>
+          <strong :class="{ 'amount-warning': !feeComponentsMatch }">{{ (feeComponentsTotal * 100).toFixed(2) }}%</strong>
+          <span class="inline-tip">必须等于总上扣比例</span>
         </el-form-item>
         <el-form-item v-if="form.product_type === 'CASH_LOAN'" :label="t('expectedMomo')">
           <strong>{{ formatCurrency(calculatedDisbursementAmount) }}</strong>
@@ -215,6 +235,7 @@
         </el-form-item>
         <el-form-item :label="t('dailyOverdueFee')">
           <el-input-number v-model="form.daily_overdue_fee" :min="0" :step="1" />
+          <span class="inline-tip">产品默认值，仅对新建订单生效；不会改写历史订单快照</span>
         </el-form-item>
         <el-form-item :label="t('activeSwitch')">
           <el-switch v-model="form.is_active" />
@@ -226,13 +247,31 @@
         <el-button type="primary" :loading="saving" @click="submit">{{ t('save') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="complianceDialogVisible" width="620px" title="现金贷合规参数" destroy-on-close>
+      <el-form label-width="180px">
+        <el-form-item label="规则名称"><el-input v-model="complianceForm.rule_name" /></el-form-item>
+        <el-form-item label="最大上扣费用率"><el-input-number v-model="complianceForm.max_upfront_fee_rate" :min="0" :max="1" :step="0.01" /></el-form-item>
+        <el-form-item label="最低实际到账比例"><el-input-number v-model="complianceForm.min_actual_disbursement_rate" :min="0" :max="1" :step="0.01" /></el-form-item>
+        <el-form-item label="最大折算年化费率"><el-input-number v-model="complianceForm.max_effective_apr" :min="0" :step="0.1" /></el-form-item>
+        <el-form-item label="最大每日逾期费"><el-input-number v-model="complianceForm.max_daily_overdue_fee" :min="0" :step="1" /></el-form-item>
+        <el-form-item label="最大贷款期限（天）"><el-input-number v-model="complianceForm.max_term_days" :min="1" :step="1" /></el-form-item>
+        <el-form-item label="最大分期期数"><el-input-number v-model="complianceForm.max_installment_count" :min="1" :step="1" /></el-form-item>
+        <el-form-item label="生效时间"><el-date-picker v-model="complianceForm.effective_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="complianceForm.note" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="complianceDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="complianceSaving" @click="saveComplianceRule">保存并生效</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { createProduct, getProducts, updateProduct, uploadProductRightsImage } from '../api';
+import { createComplianceRule, createProduct, getActiveComplianceRule, getProducts, updateProduct, uploadProductRightsImage } from '../api';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { adminLocale, t } from '../i18n/adminLocale';
 
@@ -244,6 +283,19 @@ const dialogVisible = ref(false);
 const editingId = ref(null);
 const rightsConfigProduct = ref(null);
 const rightsSaving = ref(false);
+const complianceDialogVisible = ref(false);
+const complianceSaving = ref(false);
+const complianceForm = reactive({
+  rule_name: 'Default Ghana cash-loan guardrails',
+  max_upfront_fee_rate: 0.45,
+  min_actual_disbursement_rate: 0.55,
+  max_effective_apr: 0,
+  max_daily_overdue_fee: 10,
+  max_term_days: 180,
+  max_installment_count: 24,
+  effective_at: new Date().toISOString().slice(0, 19),
+  note: ''
+});
 
 const filters = reactive({
   keyword: '',
@@ -263,14 +315,15 @@ const form = reactive({
   payment_amount: 1600,
   nominal_loan_amount: 1000,
   upfront_fee_rate: 0.4,
-  audit_fee: 50,
-  risk_control_fee: 100,
-  system_fee: 50,
-  interest_fee: 200,
+  audit_fee: 0.1,
+  risk_control_fee: 0.1,
+  system_fee: 0.05,
+  interest_fee: 0.15,
   interest_start_day: 1,
   installment_count: 1,
   installment_ratios_text: '1',
   daily_overdue_fee: 10,
+  borrower_type: 'NEW',
   product_type: 'CASH_LOAN',
   is_active: true
 });
@@ -283,7 +336,7 @@ const feeComponentsTotal = computed(() => (
   + Number(form.system_fee || 0)
   + Number(form.interest_fee || 0)
 ));
-const feeComponentsMatch = computed(() => Math.abs(feeComponentsTotal.value - calculatedUpfrontFee.value) < 0.01);
+const feeComponentsMatch = computed(() => Math.abs(feeComponentsTotal.value - Number(form.upfront_fee_rate || 0)) < 0.0001);
 const calculatedDisbursementAmount = computed(() => Math.max(Number(form.nominal_loan_amount || 0) - calculatedUpfrontFee.value, 0));
 
 const resolveNominalAmount = (row) => Number(row?.nominal_loan_amount || row?.payment_amount || row?.ecard_face_value || 0);
@@ -459,14 +512,15 @@ const resetForm = () => {
   form.payment_amount = 1600;
   form.nominal_loan_amount = 1000;
   form.upfront_fee_rate = 0.4;
-  form.audit_fee = 50;
-  form.risk_control_fee = 100;
-  form.system_fee = 50;
-  form.interest_fee = 200;
+  form.audit_fee = 0.1;
+  form.risk_control_fee = 0.1;
+  form.system_fee = 0.05;
+  form.interest_fee = 0.15;
   form.interest_start_day = 1;
   form.installment_count = 1;
   form.installment_ratios_text = '1';
   form.daily_overdue_fee = 10;
+  form.borrower_type = 'NEW';
   form.product_type = 'CASH_LOAN';
   form.is_active = true;
 };
@@ -490,15 +544,16 @@ const openDialog = (row = null) => {
   form.payment_amount = Number(row.payment_amount || 0);
   form.nominal_loan_amount = Number(row.nominal_loan_amount || row.payment_amount || 0);
   form.upfront_fee_rate = Number(row.upfront_fee_rate ?? 0.4);
-  form.audit_fee = Number(row.fee_components?.audit_fee ?? 0);
-  form.risk_control_fee = Number(row.fee_components?.risk_control_fee ?? 0);
-  form.system_fee = Number(row.fee_components?.system_fee ?? 0);
-  form.interest_fee = Number(row.fee_components?.interest_fee ?? 0);
+  form.audit_fee = Number(row.fee_components?.system_service_fee_rate ?? row.fee_components?.audit_fee ?? 0);
+  form.risk_control_fee = Number(row.fee_components?.control_fee_rate ?? row.fee_components?.risk_control_fee ?? 0);
+  form.system_fee = Number(row.fee_components?.channel_fee_rate ?? row.fee_components?.system_fee ?? 0);
+  form.interest_fee = Number(row.fee_components?.interest_rate ?? row.fee_components?.interest_fee ?? 0);
   form.interest_start_day = Number(row.interest_start_day || 1);
   form.installment_count = Number(row.installment_count || 1);
   form.installment_ratios_text = (row.installment_ratios || [1]).join(',');
   form.daily_overdue_fee = Number(row.daily_overdue_fee ?? 10);
   form.product_type = row.product_type || 'CASH_LOAN';
+  form.borrower_type = row.borrower_type || 'ALL';
   form.is_active = Boolean(row.is_active);
   dialogVisible.value = true;
 };
@@ -551,16 +606,17 @@ const submit = async () => {
       nominal_loan_amount: Number(form.nominal_loan_amount),
       upfront_fee_rate: Number(form.upfront_fee_rate),
       fee_components: {
-        audit_fee: Number(form.audit_fee || 0),
-        risk_control_fee: Number(form.risk_control_fee || 0),
-        system_fee: Number(form.system_fee || 0),
-        interest_fee: Number(form.interest_fee || 0)
+        system_service_fee_rate: Number(form.audit_fee || 0),
+        control_fee_rate: Number(form.risk_control_fee || 0),
+        channel_fee_rate: Number(form.system_fee || 0),
+        interest_rate: Number(form.interest_fee || 0)
       },
       interest_start_day: Number(form.interest_start_day),
       repayment_due_day: Number(form.repayment_due_day),
       installment_count: Number(form.installment_count),
       installment_ratios: rawRatios.map((item) => (item > 1 ? item / 100 : item)),
       daily_overdue_fee: Number(form.daily_overdue_fee),
+      borrower_type: form.borrower_type,
       product_type: form.product_type,
       is_active: form.is_active
     };
@@ -575,6 +631,30 @@ const submit = async () => {
     fetchData();
   } finally {
     saving.value = false;
+  }
+};
+
+const openComplianceDialog = async () => {
+  try {
+    const result = await getActiveComplianceRule();
+    const item = result?.item;
+    if (item) {
+      Object.assign(complianceForm, item);
+      complianceForm.effective_at = String(item.effective_at || '').slice(0, 19);
+    }
+  } finally {
+    complianceDialogVisible.value = true;
+  }
+};
+
+const saveComplianceRule = async () => {
+  complianceSaving.value = true;
+  try {
+    await createComplianceRule({ ...complianceForm });
+    ElMessage.success('合规参数已保存');
+    complianceDialogVisible.value = false;
+  } finally {
+    complianceSaving.value = false;
   }
 };
 

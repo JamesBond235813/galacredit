@@ -32,7 +32,7 @@ from app.services.approved_credit_expiry import expire_unused_approved_credit_fo
 from app.services.blacklist_service import refresh_user_blacklist_status
 from app.services.loan_amounts import serialize_loan_snapshot
 from app.services.loan_assignment import assign_review_admin_if_needed_async
-from app.services.loan_flow import create_init_loan_async, get_latest_loan_async, get_or_create_loan_async
+from app.services.loan_flow import create_init_loan_async, get_latest_loan_async, get_or_create_loan_async, resolve_borrower_type
 from app.services.loan_ledger import sync_loan_repayment_state
 from app.services.loan_ws_notify import notify_loan_snapshot_changed, wait_loan_snapshot_changed
 from app.services.admin_service import _disburse_loan, notify_admin_stats_changed
@@ -156,6 +156,12 @@ async def _resolve_order_contract_context(
         raise HTTPException(status_code=404, detail="商品不存在或已下架")
     if source_loan and not _is_rights_only_product(product):
         raise HTTPException(status_code=400, detail="带息费展期只能下单纯权益包")
+    if not source_loan and getattr(product, "product_type", None) == "CASH_LOAN":
+        history = (await db.execute(select(Loan).where(Loan.user_id == current_user.id))).scalars().all()
+        borrower_type = resolve_borrower_type(history)
+        product_type = getattr(product, "borrower_type", None) or "ALL"
+        if product_type not in {"ALL", borrower_type}:
+            raise HTTPException(status_code=400, detail="当前贷款政策不适用于您的借款人类型")
     if not source_loan and _is_rights_only_product(product):
         raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
     return db_user, loan, source_loan, product
@@ -457,6 +463,12 @@ async def withdraw(
         raise HTTPException(status_code=400, detail="带息费展期只能下单纯权益包")
     if not source_loan and _is_rights_only_product(product):
         raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+    if not source_loan and getattr(product, "product_type", None) == "CASH_LOAN":
+        history = (await db.execute(select(Loan).where(Loan.user_id == current_user.id))).scalars().all()
+        borrower_type = resolve_borrower_type(history)
+        product_type = getattr(product, "borrower_type", None) or "ALL"
+        if product_type not in {"ALL", borrower_type}:
+            raise HTTPException(status_code=400, detail="当前贷款政策不适用于您的借款人类型")
 
     available_limit = float(getattr(db_user, "available_credit_limit", 0) or 0)
     payment_amount = float(product.payment_amount or 0)
@@ -472,11 +484,11 @@ async def withdraw(
     upfront_fee_rate = float(getattr(product, "upfront_fee_rate", 0.4) or 0.4)
     upfront_fee_amount = round(nominal_amount * upfront_fee_rate, 2)
     actual_disbursement_amount = round(max(nominal_amount - upfront_fee_amount, 0), 2)
-    ecard_face_value = actual_disbursement_amount if is_cash_loan else float(product.ecard_face_value or 0)
-    rights_price = upfront_fee_amount if is_cash_loan else float(product.rights_price or 0)
-    available_discount = 0.0 if source_loan else float(loan.approval_discount_amount or 0)
+    ecard_face_value = 0 if is_cash_loan else float(product.ecard_face_value or 0)
+    rights_price = 0 if is_cash_loan else float(product.rights_price or 0)
+    available_discount = 0.0 if source_loan or is_cash_loan else float(loan.approval_discount_amount or 0)
     discount_amount = min(available_discount, rights_price) if req.use_discount else 0.0
-    payment_amount = round(payment_amount - discount_amount, 2)
+    payment_amount = round(nominal_amount if is_cash_loan else payment_amount - discount_amount, 2)
     effective_rights_price = max(rights_price - discount_amount, 0)
     signature = (
         await db.execute(
@@ -509,16 +521,17 @@ async def withdraw(
 
     order_loan.credit_limit = ecard_face_value if ecard_face_value > 0 else payment_amount
     order_loan.fee_rate = fee_rate
-    order_loan.fee_amount = effective_rights_price
+    order_loan.fee_amount = upfront_fee_amount if is_cash_loan else effective_rights_price
     order_loan.nominal_loan_amount = payment_amount if is_cash_loan else ecard_face_value
-    order_loan.upfront_fee_amount = effective_rights_price
-    order_loan.actual_disbursement_amount = ecard_face_value
+    order_loan.upfront_fee_amount = upfront_fee_amount if is_cash_loan else effective_rights_price
+    order_loan.actual_disbursement_amount = actual_disbursement_amount if is_cash_loan else ecard_face_value
     order_loan.total_repayment_amount_snapshot = payment_amount if is_cash_loan else 0
     order_loan.interest_start_day = int(getattr(product, "interest_start_day", 1) or 1)
     order_loan.repayment_due_day = int(getattr(product, "repayment_due_day", product.term_days) or product.term_days)
     order_loan.installment_count = int(getattr(product, "installment_count", 1) or 1)
     order_loan.installment_ratios_json = getattr(product, "installment_ratios_json", None)
     order_loan.fee_components_json = getattr(product, "fee_components_json", None)
+    order_loan.daily_overdue_fee_snapshot = round(float(getattr(product, "daily_overdue_fee", 0) or 0), 2)
     order_term_days = source_loan.term_days if source_loan else (loan.term_days or product.term_days)
     order_loan.term_days = order_term_days
     order_loan.product_term_days = order_term_days
@@ -528,7 +541,7 @@ async def withdraw(
     order_loan.rights_title = product.rights_title
     order_loan.rights_desc = product.rights_desc
     order_loan.rights_contact_phone = _extract_product_contact_phone(product)
-    order_loan.rights_price = effective_rights_price
+    order_loan.rights_price = effective_rights_price if not is_cash_loan else 0
     order_loan.ecard_face_value = ecard_face_value
     order_loan.product_total_price = payment_amount
     order_loan.order_discount_amount = discount_amount
@@ -709,6 +722,13 @@ async def get_products(
         products = [item for item in products if _is_rights_only_product(item)]
     else:
         products = [item for item in products if not _is_rights_only_product(item)]
+        history = (await db.execute(select(Loan).where(Loan.user_id == current_user.id))).scalars().all()
+        borrower_type = resolve_borrower_type(history)
+        products = [
+            item for item in products
+            if getattr(item, "product_type", None) != "CASH_LOAN"
+            or (getattr(item, "borrower_type", None) or "ALL") in {"ALL", borrower_type}
+        ]
     if available_limit > 0:
         products = [item for item in products if float(item.payment_amount or 0) <= available_limit + 1e-6]
     else:
@@ -732,6 +752,17 @@ async def get_products(
                 "rights_detail": rights_detail,
                 "term_days": item.term_days,
                 "payment_amount": item.payment_amount,
+                "nominal_loan_amount": getattr(item, "nominal_loan_amount", 0),
+                "upfront_fee_rate": getattr(item, "upfront_fee_rate", 0),
+                "upfront_fee_amount": round(float(getattr(item, "nominal_loan_amount", 0) or item.payment_amount or 0) * float(getattr(item, "upfront_fee_rate", 0) or 0), 2) if item.product_type == "CASH_LOAN" else 0,
+                "actual_disbursement_amount": round(float(getattr(item, "nominal_loan_amount", 0) or item.payment_amount or 0) * (1 - float(getattr(item, "upfront_fee_rate", 0) or 0)), 2) if item.product_type == "CASH_LOAN" else 0,
+                "fee_components": json.loads(item.fee_components_json) if getattr(item, "fee_components_json", None) else None,
+                "interest_start_day": getattr(item, "interest_start_day", 1),
+                "repayment_due_day": getattr(item, "repayment_due_day", item.term_days),
+                "installment_count": getattr(item, "installment_count", 1),
+                "installment_ratios": json.loads(item.installment_ratios_json) if getattr(item, "installment_ratios_json", None) else [],
+                "daily_overdue_fee": getattr(item, "daily_overdue_fee", 0),
+                "borrower_type": getattr(item, "borrower_type", None) or "ALL",
                 "product_type": item.product_type,
                 "is_active": item.is_active,
                 "created_at": item.created_at,

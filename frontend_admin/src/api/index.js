@@ -17,6 +17,7 @@ export const updateProduct = (id, data) => request.patch(`/admin/products/${id}`
 export const getActiveComplianceRule = () => request.get('/admin/compliance-rules/active');
 export const createComplianceRule = (data) => request.post('/admin/compliance-rules', data);
 export const getMomoTransactions = (params) => request.get('/admin/momo-transactions', { params });
+export const getDisbursementFailures = (params) => request.get('/admin/disbursement-failures', { params });
 export const uploadProductRightsImage = (formData) => request.post('/admin/products/rights-image', formData);
 export const getEcardPool = (params) => request.get('/admin/ecard-pool', { params });
 export const createEcardPoolItem = (data) => request.post('/admin/ecard-pool', data);

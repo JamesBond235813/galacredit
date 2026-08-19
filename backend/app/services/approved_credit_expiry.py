@@ -8,8 +8,9 @@ from sqlalchemy.orm import joinedload
 from app.models.loan import Loan
 from app.models.user import User
 from app.services.audit import log_user_event_async
+from app.core.config import settings
 
-APPROVED_CREDIT_VALID_DAYS = 3
+APPROVED_CREDIT_VALID_DAYS = settings.APPROVED_CREDIT_VALID_DAYS
 
 
 def get_approved_credit_expires_at(loan: Loan) -> Optional[datetime]:

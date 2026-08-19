@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Float, Integer, String, Numeric
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -14,7 +14,7 @@ class LoanEcard(Base):
     ecard_pool_id = Column(Integer, nullable=False, index=True)
     account = Column(String(100), nullable=False)
     password = Column(String(100), nullable=False)
-    face_value = Column(Float, default=0.0, nullable=False)
+    face_value = Column(Numeric(18, 2), default=0.0, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 

@@ -12,7 +12,7 @@ const messages = {
   'zh-CN': {
     chinese: '中文', english: 'English', language: '语言',
     brandSubtitle: 'Ghana cash loan',
-    overview: '洞察看板', users: '用户档案', applications: '申请审批', disbursements: '待MoMo放款',
+    overview: '洞察看板', users: '用户档案', applications: '申请审批', disbursements: '待MoMo放款', 'disbursement-failures': '放款失败客户',
     repayments: '还款管理', collections: '催收管理', financials: '财务平账', riskSingleQuery: '风控报告单查',
     blacklist: '黑名单', overdueConfig: '逾期配置', products: '贷款产品', ecardPool: '历史卡池兼容',
     channels: '渠道管理', exclusiveLinks: '专属链接', adminUsers: '后台用户',
@@ -37,7 +37,7 @@ const messages = {
   'en-GH': {
     chinese: '中文', english: 'English', language: 'Language',
     brandSubtitle: 'Ghana cash loan',
-    overview: 'Insights', users: 'Borrowers', applications: 'Applications', disbursements: 'MoMo Disbursement',
+    overview: 'Insights', users: 'Borrowers', applications: 'Applications', disbursements: 'MoMo Disbursement', 'disbursement-failures': 'Failed Disbursements',
     repayments: 'Repayments', collections: 'Collections', financials: 'Finance Reconciliation', riskSingleQuery: 'Risk Lookup',
     blacklist: 'Blacklist', overdueConfig: 'Overdue Rules', products: 'Loan Products', ecardPool: 'Legacy Card Pool',
     channels: 'Channels', exclusiveLinks: 'Exclusive Links', adminUsers: 'Admin Users',

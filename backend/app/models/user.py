@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, Integer, String, DateTime
+from sqlalchemy import Boolean, Column, Float, Integer, String, DateTime, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -54,7 +54,7 @@ class User(Base):
     
     # 模拟授信额度保存 (在获取到审核后写入)
     approved_limit = Column(Integer, default=0)
-    available_credit_limit = Column(Float, default=0.0)
+    available_credit_limit = Column(Numeric(18, 2), default=0.0)
     overdue_credit_locked = Column(Boolean, default=False, nullable=False)
     
     created_at = Column(DateTime, default=datetime.now)

@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.services.channel_service import normalize_channel_disbursement_mode, normalize_channel_name, normalize_channel_status
+from app.services.channel_service import normalize_channel_disbursement_mode, normalize_channel_name, normalize_channel_status, normalize_channel_review_mode
 
 
 class ChannelLandingResponse(BaseModel):
@@ -19,6 +19,7 @@ class ChannelCreateRequest(BaseModel):
     sales_name: str = Field(..., min_length=1, max_length=50)
     status: Optional[str] = Field("ACTIVE", max_length=20)
     disbursement_mode: Optional[str] = Field("MANUAL_DISBURSE", max_length=24)
+    review_mode: Optional[str] = Field("MANUAL_REVIEW", max_length=20)
     note: Optional[str] = Field(None, max_length=255)
     admin_user_id: int = Field(..., ge=1)
 
@@ -49,11 +50,17 @@ class ChannelCreateRequest(BaseModel):
     def validate_disbursement_mode(cls, value: Optional[str]):
         return normalize_channel_disbursement_mode(value)
 
+    @field_validator("review_mode")
+    @classmethod
+    def validate_review_mode(cls, value: Optional[str]):
+        return normalize_channel_review_mode(value)
+
 
 class ChannelUpdateRequest(BaseModel):
     sales_name: Optional[str] = Field(None, min_length=1, max_length=50)
     status: Optional[str] = Field(None, max_length=20)
     disbursement_mode: Optional[str] = Field(None, max_length=24)
+    review_mode: Optional[str] = Field(None, max_length=20)
     note: Optional[str] = Field(None, max_length=255)
     admin_user_id: Optional[int] = Field(None, ge=1)
 
@@ -70,6 +77,13 @@ class ChannelUpdateRequest(BaseModel):
         if value is None:
             return value
         return normalize_channel_disbursement_mode(value)
+
+    @field_validator("review_mode")
+    @classmethod
+    def validate_review_mode(cls, value: Optional[str]):
+        if value is None:
+            return value
+        return normalize_channel_review_mode(value)
 
 
 class ChannelBindRequest(BaseModel):
@@ -95,6 +109,7 @@ class ChannelItemResponse(BaseModel):
     sales_name: str
     status: str
     disbursement_mode: str = "MANUAL_DISBURSE"
+    review_mode: str = "MANUAL_REVIEW"
     note: Optional[str] = None
     admin_user_id: Optional[int] = None
     admin_user_name: Optional[str] = None

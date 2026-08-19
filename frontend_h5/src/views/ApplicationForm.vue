@@ -379,7 +379,7 @@ onBeforeUnmount(() => {
 
 .contact-display-arrow {
   flex-shrink: 0;
-  color: #92a4c0;
+  color: var(--app-text-soft);
   font-size: 14px;
 }
 
@@ -413,7 +413,7 @@ onBeforeUnmount(() => {
 .relation-arrow {
   flex-shrink: 0;
   font-size: 14px;
-  color: #92a4c0;
+  color: var(--app-text-soft);
   transition: transform 0.2s ease, color 0.2s ease;
 }
 

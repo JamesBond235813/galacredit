@@ -82,7 +82,10 @@ async def process_overdue_loans():
 
                 if loan.status == "OVERDUE" and overdue_base_date:
                     days_overdue = max((now.date() - overdue_base_date.date()).days, 1)
-                    daily_penalty_amount = await resolve_daily_penalty_amount(db, overdue_base_date.date())
+                    # 现金贷逾期费在下单/放款时固化，避免后台修改产品后重算历史订单。
+                    daily_penalty_amount = float(getattr(loan, "daily_overdue_fee_snapshot", 0) or 0)
+                    if daily_penalty_amount <= 0:
+                        daily_penalty_amount = await resolve_daily_penalty_amount(db, overdue_base_date.date())
                     loan.penalty_amount = float(days_overdue * daily_penalty_amount)
 
             last_loan_id = active_loans[-1].id

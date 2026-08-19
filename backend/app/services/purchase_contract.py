@@ -12,8 +12,8 @@ from app.models.purchase_contract import PurchaseContractSignature
 from app.models.user import User
 
 
-PARTY_A_NAME = "广州芒果数科科技服务有限公司"
-PARTY_A_LEGAL_PERSON = "邓伟强"
+PARTY_A_NAME = "GalaCredit"
+PARTY_A_LEGAL_PERSON = "GalaCredit Ghana lending service"
 
 
 def generate_contract_no(now: Optional[datetime] = None) -> str:
@@ -59,6 +59,10 @@ def build_contract_payload(
     address = getattr(user, "id_address", None) or "虚拟商品，以卡密形式交付，无需实际物流发货"
 
     if getattr(product, "product_type", None) == "CASH_LOAN":
+        cash_nominal = float(getattr(loan, "nominal_loan_amount", 0) or product.nominal_loan_amount or product.payment_amount or 0)
+        cash_upfront_fee = float(getattr(loan, "upfront_fee_amount", 0) or cash_nominal * float(product.upfront_fee_rate or 0))
+        cash_disbursement = float(getattr(loan, "actual_disbursement_amount", 0) or max(cash_nominal - cash_upfront_fee, 0))
+        cash_total_repayment = float(getattr(loan, "total_repayment_amount_snapshot", 0) or cash_nominal)
         due_date_text = f"{due_date.strftime('%Y-%m-%d')} (from actual disbursement date)"
         rows = [
             ("Agreement type", "GalaCredit Loan Agreement"),
@@ -66,10 +70,10 @@ def build_contract_payload(
             ("Borrower", user.name or ""),
             ("Ghana Card / ID", user.id_card_num or ""),
             ("MoMo phone", user.phone or ""),
-            ("Nominal loan amount", f"{_money(product.nominal_loan_amount or product.payment_amount)}"),
-            ("Upfront fee", f"{_money(rights_price)}"),
-            ("Expected MoMo disbursement", f"{_money(max(float(product.nominal_loan_amount or product.payment_amount) - rights_price, 0))}"),
-            ("Total repayment", f"{_money(payment_amount)}"),
+            ("Nominal loan amount", f"{_money(cash_nominal)}"),
+            ("Upfront fee", f"{_money(cash_upfront_fee)}"),
+            ("Expected MoMo disbursement", f"{_money(cash_disbursement)}"),
+            ("Total repayment", f"{_money(cash_total_repayment)}"),
             ("Term", f"{term_days} days"),
             ("Due date", due_date_text),
             ("Signed at", now.strftime("%Y-%m-%d %H:%M:%S")),
@@ -98,7 +102,7 @@ def build_contract_payload(
             "ecard_face_value": 0,
             "rights_price": rights_price,
             "discount_amount": discount_amount,
-            "payment_amount": payment_amount,
+            "payment_amount": cash_total_repayment,
             "term_days": term_days,
             "due_date_text": due_date_text,
         }

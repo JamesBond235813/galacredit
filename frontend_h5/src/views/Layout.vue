@@ -12,7 +12,7 @@
     </div>
 
     <!-- Vant Tabbar -->
-    <van-tabbar v-model="active" route active-color="#1A56A6" inactive-color="#C0C4CC">
+    <van-tabbar v-model="active" route active-color="#2c5fb7" inactive-color="#9aa8bc">
       <van-tabbar-item replace to="/home" icon="balance-list-o">
         GalaCredit
       </van-tabbar-item>
@@ -121,7 +121,7 @@ onMounted(async () => {
 <style>
 /* Shared background texture */
 .app-layout {
-  min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   background: transparent;
   padding-bottom: var(--app-tabbar-space);

@@ -141,6 +141,14 @@
             {{ formatCurrency(row.remaining_repayment_amount) }}
           </template>
         </el-table-column>
+        <el-table-column label="逾期费口径" min-width="150">
+          <template #default="{ row }">
+            <span v-if="Number(row.daily_overdue_fee_snapshot || 0) > 0">
+              {{ formatCurrency(row.daily_overdue_fee_snapshot) }} / 天
+            </span>
+            <span v-else class="sub-text">历史订单兜底</span>
+          </template>
+        </el-table-column>
         <el-table-column label="应还款时间" min-width="150">
           <template #default="{ row }">
             <div v-if="row.due_date" class="date-cell">

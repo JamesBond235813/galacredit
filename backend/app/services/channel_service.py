@@ -18,6 +18,7 @@ CHANNEL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 DAILY_INVITE_CODE_PATTERN = re.compile(r"^[a-z0-9]{24,32}$")
 CHANNEL_STATUSES = {"ACTIVE", "INACTIVE"}
 CHANNEL_DISBURSEMENT_MODES = {"AUTO_DISBURSE", "MANUAL_DISBURSE"}
+CHANNEL_REVIEW_MODES = {"AUTO_REVIEW", "MANUAL_REVIEW"}
 APPLICATION_STATUSES = {"REVIEWING", "APPROVED", "REJECTED", "WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"}
 DISBURSED_STATUSES = {"DISBURSED", "OVERDUE", "SETTLED"}
 CHANNEL_DAILY_ROTATE_AT = time(0, 1, 0)
@@ -46,6 +47,18 @@ def normalize_channel_disbursement_mode(value: Optional[str]) -> str:
     mode = (value or "MANUAL_DISBURSE").strip().upper()
     if mode not in CHANNEL_DISBURSEMENT_MODES:
         raise ValueError("渠道放款模式非法")
+    return mode
+
+
+def normalize_channel_review_mode(value: Optional[str]) -> str:
+    """规范化渠道审核模式。
+
+    :param value: 渠道审核模式
+    :return: 规范化后的审核模式
+    """
+    mode = (value or "MANUAL_REVIEW").strip().upper()
+    if mode not in CHANNEL_REVIEW_MODES:
+        raise ValueError("渠道审核模式非法")
     return mode
 
 

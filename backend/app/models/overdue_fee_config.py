@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Column, Date, DateTime, Float, Integer, String
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Numeric
 
 from app.core.database import Base
 
@@ -9,7 +9,7 @@ class OverdueFeeConfig(Base):
     __tablename__ = "overdue_fee_configs"
 
     id = Column(Integer, primary_key=True, index=True)
-    daily_penalty_amount = Column(Float, default=10.0, nullable=False)
+    daily_penalty_amount = Column(Numeric(18, 2), default=10.0, nullable=False)
     effective_date = Column(Date, nullable=False, index=True)
     note = Column(String(255), nullable=True)
     created_by = Column(String(50), nullable=True)

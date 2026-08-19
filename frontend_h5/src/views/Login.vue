@@ -107,7 +107,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
 import { createSliderCaptcha, sendCode, smsLogin, verifySliderCaptcha } from '../api';
@@ -146,6 +146,9 @@ let cooldownTimer = null;
 const dragging = ref(false);
 const dragStartClientX = ref(0);
 const dragStartOffsetX = ref(0);
+let keyboardResizeHandler = null;
+let keyboardFocusHandler = null;
+let keyboardBlurHandler = null;
 
 const smsButtonText = computed(() => getSmsButtonText(smsSending.value, cooldownSeconds.value));
 const apiPhone = computed(() => toGhanaPhone(phone.value));
@@ -338,6 +341,40 @@ const onSubmit = async () => {
   }
 };
 
+const updateKeyboardOffset = async (target = document.activeElement) => {
+  await nextTick();
+  const viewport = window.visualViewport;
+  const container = loginContainerRef.value;
+  const stage = loginStageRef.value;
+  if (!container || !stage || !viewport || !target || !target.getBoundingClientRect) {
+    return;
+  }
+
+  const keyboardTop = viewport.height + viewport.offsetTop;
+  const rect = target.getBoundingClientRect();
+  const overlap = Math.max(rect.bottom + 18 - keyboardTop, 0);
+  // Move the form as one unit so the input and submit action keep their alignment.
+  stage.style.setProperty('--keyboard-offset', `${overlap}px`);
+  container.style.setProperty('--keyboard-space', `${Math.max(keyboardTop - window.innerHeight, 0)}px`);
+};
+
+const resetKeyboardOffset = () => {
+  if (loginStageRef.value) {
+    loginStageRef.value.style.setProperty('--keyboard-offset', '0px');
+  }
+};
+
+onMounted(() => {
+  const viewport = window.visualViewport;
+  keyboardResizeHandler = () => updateKeyboardOffset();
+  keyboardFocusHandler = (event) => updateKeyboardOffset(event.target);
+  keyboardBlurHandler = () => window.setTimeout(resetKeyboardOffset, 120);
+  viewport?.addEventListener('resize', keyboardResizeHandler);
+  viewport?.addEventListener('scroll', keyboardResizeHandler);
+  loginContainerRef.value?.addEventListener('focusin', keyboardFocusHandler);
+  loginContainerRef.value?.addEventListener('focusout', keyboardBlurHandler);
+});
+
 onBeforeUnmount(() => {
   if (cooldownTimer) {
     window.clearInterval(cooldownTimer);
@@ -347,23 +384,30 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', onDragEnd);
   window.removeEventListener('touchmove', onDragMove);
   window.removeEventListener('touchend', onDragEnd);
+  const viewport = window.visualViewport;
+  viewport?.removeEventListener('resize', keyboardResizeHandler);
+  viewport?.removeEventListener('scroll', keyboardResizeHandler);
+  loginContainerRef.value?.removeEventListener('focusin', keyboardFocusHandler);
+  loginContainerRef.value?.removeEventListener('focusout', keyboardBlurHandler);
 });
 </script>
 
 <style scoped>
 .login-container {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   position: relative;
   background: var(--app-gradient);
-  padding: 18px 20px 28px;
+  padding: 18px 20px calc(28px + var(--keyboard-space, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .login-stage {
   width: 100%;
   max-width: 400px;
-  min-height: calc(100vh - 46px);
+  min-height: calc(100dvh - 46px);
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -381,6 +425,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   justify-content: flex-start;
   padding-top: clamp(72px, 13vh, 132px);
+  transform: translateY(calc(var(--keyboard-offset, 0px) * -1));
+  transition: transform 160ms ease-out;
 }
 
 .login-form {
@@ -605,19 +651,24 @@ onBeforeUnmount(() => {
 
 .brand-copy {
   text-align: left;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(8, 34, 76, 0.28);
+  box-shadow: 0 6px 18px rgba(8, 34, 76, 0.12);
 }
 
 .brand-title {
   font-size: 28px;
-  color: var(--app-primary);
+  color: #ffffff;
   margin: 0;
   font-weight: 700;
   letter-spacing: 2px;
+  text-shadow: 0 2px 8px rgba(8, 34, 76, 0.28);
 }
 
 .brand-slogan {
   font-size: 14px;
-  color: var(--app-text-soft);
+  color: rgba(255, 255, 255, 0.92);
   margin: 8px 0 0;
   letter-spacing: 1px;
 }

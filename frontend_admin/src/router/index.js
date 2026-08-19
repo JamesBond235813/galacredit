@@ -12,6 +12,7 @@ const Users = () => import('../views/Users.vue');
 const Channels = () => import('../views/Channels.vue');
 const ExclusiveLinks = () => import('../views/ExclusiveLinks.vue');
 const Disbursements = () => import('../views/Disbursements.vue');
+const DisbursementFailures = () => import('../views/DisbursementFailures.vue');
 const Repayments = () => import('../views/Repayments.vue');
 const Collections = () => import('../views/Collections.vue');
 const FinancialReconciliation = () => import('../views/FinancialReconciliation.vue');
@@ -63,6 +64,15 @@ const routes = [
           title: '待MoMo放款',
           description: '集中核对待放款订单和贷款快照，确认 MoMo 到账金额',
           permission: 'disbursements'
+        }
+      },
+      {
+        path: 'disbursement-failures',
+        component: DisbursementFailures,
+        meta: {
+          title: '放款失败客户',
+          description: '查看 MoMo 放款失败原因并重新处理可重试订单',
+          permission: 'disbursement-failures'
         }
       },
       {

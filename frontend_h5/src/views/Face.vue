@@ -520,7 +520,7 @@ onBeforeUnmount(() => {
   position: relative;
   margin: 14px 0 12px;
   padding: 16px 0;
-  border-radius: 22px;
+  border-radius: 18px;
   background:
     radial-gradient(circle at center, rgba(47, 126, 247, 0.08) 0%, rgba(47, 126, 247, 0.02) 52%, transparent 52%),
     linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);

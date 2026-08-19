@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, Numeric
 
 from app.core.database import Base
 
@@ -27,10 +27,10 @@ class LoanAgreementSignature(Base):
     party_b_address = Column(String(255), nullable=True)
 
     product_name = Column(String(120), nullable=True)
-    ecard_face_value = Column(Float, default=0.0)
-    rights_price = Column(Float, default=0.0)
-    discount_amount = Column(Float, default=0.0)
-    payment_amount = Column(Float, default=0.0)
+    ecard_face_value = Column(Numeric(18, 2), default=0.0)
+    rights_price = Column(Numeric(18, 2), default=0.0)
+    discount_amount = Column(Numeric(18, 2), default=0.0)
+    payment_amount = Column(Numeric(18, 2), default=0.0)
     term_days = Column(Integer, nullable=True)
     due_date_text = Column(String(80), nullable=True)
 

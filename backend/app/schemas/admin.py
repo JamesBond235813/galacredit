@@ -79,5 +79,8 @@ class ComplianceRuleCreateRequest(BaseModel):
     max_upfront_fee_rate: Optional[float] = Field(None, ge=0, le=1)
     max_effective_apr: Optional[float] = Field(None, ge=0)
     max_daily_overdue_fee: Optional[float] = Field(None, ge=0)
+    min_actual_disbursement_rate: Optional[float] = Field(None, ge=0, le=1)
+    max_term_days: Optional[int] = Field(None, ge=1, le=3650)
+    max_installment_count: Optional[int] = Field(None, ge=1, le=120)
     effective_at: datetime
     note: Optional[str] = Field(None, max_length=255)

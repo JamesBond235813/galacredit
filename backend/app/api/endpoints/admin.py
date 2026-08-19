@@ -149,7 +149,7 @@ from app.services.purchase_contract import serialize_purchase_contract
 from app.services.compliance import get_active_compliance_rule_async, serialize_compliance_rule
 from app.services.upload_storage import build_upload_url, save_product_rights_image
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _query_single_risk_report, _get_single_risk_report_history, _get_single_risk_report_detail, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _query_single_risk_report, _get_single_risk_report_history, _get_single_risk_report_detail, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _get_disbursement_failures, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
 router = APIRouter()
 
 
@@ -1384,6 +1384,9 @@ async def create_compliance_rule(
         max_upfront_fee_rate=req.max_upfront_fee_rate,
         max_effective_apr=req.max_effective_apr,
         max_daily_overdue_fee=req.max_daily_overdue_fee,
+        min_actual_disbursement_rate=req.min_actual_disbursement_rate,
+        max_term_days=req.max_term_days,
+        max_installment_count=req.max_installment_count,
         is_active=True,
         effective_at=req.effective_at,
         note=(req.note or "").strip() or None,
@@ -1447,6 +1450,26 @@ async def get_momo_transactions(
             for item in items
         ],
     }
+
+
+@router.get("/disbursement-failures")
+async def get_disbursement_failures(
+    keyword: Optional[str] = Query(None, description="手机号、姓名或身份证号"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """查询放款失败客户清单。
+
+    :param keyword: 客户筛选词
+    :param skip: 分页偏移量
+    :param limit: 分页数量
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 最近一次失败记录分页结果
+    """
+    return await _get_disbursement_failures(db, current_admin, keyword, skip, limit)
 
 
 

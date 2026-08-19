@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.admin import Admin
 from app.models.oauth_token import OAuthToken
 from app.services.admin_session import is_admin_session_valid, normalize_admin_client_type
+from app.core.exceptions import BizException
 
 # H5端使用 Bearer Token 发送在 Authorization header 中
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -21,11 +22,7 @@ async def get_current_user(
 ) -> User:
     user = await get_user_by_token_async(db, token)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise BizException("Could not validate credentials", code=401, headers={"WWW-Authenticate": "Bearer"})
     return user
 
 
@@ -36,11 +33,7 @@ async def get_user_by_token_async(db: AsyncSession, token: str) -> User:
     :param token: Bearer Token 字符串
     :return: 用户对象；无效时抛出 401
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    credentials_exception = BizException("Could not validate credentials", code=401, headers={"WWW-Authenticate": "Bearer"})
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         phone: str = payload.get("sub")
@@ -68,10 +61,7 @@ async def get_user_by_token_async(db: AsyncSession, token: str) -> User:
     if token_row is None:
         raise credentials_exception
     if getattr(user, "location_risk_blocked", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=user.location_risk_reason or "当前登录环境存在风险，请联系客服处理",
-        )
+        raise BizException(user.location_risk_reason or "当前登录环境存在风险，请联系客服处理", code=403)
     return user
 
 
@@ -81,11 +71,7 @@ async def get_current_admin(
 ) -> Admin:
     admin = await get_admin_by_token_async(db, token)
     if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate admin credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise BizException("Could not validate admin credentials", code=401, headers={"WWW-Authenticate": "Bearer"})
     return admin
 
 
@@ -96,11 +82,7 @@ async def get_admin_by_token_async(db: AsyncSession, token: str) -> Admin:
     :param token: Bearer Token 字符串
     :return: 管理员对象；无效时抛出 401
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate admin credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    credentials_exception = BizException("Could not validate admin credentials", code=401, headers={"WWW-Authenticate": "Bearer"})
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")

@@ -3,9 +3,18 @@ from types import SimpleNamespace
 
 from app.services.loan_amounts import (
     calculate_cash_loan_amounts,
+    calculate_interest_amount,
+    calculate_interest_days,
     calculate_installment_amounts,
     normalize_installment_ratios,
 )
+
+
+def test_interest_start_day_changes_interest_days():
+    assert calculate_interest_days(7, 1, 7) == 7
+    assert calculate_interest_days(7, 3, 7) == 5
+    assert calculate_interest_amount(1000, 7, 3, 7, 0.02) == 3.33
+    assert calculate_interest_amount(1000, 7, 8, 7, 0.02) == 0.0
 from app.services.loan_ledger import build_installment_blueprint
 
 

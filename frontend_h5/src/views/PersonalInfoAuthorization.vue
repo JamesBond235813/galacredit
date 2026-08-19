@@ -38,7 +38,9 @@ onMounted(async () => {
 
 <style scoped>
 .agreement-page {
-  min-height: calc(100vh - 88px);
+  width: min(100%, 430px);
+  min-height: calc(100dvh - 88px);
+  margin: 0 auto;
   padding: calc(env(safe-area-inset-top, 0px) + 18px) 10px 24px;
   box-sizing: border-box;
 }

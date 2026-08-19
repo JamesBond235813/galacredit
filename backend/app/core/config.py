@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30
+    APPROVED_CREDIT_VALID_DAYS: int = 3
     SMS_CODE_MOCK_ENABLED: bool = False
     SMS_MOCK_CODE: str = "635147"
     SMS_PHONE_COOLDOWN_SECONDS: int = 60

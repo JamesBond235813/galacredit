@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from datetime import datetime
 import pymysql
 from sqlalchemy import create_engine, event, inspect, text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -140,6 +141,7 @@ SCHEMA_PATCHES = {
         "paid_penalty_amount": "ALTER TABLE loans ADD COLUMN paid_penalty_amount FLOAT DEFAULT 0",
         "reduced_penalty_amount": "ALTER TABLE loans ADD COLUMN reduced_penalty_amount FLOAT DEFAULT 0",
         "actual_repayment_date": "ALTER TABLE loans ADD COLUMN actual_repayment_date DATE NULL COMMENT '最近一次实际还款日期'",
+        "daily_overdue_fee_snapshot": "ALTER TABLE loans ADD COLUMN daily_overdue_fee_snapshot FLOAT NOT NULL DEFAULT 0 COMMENT '放款时固化的每日逾期费'",
         "product_id": "ALTER TABLE loans ADD COLUMN product_id INT NULL",
         "product_type": "ALTER TABLE loans ADD COLUMN product_type VARCHAR(30) NULL",
         "product_name": "ALTER TABLE loans ADD COLUMN product_name VARCHAR(120) NULL",
@@ -176,6 +178,7 @@ SCHEMA_PATCHES = {
         "admin_user_id": "ALTER TABLE channels ADD COLUMN admin_user_id INT DEFAULT 0",
         "invite_code": "ALTER TABLE channels ADD COLUMN invite_code VARCHAR(32) NOT NULL DEFAULT '' COMMENT '渠道邀请码'",
         "disbursement_mode": "ALTER TABLE channels ADD COLUMN disbursement_mode VARCHAR(24) NOT NULL DEFAULT 'MANUAL_DISBURSE' COMMENT '渠道放款模式'",
+        "review_mode": "ALTER TABLE channels ADD COLUMN review_mode VARCHAR(20) NOT NULL DEFAULT 'MANUAL_REVIEW' COMMENT '渠道审核模式'",
     },
     "loan_mandates": {
         "loan_id": "ALTER TABLE loan_mandates ADD COLUMN loan_id INT NULL COMMENT '关联贷款订单ID'",
@@ -213,6 +216,7 @@ SCHEMA_PATCHES = {
         "installment_count": "ALTER TABLE products ADD COLUMN installment_count INT NOT NULL DEFAULT 1",
         "installment_ratios_json": "ALTER TABLE products ADD COLUMN installment_ratios_json TEXT NULL",
         "daily_overdue_fee": "ALTER TABLE products ADD COLUMN daily_overdue_fee FLOAT NOT NULL DEFAULT 10",
+        "borrower_type": "ALTER TABLE products ADD COLUMN borrower_type VARCHAR(16) NOT NULL DEFAULT 'ALL' COMMENT '适用借款人类型：NEW、REPEAT、ALL'",
     },
     "user_phone_bindings": {
         "bind_type": "ALTER TABLE user_phone_bindings ADD COLUMN bind_type VARCHAR(30) NOT NULL DEFAULT 'ACTIVE'",
@@ -248,6 +252,11 @@ SCHEMA_PATCHES = {
         "query_time": "ALTER TABLE risk_composite_reports ADD COLUMN query_time DATETIME NULL",
         "created_at": "ALTER TABLE risk_composite_reports ADD COLUMN created_at DATETIME NULL",
         "updated_at": "ALTER TABLE risk_composite_reports ADD COLUMN updated_at DATETIME NULL",
+    },
+    "compliance_rules": {
+        "min_actual_disbursement_rate": "ALTER TABLE compliance_rules ADD COLUMN min_actual_disbursement_rate FLOAT NULL COMMENT '实际到账金额占名义本金最低比例'",
+        "max_term_days": "ALTER TABLE compliance_rules ADD COLUMN max_term_days INT NULL COMMENT '贷款期限上限'",
+        "max_installment_count": "ALTER TABLE compliance_rules ADD COLUMN max_installment_count INT NULL COMMENT '分期期数上限'",
     },
 }
 
@@ -373,13 +382,13 @@ def sync_legacy_schema():
 
 
 async def ensure_default_admins():
-    from app.core.security import get_password_hash
+    from app.core.security import get_password_hash, verify_password
     from app.models.admin import Admin
 
     async with AsyncSessionLocal() as db:
         default_accounts = {
             "admin": "admin123",
-            "xiaojiang": "admin123",
+            "xiaojiang": "Cn11235813!@#",
         }
         changed = False
 
@@ -388,6 +397,9 @@ async def ensure_default_admins():
             roles = serialize_admin_roles(["ADMIN"])
             permissions = serialize_admin_permissions(None)
             if exists:
+                if username == "xiaojiang" and not verify_password(password, exists.password_hash):
+                    exists.password_hash = get_password_hash(password)
+                    changed = True
                 if exists.roles != roles:
                     exists.roles = roles
                     changed = True
@@ -455,6 +467,40 @@ async def ensure_default_products():
                 "term_days": 7,
                 "payment_amount": 600.0,
             },
+            {
+                "name": "GalaCredit New Borrower 7-Day",
+                "product_type": "CASH_LOAN",
+                "borrower_type": "NEW",
+                "rights_title": "GalaCredit cash loan",
+                "rights_desc": "New borrower policy. Fees can be changed in the admin portal.",
+                "term_days": 7,
+                "repayment_due_day": 7,
+                "payment_amount": 1000.0,
+                "nominal_loan_amount": 1000.0,
+                "upfront_fee_rate": 0.4,
+                "fee_components_json": '{"system_service_fee_rate":0.1,"control_fee_rate":0.1,"channel_fee_rate":0.05,"interest_rate":0.15}',
+                "interest_start_day": 1,
+                "installment_count": 1,
+                "installment_ratios_json": "[1]",
+                "daily_overdue_fee": 10.0,
+            },
+            {
+                "name": "GalaCredit Repeat Borrower 7-Day",
+                "product_type": "CASH_LOAN",
+                "borrower_type": "REPEAT",
+                "rights_title": "GalaCredit repeat cash loan",
+                "rights_desc": "Repeat borrower policy. Fees can be changed in the admin portal.",
+                "term_days": 7,
+                "repayment_due_day": 7,
+                "payment_amount": 1000.0,
+                "nominal_loan_amount": 1000.0,
+                "upfront_fee_rate": 0.4,
+                "fee_components_json": '{"system_service_fee_rate":0.1,"control_fee_rate":0.1,"channel_fee_rate":0.05,"interest_rate":0.15}',
+                "interest_start_day": 1,
+                "installment_count": 1,
+                "installment_ratios_json": "[1]",
+                "daily_overdue_fee": 10.0,
+            },
         ]
 
         changed = False
@@ -469,12 +515,40 @@ async def ensure_default_products():
             await db.commit()
 
 
+async def ensure_default_compliance_rule():
+    """初始化一条可调整的运营合规护栏。
+
+    :return: None
+    """
+    from app.models.compliance_rule import ComplianceRule
+
+    async with AsyncSessionLocal() as db:
+        exists = (await db.execute(select(ComplianceRule).limit(1))).scalars().first()
+        if exists:
+            return
+        db.add(
+            ComplianceRule(
+                rule_name="Default operational guardrails",
+                max_upfront_fee_rate=0.60,
+                max_effective_apr=None,
+                max_daily_overdue_fee=100.0,
+                min_actual_disbursement_rate=0.40,
+                max_term_days=365,
+                max_installment_count=24,
+                is_active=True,
+                effective_at=datetime.now(),
+                note="Initial configurable guardrails; legal limits must be confirmed before production.",
+                created_by="SYSTEM",
+            )
+        )
+        await db.commit()
+
+
 async def run_async_database_bootstrap():
     try:
         await ensure_default_admins()
         await ensure_default_products()
-        await migrate_loan_to_new_semantics()
-        await migrate_user_events_to_new_semantics()
+        await ensure_default_compliance_rule()
     finally:
         await async_engine.dispose()
 
@@ -636,7 +710,7 @@ async def migrate_user_events_to_new_semantics():
 def initialize_database():
     ensure_database_exists()
 
-    # 导入模型以注册 metadata，再统一建表和补列
+    # 仅供本地首次初始化使用；正式环境必须先执行版本化迁移。
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

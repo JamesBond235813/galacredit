@@ -7,6 +7,7 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "users", "label": "用户档案", "route": "/users"},
     {"key": "applications", "label": "申请审批", "route": "/applications"},
     {"key": "disbursements", "label": "待发卡", "route": "/disbursements"},
+    {"key": "disbursement-failures", "label": "放款失败客户", "route": "/disbursement-failures"},
     {"key": "repayments", "label": "还款管理", "route": "/repayments"},
     {"key": "collections", "label": "催收管理", "route": "/collections"},
     {"key": "financials", "label": "财务平账", "route": "/financials"},
@@ -43,7 +44,7 @@ ALL_ADMIN_ROLE_KEYS = [item["key"] for item in ADMIN_ROLE_OPTIONS]
 ADMIN_ROLE_PERMISSION_MAP = {
     "ADMIN": list(ALL_ADMIN_PERMISSION_KEYS),
     "REVIEW": ["users", "applications", "repayments", "risk-single-query", "blacklist", "loan-review-takeover"],
-    "FINANCE": ["disbursements", "financials", "products", "ecard-pool", "blacklist"],
+    "FINANCE": ["disbursements", "disbursement-failures", "financials", "products", "ecard-pool", "blacklist"],
     "COLLECTION": ["collections", "blacklist"],
     "BUSINESS_CONSULTANT": ["users", "exclusive-links"],
 }

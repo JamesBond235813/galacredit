@@ -84,7 +84,7 @@
             </div>
             <div class="rights-service-item">
               <span>Contact Number</span>
-              <p><a href="tel:13800138000">13800138000</a></p>
+              <p>Use the in-app Help Centre for support.</p>
             </div>
             <div class="rights-service-item">
               <span>Important</span>
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
 .installment-card {
   padding: 0;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 18px;
   position: relative;
   border: 1px solid rgba(47, 126, 247, 0.18);
   background:
@@ -713,7 +713,7 @@ onBeforeUnmount(() => {
 
 :global(.repay-guide-dialog.van-dialog) {
   overflow: hidden;
-  border-radius: 26px;
+  border-radius: 18px;
   box-shadow: 0 24px 48px rgba(26, 63, 123, 0.22);
   background:
     radial-gradient(circle at top right, rgba(47, 126, 247, 0.08), transparent 26%),

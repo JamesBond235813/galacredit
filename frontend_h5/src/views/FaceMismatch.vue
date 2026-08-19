@@ -35,7 +35,7 @@ const goBack = () => {
 
 <style scoped>
 .mismatch-page {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .mismatch-inner {
@@ -84,7 +84,7 @@ const goBack = () => {
   border-radius: 12px;
   font-size: 12px;
   line-height: 1.6;
-  color: #7a869e;
+  color: var(--app-text-soft);
   text-align: left;
 }
 

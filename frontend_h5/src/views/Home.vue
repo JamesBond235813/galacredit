@@ -34,8 +34,8 @@
 
           <div class="hero-note">
             <div class="hero-note-row">
-              <span>0.05%</span>
-              <span>180days</span>
+              <span>{{ homeRateText }}</span>
+              <span>{{ homeTermText }}</span>
             </div>
             <div class="hero-note-row">
               <span>Min daily interest rate</span>
@@ -107,7 +107,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { getUserInfo } from '../api';
+import { getProducts, getUserInfo } from '../api';
 import { createLoanSnapshotSubscriber } from '../api/loanSocket';
 import brandLogo from '../assets/logo.svg';
 
@@ -115,6 +115,7 @@ const router = useRouter();
 const loading = ref(true);
 const loanStatus = ref('INIT');
 const creditLimit = ref(0);
+const homeProduct = ref(null);
 const currentLoanId = ref(null);
 const realNameStatus = ref('UNVERIFIED');
 const blacklistHit = ref(false);
@@ -131,20 +132,23 @@ const limitTitle = computed(() => {
 });
 
 const limitAmount = computed(() => {
-  if (loanStatus.value === 'INIT') {
-    return '8,000';
-  }
+  if (loanStatus.value === 'INIT') return creditLimit.value > 0 ? creditLimit.value.toLocaleString() : '--';
   if (loanStatus.value === 'REVIEWING') {
     return 'Under review';
   }
   if (loanStatus.value === 'REJECTED') {
     return 'Resubmit';
   }
-  if (loanStatus.value === 'SETTLED') {
-    return '8,000';
-  }
+  if (loanStatus.value === 'SETTLED') return creditLimit.value > 0 ? creditLimit.value.toLocaleString() : '--';
   return creditLimit.value.toLocaleString();
 });
+
+const homeRateText = computed(() => {
+  const components = homeProduct.value?.fee_components;
+  const rate = Number(components?.interest_rate ?? 0);
+  return `${(rate * 100).toFixed(rate * 100 % 1 ? 2 : 0)}%`;
+});
+const homeTermText = computed(() => `${Number(homeProduct.value?.repayment_due_day || homeProduct.value?.term_days || 0)} days`);
 
 const limitSubtitle = computed(() => {
   if (loanStatus.value === 'INIT') {
@@ -203,10 +207,11 @@ const onActionClick = () => {
 };
 
 onMounted(() => {
-  getUserInfo()
-    .then((user) => {
+  Promise.all([getUserInfo(), getProducts()])
+    .then(([user, products]) => {
       realNameStatus.value = user?.real_name_status || 'UNVERIFIED';
       blacklistHit.value = Boolean(user?.blacklist_hit);
+      homeProduct.value = (Array.isArray(products) ? products : []).find((item) => item.product_type === 'CASH_LOAN') || null;
     })
     .catch(() => {
       realNameStatus.value = 'UNVERIFIED';
@@ -227,7 +232,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .home-page {
-  min-height: calc(100vh - 88px);
+  min-height: calc(100dvh - 88px);
 }
 
 .home-inner {

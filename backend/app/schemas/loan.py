@@ -85,6 +85,7 @@ class LoanHistoryResponse(LoanBase):
     interest_amount: float = 0
     guarantee_fee_amount: float = 0
     installment_amount: float = 0
+    daily_overdue_fee_snapshot: float = 0
     term_days: Optional[int] = None
     due_date: Optional[datetime] = None
     penalty_amount: float
@@ -125,6 +126,7 @@ class LoanResponse(LoanBase):
     interest_start_day: int = 1
     repayment_due_day: int = 7
     installment_count: int = 1
+    daily_overdue_fee_snapshot: float = 0
     momo_disbursement_reference: Optional[str] = None
     interest_amount: float = 0
     guarantee_fee_amount: float = 0
@@ -495,6 +497,7 @@ class ProductItemResponse(BaseModel):
     installment_count: int = 1
     installment_ratios: List[float] = Field(default_factory=list)
     daily_overdue_fee: float = 10
+    borrower_type: str = "ALL"
     product_type: str = "ECARD_RIGHTS"
     is_active: bool = True
     created_at: datetime
@@ -518,6 +521,7 @@ class ProductCreateRequest(BaseModel):
     installment_count: int = Field(1, ge=1, le=24)
     installment_ratios: Optional[List[float]] = None
     daily_overdue_fee: float = Field(10, ge=0)
+    borrower_type: str = Field("ALL", pattern=r"^(NEW|REPEAT|ALL)$")
     product_type: str = Field("CASH_LOAN", pattern=r"^(CASH_LOAN|ECARD_RIGHTS|RIGHTS_ONLY)$")
     is_active: bool = True
 
@@ -546,6 +550,7 @@ class ProductUpdateRequest(BaseModel):
     installment_count: Optional[int] = Field(None, ge=1, le=24)
     installment_ratios: Optional[List[float]] = None
     daily_overdue_fee: Optional[float] = Field(None, ge=0)
+    borrower_type: Optional[str] = Field(None, pattern=r"^(NEW|REPEAT|ALL)$")
     product_type: Optional[str] = Field(None, pattern=r"^(CASH_LOAN|ECARD_RIGHTS|RIGHTS_ONLY)$")
     is_active: Optional[bool] = None
 
