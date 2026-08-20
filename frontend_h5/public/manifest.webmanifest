@@ -1,0 +1,13 @@
+{
+  "name": "GalaCredit",
+  "short_name": "GalaCredit",
+  "description": "GalaCredit mobile credit service",
+  "start_url": "/home",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#f5a623",
+  "prefer_related_applications": false,
+  "icons": [
+    {"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

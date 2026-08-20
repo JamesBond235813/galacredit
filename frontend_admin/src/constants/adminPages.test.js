@@ -19,7 +19,21 @@ describe('adminPages role permission mapping', () => {
       'users',
       'exclusive-links',
       'collections',
-      'blacklist'
+      'blacklist',
+      'message-center',
+      'audit-log'
     ]);
+  });
+
+  it('should include operations and ops-prep pages in the navigation taxonomy', () => {
+    const keys = ADMIN_PAGE_OPTIONS.map((item) => item.key);
+    expect(keys).toEqual(expect.arrayContaining([
+      'monitoring',
+      'message-center',
+      'audit-log',
+      'kyc-review',
+      'risk-strategy',
+      'content-config'
+    ]));
   });
 });

@@ -24,6 +24,7 @@ from app.models.admin import Admin
 from app.models.blacklist import BlacklistEntry
 from app.models.channel import Channel
 from app.models.ecard_pool import EcardPool
+from app.models.compliance_rule import ComplianceRule
 from app.models.loan import Loan
 from app.models.momo_transaction import MomoTransaction
 from app.models.loan_ecard import LoanEcard
@@ -33,6 +34,7 @@ from app.models.product import Product
 from app.models.risk_composite_report import RiskCompositeReport
 from app.models.user import User
 from app.models.user_event import UserEvent
+from app.models.ops_history import ConfigChangeHistory, MessageTemplate
 from app.schemas.admin import (
     AdminLogin,
     AdminTokenResponse,
@@ -138,6 +140,7 @@ from app.services.loan_assignment import (
 )
 from app.services.overdue_fee_config import calculate_overdue_days, calculate_penalty_by_repayment_date
 from app.services.compliance import validate_cash_loan_compliance_async, normalize_cash_loan_fee_components
+from app.services.scheduler import scheduler
 from app.services.risk_report import (
     get_or_create_risk_report_async,
     get_user_for_risk_report_async,
@@ -416,6 +419,7 @@ def serialize_admin_user(admin: Admin, current_admin: Optional[Admin] = None):
         "permissions": resolve_admin_permissions(admin),
         "created_at": admin.created_at,
         "updated_at": admin.updated_at,
+        "is_active": bool(getattr(admin, "is_active", True)),
         "is_current": bool(current_admin and admin.id == current_admin.id),
     }
 
@@ -1977,6 +1981,8 @@ async def _create_channel(db: AsyncSession, current_admin: Admin, req: ChannelCr
     db.add(channel)
     await db.commit()
     await db.refresh(channel)
+    db.add(ConfigChangeHistory(object_type="CHANNEL", object_id=channel.id, action="CREATE", version_no=1, snapshot_json=json.dumps(serialize_channel(channel), default=str, ensure_ascii=False), operator_name=current_admin.username))
+    await db.commit()
     return serialize_channel(channel, advisor)
 
 async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: int, req: ChannelUpdateRequest):
@@ -2012,6 +2018,9 @@ async def _update_channel(db: AsyncSession, current_admin: Admin, channel_id: in
         channel.invite_code = await _generate_unique_channel_invite_code(db, 16)
     await db.commit()
     await db.refresh(channel)
+    version = int((await db.scalar(select(func.coalesce(func.max(ConfigChangeHistory.version_no), 0)).where(ConfigChangeHistory.object_type == "CHANNEL", ConfigChangeHistory.object_id == channel.id))) or 0) + 1
+    db.add(ConfigChangeHistory(object_type="CHANNEL", object_id=channel.id, action="UPDATE", version_no=version, snapshot_json=json.dumps(serialize_channel(channel), default=str, ensure_ascii=False), operator_name=current_admin.username))
+    await db.commit()
     advisor = None
     if channel.admin_user_id:
         advisor = (await db.execute(select(Admin).where(Admin.id == channel.admin_user_id))).scalar_one_or_none()
@@ -2174,6 +2183,8 @@ async def _create_product(db: AsyncSession, current_admin: Admin, req: ProductCr
     db.add(product)
     await db.commit()
     await db.refresh(product)
+    db.add(ConfigChangeHistory(object_type="PRODUCT", object_id=product.id, action="CREATE", version_no=1, snapshot_json=json.dumps(serialize_product(product), default=str, ensure_ascii=False), operator_name=current_admin.username))
+    await db.commit()
     return serialize_product(product)
 
 async def _update_product(db: AsyncSession, current_admin: Admin, product_id: int, req: ProductUpdateRequest):
@@ -2236,6 +2247,9 @@ async def _update_product(db: AsyncSession, current_admin: Admin, product_id: in
         product.fee_components_json = json.dumps(fee_components, ensure_ascii=False)
     await db.commit()
     await db.refresh(product)
+    version = int((await db.scalar(select(func.coalesce(func.max(ConfigChangeHistory.version_no), 0)).where(ConfigChangeHistory.object_type == "PRODUCT", ConfigChangeHistory.object_id == product.id))) or 0) + 1
+    db.add(ConfigChangeHistory(object_type="PRODUCT", object_id=product.id, action="UPDATE", version_no=version, snapshot_json=json.dumps(serialize_product(product), default=str, ensure_ascii=False), operator_name=current_admin.username))
+    await db.commit()
     return serialize_product(product)
 
 async def _get_ecard_pool(db: AsyncSession, current_admin: Admin, keyword: Optional[str], status: Optional[str], face_value: Optional[float], skip: int, limit: int):
@@ -3512,7 +3526,7 @@ async def _finance_reconcile_loan(
     return serialize_loan(loan)
 
 async def _remind_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req: LoanFollowUpRequest):
-    ensure_admin_page_permission(current_admin, "repayments")
+    ensure_any_admin_page_permission(current_admin, ("repayments", "collections", "message-center"))
     loan = (
         await db.execute(
             select(Loan)
@@ -3526,7 +3540,7 @@ async def _remind_loan(db: AsyncSession, current_admin: Admin, loan_id: int, req
         raise HTTPException(status_code=400, detail="当前订单不需要登记提醒")
     if is_collection_stage(loan):
         raise HTTPException(status_code=400, detail=f"该订单逾期已超过 {COLLECTION_TRANSFER_OVERDUE_DAYS} 天，请在催收管理处理")
-    if not is_super_admin(current_admin):
+    if not is_super_admin(current_admin) and not admin_has_permission(current_admin, "message-center"):
         if int(loan.review_admin_id or 0) != int(current_admin.id):
             raise HTTPException(status_code=403, detail="仅可跟进分配给你的还款订单")
 
@@ -3730,6 +3744,363 @@ async def _get_admin_users(db: AsyncSession, current_admin: Admin, keyword: Opti
         "items": [serialize_admin_user(item, current_admin) for item in admins],
     }
 
+
+async def _get_admin_audit_logs(
+    db: AsyncSession,
+    current_admin: Admin,
+    keyword: Optional[str],
+    actor_type: Optional[str],
+    skip: int,
+    limit: int,
+    event_type: Optional[str] = None,
+    object_type: Optional[str] = None,
+    start_date=None,
+    end_date=None,
+):
+    """查询管理员操作审计日志。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :param keyword: 搜索关键字
+    :param actor_type: 操作者类型筛选
+    :param skip: 分页偏移量
+    :param limit: 每页数量
+    :return: 审计日志分页数据
+    """
+    ensure_admin_page_permission(current_admin, "audit-log")
+    limit = min(max(limit, 1), 100)
+    stmt = (
+        select(UserEvent, User.name, User.phone, Loan.order_no)
+        .join(User, User.id == UserEvent.user_id)
+        .outerjoin(Loan, Loan.id == UserEvent.loan_id)
+    )
+    if actor_type and actor_type.strip() and actor_type.strip().upper() != "ALL":
+        stmt = stmt.where(UserEvent.actor_type == actor_type.strip().upper())
+    if event_type and event_type.strip() and event_type.strip().upper() != "ALL":
+        stmt = stmt.where(UserEvent.event_type == event_type.strip().upper())
+    if object_type and object_type.strip().upper() == "USER":
+        stmt = stmt.where(UserEvent.user_id.is_not(None))
+    elif object_type and object_type.strip().upper() == "LOAN":
+        stmt = stmt.where(UserEvent.loan_id.is_not(None))
+    if start_date is not None:
+        stmt = stmt.where(UserEvent.created_at >= start_date)
+    if end_date is not None:
+        stmt = stmt.where(UserEvent.created_at < end_date + timedelta(days=1))
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(
+            or_(
+                UserEvent.title.like(pattern),
+                UserEvent.detail.like(pattern),
+                UserEvent.operator_name.like(pattern),
+                User.name.like(pattern),
+                User.phone.like(pattern),
+                Loan.order_no.like(pattern),
+            )
+        )
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
+    rows = (
+        await db.execute(stmt.order_by(UserEvent.created_at.desc(), UserEvent.id.desc()).offset(skip).limit(limit))
+    ).all()
+    return {
+        "total": total,
+        "page": skip // limit + 1,
+        "size": limit,
+        "items": [
+            {
+                "id": event.id,
+                "user_id": event.user_id,
+                "user_name": user_name,
+                "user_phone": user_phone,
+                "loan_id": event.loan_id,
+                "loan_order_no": loan_order_no,
+                "actor_type": event.actor_type,
+                "operator_name": event.operator_name,
+                "event_type": event.event_type,
+                "title": event.title,
+                "detail": event.detail,
+                "created_at": event.created_at,
+            }
+            for event, user_name, user_phone, loan_order_no in rows
+        ],
+    }
+
+
+def _resolve_kyc_review_flags(user: User) -> list[str]:
+    flags = []
+    real_name_status = (user.real_name_status or "").upper()
+    face_auth_status = (user.face_auth_status or "").upper()
+    if real_name_status not in {"VERIFIED", "AUTHED", "PASS", "PASSED"}:
+        flags.append("实名未完成")
+    if face_auth_status not in {"APPROVED", "PASS", "PASSED"}:
+        flags.append("人脸未完成")
+    if not user.id_card_num:
+        flags.append("缺身份证号")
+    if user.location_risk_blocked:
+        flags.append("位置风控")
+    if user.blacklist_hit:
+        flags.append("黑名单")
+    if user.risk_list_hit:
+        flags.append("风险名单")
+    return flags
+
+
+async def _get_kyc_review_queue(db: AsyncSession, current_admin: Admin, keyword: Optional[str], skip: int, limit: int):
+    """查询待人工复核的 KYC 用户队列。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :param keyword: 搜索关键字
+    :param skip: 分页偏移量
+    :param limit: 每页数量
+    :return: KYC 复核分页数据
+    """
+    ensure_any_admin_page_permission(current_admin, ("users", "applications", "admin-users", "kyc-review"))
+    limit = min(max(limit, 1), 100)
+    stmt = (
+        select(User, Channel.channel_name, Channel.sales_name)
+        .outerjoin(Channel, Channel.id == User.source_channel_id)
+        .where(
+            or_(
+                User.real_name_status.is_(None),
+                ~func.upper(User.real_name_status).in_(["VERIFIED", "AUTHED", "PASS", "PASSED"]),
+                User.face_auth_status.is_(None),
+                ~func.upper(User.face_auth_status).in_(["APPROVED", "PASS", "PASSED"]),
+                User.location_risk_blocked.is_(True),
+                User.blacklist_hit.is_(True),
+                User.risk_list_hit.is_(True),
+            )
+        )
+    )
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(User.phone.like(pattern), User.name.like(pattern), User.id_card_num.like(pattern)))
+
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
+    rows = (
+        await db.execute(stmt.order_by(User.created_at.desc(), User.id.desc()).offset(skip).limit(limit))
+    ).all()
+    items = []
+    for user, channel_name, sales_name in rows:
+        review_flags = _resolve_kyc_review_flags(user)
+        if not review_flags:
+            continue
+        if user.blacklist_hit:
+            suggested_action = "黑名单拦截"
+        elif user.location_risk_blocked:
+            suggested_action = "先解除位置风控再处理"
+        elif "人脸未完成" in review_flags or "实名未完成" in review_flags:
+            suggested_action = "等待人工复核"
+        else:
+            suggested_action = "待补充资料"
+        items.append(
+            {
+                "id": user.id,
+                "phone": user.phone,
+                "name": user.name,
+                "id_card_num": user.id_card_num,
+                "face_auth_status": user.face_auth_status,
+                "real_name_status": user.real_name_status,
+                "application_submitted_at": user.application_submitted_at,
+                "last_login_at": user.last_login_at,
+                "source_channel_name": channel_name,
+                "source_channel_sales_name": sales_name,
+                "review_flags": review_flags,
+                "suggested_action": suggested_action,
+                "created_at": user.created_at,
+            }
+        )
+    return {
+        "total": total,
+        "page": skip // limit + 1,
+        "size": limit,
+        "items": items,
+    }
+
+
+async def _review_kyc_users(
+    db: AsyncSession,
+    current_admin: Admin,
+    user_ids: list[int],
+    action: str,
+    note: Optional[str] = None,
+):
+    """批量处理KYC复核结果并记录用户事件。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :param user_ids: 用户ID列表
+    :param action: APPROVE或REJECT
+    :param note: 审核备注
+    :return: 处理数量和用户ID
+    """
+    ensure_any_admin_page_permission(current_admin, ("users", "kyc-review", "applications"))
+    normalized_action = action.upper()
+    users = (await db.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+    status_value = "VERIFIED" if normalized_action == "APPROVE" else "REJECTED"
+    face_value = "APPROVED" if normalized_action == "APPROVE" else "REJECTED"
+    title = "KYC人工复核通过" if normalized_action == "APPROVE" else "KYC人工复核拒绝"
+    for user in users:
+        user.real_name_status = status_value
+        user.face_auth_status = face_value
+        user.face_auth_at = datetime.now()
+        await log_user_event_async(
+            db,
+            user=user,
+            actor_type="ADMIN",
+            operator_name=current_admin.username,
+            event_type=f"KYC_{normalized_action}",
+            title=title,
+            detail=(note or "后台KYC复核").strip(),
+        )
+    await db.commit()
+    return {"processed": len(users), "user_ids": [user.id for user in users], "action": normalized_action}
+
+
+async def _get_monitoring_summary(db: AsyncSession, current_admin: Admin):
+    """聚合后台运营与系统监控概览。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 监控汇总
+    """
+    ensure_any_admin_page_permission(current_admin, ("overview", "financials", "admin-users", "monitoring"))
+    today_start, tomorrow = get_today_range()
+    jobs = []
+    for job in scheduler.get_jobs():
+        next_run_time = job.next_run_time
+        if next_run_time is not None and next_run_time.tzinfo is not None:
+            now_value = datetime.now(next_run_time.tzinfo)
+        else:
+            now_value = datetime.now()
+        jobs.append(
+            {
+                "job_id": job.id,
+                "next_run_time": next_run_time,
+                "trigger": str(job.trigger),
+                "pending": bool(next_run_time and next_run_time <= now_value),
+            }
+        )
+    return {
+        "admin_event_count_24h": int((await db.scalar(select(func.count(UserEvent.id)).where(UserEvent.actor_type == "ADMIN", UserEvent.created_at >= today_start, UserEvent.created_at < tomorrow))) or 0),
+        "kyc_pending_count": int((await db.scalar(select(func.count(User.id)).where(or_(User.real_name_status.is_(None), ~func.upper(User.real_name_status).in_(["VERIFIED", "AUTHED", "PASS", "PASSED"]), User.face_auth_status.is_(None), ~func.upper(User.face_auth_status).in_(["APPROVED", "PASS", "PASSED"]), User.location_risk_blocked.is_(True), User.blacklist_hit.is_(True), User.risk_list_hit.is_(True))))) or 0),
+        "reminder_event_count_24h": int((await db.scalar(select(func.count(UserEvent.id)).where(UserEvent.event_type == "ADMIN_REMIND", UserEvent.created_at >= today_start, UserEvent.created_at < tomorrow))) or 0),
+        "collection_event_count_24h": int((await db.scalar(select(func.count(UserEvent.id)).where(UserEvent.event_type == "ADMIN_COLLECT", UserEvent.created_at >= today_start, UserEvent.created_at < tomorrow))) or 0),
+        "momo_pending_count": int((await db.scalar(select(func.count(MomoTransaction.id)).where(MomoTransaction.status == "PENDING"))) or 0),
+        "momo_failed_count": int((await db.scalar(select(func.count(MomoTransaction.id)).where(MomoTransaction.status == "FAILED"))) or 0),
+        "active_compliance_rule_count": int((await db.scalar(select(func.count(ComplianceRule.id)).where(ComplianceRule.is_active.is_(True)))) or 0),
+        "overdue_loan_count": int((await db.scalar(select(func.count(Loan.id)).where(Loan.status == "OVERDUE"))) or 0),
+        "scheduled_jobs": jobs,
+    }
+
+
+def _build_message_templates() -> list[dict]:
+    return [
+        {
+            "key": "repay_due_today",
+            "title": "到期日提醒",
+            "channel": "SMS",
+            "trigger": "D0",
+            "body": "您的还款今天到期，请尽快完成还款。",
+            "enabled": True,
+        },
+        {
+            "key": "repay_overdue_day1",
+            "title": "逾期第一天提醒",
+            "channel": "SMS",
+            "trigger": "D+1",
+            "body": "您的账单已逾期 1 天，请尽快处理。",
+            "enabled": True,
+        },
+        {
+            "key": "repay_overdue_day3",
+            "title": "逾期第三天提醒",
+            "channel": "SMS",
+            "trigger": "D+3",
+            "body": "您的账单已逾期 3 天，请及时联系催收。",
+            "enabled": True,
+        },
+    ]
+
+
+async def _get_message_center(db: AsyncSession, current_admin: Admin, keyword: Optional[str], skip: int, limit: int):
+    """返回消息中心的模板与最近触达记录。
+
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :param keyword: 搜索关键字
+    :param skip: 分页偏移量
+    :param limit: 每页数量
+    :return: 消息中心聚合数据
+    """
+    ensure_any_admin_page_permission(current_admin, ("overview", "repayments", "collections", "financials", "message-center"))
+    limit = min(max(limit, 1), 100)
+    templates = _build_message_templates()
+    stmt = select(UserEvent).where(UserEvent.actor_type == "ADMIN").where(
+        or_(
+            UserEvent.event_type == "ADMIN_REMIND",
+            UserEvent.event_type == "ADMIN_COLLECT",
+            UserEvent.event_type == "ADMIN_COLLECTION_NOTE",
+        )
+    )
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(UserEvent.title.like(pattern), UserEvent.detail.like(pattern), UserEvent.operator_name.like(pattern)))
+    total = (await db.scalar(select(func.count()).select_from(stmt.subquery()))) or 0
+    logs = (
+        await db.execute(stmt.order_by(UserEvent.created_at.desc(), UserEvent.id.desc()).offset(skip).limit(limit))
+    ).scalars().all()
+    today_start, tomorrow = get_today_range()
+    reminder_rows = (
+        await db.execute(
+            select(Loan, User.name, User.phone)
+            .join(User, User.id == Loan.user_id)
+            .where(
+                Loan.status.in_(["DISBURSED", "OVERDUE"]),
+                Loan.due_date >= today_start,
+                Loan.due_date < tomorrow,
+            )
+            .order_by(Loan.due_date.asc(), Loan.id.asc())
+            .limit(20)
+        )
+    ).all()
+    summary = {
+        "template_count": len(templates),
+        "enabled_template_count": sum(1 for item in templates if item["enabled"]),
+        "recent_message_count": total,
+        "reminder_queue_count": len(reminder_rows),
+    }
+    return {
+        "summary": summary,
+        "templates": templates,
+        "recent_logs": [
+            {
+                "id": item.id,
+                "user_id": item.user_id,
+                "loan_id": item.loan_id,
+                "actor_type": item.actor_type,
+                "title": item.title,
+                "detail": item.detail,
+                "created_at": item.created_at,
+            }
+            for item in logs
+        ],
+        "reminder_queue": [
+            {
+                "id": loan.id,
+                "loan_id": loan.id,
+                "user_id": loan.user_id,
+                "user_name": user_name,
+                "user_phone": user_phone,
+                "status": loan.status,
+                "due_date": loan.due_date,
+                "remaining_repayment_amount": calculate_remaining_repayment_amount(loan),
+                "total_repayment_amount": calculate_total_repayment_amount(loan),
+            }
+            for loan, user_name, user_phone in reminder_rows
+        ],
+    }
+
 async def _create_admin_user(db: AsyncSession, current_admin: Admin, req: AdminUserCreateRequest):
     ensure_admin_page_permission(current_admin, "admin-users")
     username = req.username.strip()
@@ -3777,6 +4148,10 @@ async def _update_admin_user(db: AsyncSession, current_admin: Admin, admin_id: i
 
     if "password" in payload and payload["password"]:
         admin.password_hash = get_password_hash(payload["password"])
+    if "is_active" in payload and payload["is_active"] is not None:
+        if admin.id == current_admin.id and not payload["is_active"]:
+            raise HTTPException(status_code=400, detail="当前登录账号不允许禁用")
+        admin.is_active = bool(payload["is_active"])
 
     if "permissions" in payload:
         roles_input = payload.get("roles", None)

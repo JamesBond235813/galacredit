@@ -8,6 +8,12 @@
       </article>
     </section>
 
+    <el-card class="panel-card">
+      <template #header><div class="section-head"><h3>日对账汇总</h3><el-date-picker v-model="reconcileDate" type="date" value-format="YYYY-MM-DD" @change="fetchReconciliation" /></div></template>
+      <div class="summary-grid"><article class="summary-card"><span>交易笔数</span><strong>{{ reconciliation.daily_summary?.transaction_count || 0 }}</strong></article><article class="summary-card"><span>交易金额</span><strong>{{ formatCurrency(reconciliation.daily_summary?.amount || 0) }}</strong></article><article class="summary-card"><span>差异单</span><strong>{{ reconciliation.difference_orders?.length || 0 }}</strong></article><article class="summary-card"><span>待对账</span><strong>{{ reconciliation.pending_reconciliation?.length || 0 }}</strong></article></div>
+      <el-table :data="reconciliation.difference_orders || []" size="small"><el-table-column prop="id" label="流水ID" /><el-table-column prop="loan_id" label="订单ID" /><el-table-column prop="status" label="状态" /><el-table-column prop="amount" label="金额" /></el-table>
+    </el-card>
+
     <el-card class="panel-card filter-card">
       <el-form :inline="true" :model="filters">
         <el-form-item label="搜索">
@@ -245,7 +251,7 @@ import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import LoanLedgerPanel from '../components/LoanLedgerPanel.vue';
 import LoanHistoryDialog from '../components/LoanHistoryDialog.vue';
-import { financeReconcileLoan, getAdminStats, getLoanLedger, getLoans, getRepaymentStats } from '../api';
+import { financeReconcileLoan, getAdminStats, getLoanLedger, getLoans, getRepaymentStats, getFinanceReconciliation } from '../api';
 import { formatCurrency, formatDate, formatDateTime, getStatusTagType, getStatusText } from '../utils/format';
 
 const route = useRoute();
@@ -262,6 +268,9 @@ const historyLoan = ref(null);
 const historyBorrowerName = ref('');
 const loanLedger = ref(null);
 const ledgerLoading = ref(false);
+const reconcileDate = ref('');
+const reconciliation = ref({ daily_summary: {}, difference_orders: [], pending_reconciliation: [] });
+const fetchReconciliation = async () => { reconciliation.value = await getFinanceReconciliation(reconcileDate.value ? { target_date: reconcileDate.value } : {}); };
 
 const filters = reactive({
   keyword: '',
@@ -510,6 +519,8 @@ watch(
   },
   { immediate: true }
 );
+
+fetchReconciliation();
 </script>
 
 <style scoped>

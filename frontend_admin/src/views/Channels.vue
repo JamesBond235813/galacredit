@@ -111,6 +111,8 @@
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEditDrawer(row)">编辑</el-button>
+            <el-button link type="success" @click="copyRow(row)">复制</el-button>
+            <el-button link @click="showHistory(row)">历史</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -263,12 +265,13 @@
       </div>
     </el-drawer>
   </div>
+    <el-dialog v-model="historyVisible" title="渠道变更历史"><el-timeline><el-timeline-item v-for="item in historyItems" :key="item.id" :timestamp="item.created_at">版本 {{ item.version_no }} · {{ item.action }} · {{ item.operator_name }}</el-timeline-item></el-timeline></el-dialog>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { createChannel, getBusinessAdvisors, getChannels, updateChannel } from '../api';
+import { createChannel, getBusinessAdvisors, getChannels, updateChannel, copyChannel, getConfigHistory } from '../api';
 import logoUrl from '../assets/logo.svg';
 import { generateChannelInviteCode } from '../utils/channel';
 import { renderChannelQr } from '../utils/channelQr';
@@ -279,6 +282,9 @@ const loading = ref(false);
 const submitting = ref(false);
 const drawerVisible = ref(false);
 const tableData = ref([]);
+const historyVisible = ref(false); const historyItems = ref([]);
+const copyRow = async (row) => { await copyChannel(row.id); ElMessage.success('渠道已复制'); fetchData(); };
+const showHistory = async (row) => { historyItems.value = (await getConfigHistory('CHANNEL', row.id)).items || []; historyVisible.value = true; };
 const total = ref(0);
 const summary = ref({});
 const activeRow = ref(null);

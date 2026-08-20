@@ -29,6 +29,7 @@ from app.models.compliance_rule import ComplianceRule
 from app.models.momo_transaction import MomoTransaction
 from app.models.user import User
 from app.models.user_event import UserEvent
+from app.models.ops_history import AdminLoginHistory, ConfigChangeHistory, MessageTemplate
 from app.schemas.admin import (
     AdminLogin,
     AdminTokenResponse,
@@ -41,6 +42,14 @@ from app.schemas.admin import (
     PaginatedAdminUserResponse,
     AdminChangePasswordRequest,
     ComplianceRuleCreateRequest,
+    AdminAuditLogItemResponse,
+    PaginatedAdminAuditLogResponse,
+    KycReviewItemResponse,
+    PaginatedKycReviewResponse,
+    KycReviewActionRequest,
+    KycBatchReviewRequest,
+    MonitoringSummaryResponse,
+    MessageCenterResponse,
 )
 from app.schemas.channel import (
     BusinessAdvisorItemResponse,
@@ -149,7 +158,7 @@ from app.services.purchase_contract import serialize_purchase_contract
 from app.services.compliance import get_active_compliance_rule_async, serialize_compliance_rule
 from app.services.upload_storage import build_upload_url, save_product_rights_image
 
-from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _query_single_risk_report, _get_single_risk_report_history, _get_single_risk_report_detail, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _get_disbursement_failures, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
+from app.services.admin_service import get_today_range, _get_ws_admin_by_token, _extract_ws_token, calculate_due_date, ensure_valid_term_days, serialize_admin_user, resolve_roles_and_permissions, ensure_admin_page_permission, ensure_any_admin_page_permission, resolve_loan_scope_permission, current_admin_roles, is_super_admin, ensure_stage_access_for_admin, serialize_loan, serialize_user_summary, serialize_user_detail, serialize_channel, round_money, mask_secret, resolve_product_payment_amount, serialize_product, serialize_ecard_pool_item, apply_loan_scope, build_loan_scope_filters, get_overdue_days_expr, get_loan_operating_metrics, round_cash_amount, build_project_cash_insights, notify_admin_stats_changed, wait_admin_stats_changed, _is_business_consultant, apply_business_consultant_user_summary_status, _register_user, _reset_user_password, _change_admin_password, _get_loan_ledger, _get_user_detail, _get_user_ip_audit, _get_risk_report, _get_composite_risk_report, _query_single_risk_report, _get_single_risk_report_history, _get_single_risk_report_detail, _get_channels, _get_exclusive_links, _get_user_source_channels, _create_channel, _update_channel, _get_business_advisors, _get_products, _get_disbursement_failures, _create_product, _update_product, _get_ecard_pool, _create_ecard_pool_item, _parse_upload_expiration, _load_excel_rows, _upload_ecard_pool_items, _update_ecard_pool_item, _review_loan, _update_loan, _disburse_loan, _reject_card_loan, _reissue_card_loan, _close_card_reissue, _extend_loan, _adjust_available_credit, _set_approved_credit_limit, _update_overdue_display, _get_overdue_fee_configs, _create_overdue_fee_config, _get_blacklist_entries, _manual_blacklist_user, _remove_blacklist_user, _upload_blacklist, _settle_loan, _finance_reconcile_loan, _remind_loan, _collect_loan, _ack_repay_attempt, _get_loan_assignees, _assign_loan, _get_admin_users, _get_admin_audit_logs, _get_kyc_review_queue, _review_kyc_users, _get_monitoring_summary, _get_message_center, _create_admin_user, _update_admin_user, _delete_admin_user, _unlock_user_location_risk
 router = APIRouter()
 
 
@@ -301,7 +310,10 @@ async def _notify_user_loan_snapshot_if_needed(db: AsyncSession, loan_id: int):
 @router.post("/login", response_model=AdminTokenResponse)
 async def login(req: AdminLogin, db: AsyncSession = Depends(get_async_db)):
     admin = (await db.execute(select(Admin).where(Admin.username == req.username))).scalar_one_or_none()
-    if not admin or not verify_password(req.password, admin.password_hash):
+    success = bool(admin and verify_password(req.password, admin.password_hash) and getattr(admin, "is_active", True))
+    db.add(AdminLoginHistory(admin_id=admin.id if admin else 0, username=req.username, client_type=req.client_type or "WEB", success=success, failure_reason=None if success else "用户名、密码错误或账号已禁用"))
+    await db.flush()
+    if not success:
         raise HTTPException(status_code=400, detail="用户名或密码错误")
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     session_id = uuid4().hex
@@ -314,6 +326,13 @@ async def login(req: AdminLogin, db: AsyncSession = Depends(get_async_db)):
         client_id=client_type,
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/admin-users/{admin_id}/login-history")
+async def get_admin_login_history(admin_id: int, skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_admin_page_permission(current_admin, "admin-users")
+    rows = (await db.execute(select(AdminLoginHistory).where(AdminLoginHistory.admin_id == admin_id).order_by(AdminLoginHistory.created_at.desc()).offset(skip).limit(limit))).scalars().all()
+    return {"items": [{"id": x.id, "username": x.username, "client_type": x.client_type, "success": x.success, "failure_reason": x.failure_reason, "created_at": x.created_at} for x in rows]}
 
 
 @router.get("/me", response_model=AdminResponse)
@@ -1291,6 +1310,13 @@ async def get_channels(
     return await _get_channels(db, current_admin, keyword, status, skip, limit)
 
 
+@router.get("/config-history/{object_type}/{object_id}")
+async def get_config_history(object_type: str, object_id: int, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_any_admin_page_permission(current_admin, ("channels", "products"))
+    rows = (await db.execute(select(ConfigChangeHistory).where(ConfigChangeHistory.object_type == object_type.upper(), ConfigChangeHistory.object_id == object_id).order_by(ConfigChangeHistory.version_no.desc()))).scalars().all()
+    return {"items": [{"id": x.id, "action": x.action, "version_no": x.version_no, "snapshot": x.snapshot_json, "operator_name": x.operator_name, "created_at": x.created_at} for x in rows]}
+
+
 @router.get("/exclusive-links", response_model=ExclusiveLinksResponse)
 async def get_exclusive_links(
     db: AsyncSession = Depends(get_async_db),
@@ -1324,6 +1350,16 @@ async def update_channel(
     result = await _update_channel(db, current_admin, channel_id, req)
     await notify_admin_stats_changed()
     return result
+
+
+@router.post("/channels/{channel_id}/copy")
+async def copy_channel(channel_id: int, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_admin_page_permission(current_admin, "channels")
+    source = (await db.execute(select(Channel).where(Channel.id == channel_id))).scalar_one_or_none()
+    if not source: raise HTTPException(status_code=404, detail="渠道不存在")
+    copied = Channel(channel_name=f"{source.channel_name}_COPY_{uuid4().hex[:6]}", invite_code=f"{uuid4().hex[:16]}", sales_name=source.sales_name, status="INACTIVE", disbursement_mode=source.disbursement_mode, review_mode=source.review_mode, note=source.note, admin_user_id=source.admin_user_id)
+    db.add(copied); await db.flush(); db.add(ConfigChangeHistory(object_type="CHANNEL", object_id=copied.id, action="COPY", version_no=1, snapshot_json=json.dumps(serialize_channel(copied), default=str, ensure_ascii=False), operator_name=current_admin.username)); await db.commit(); await db.refresh(copied)
+    return serialize_channel(copied)
 
 
 @router.get("/admin-users/business-advisors", response_model=list[BusinessAdvisorItemResponse])
@@ -1398,6 +1434,118 @@ async def create_compliance_rule(
     return serialize_compliance_rule(rule)
 
 
+@router.get("/audit-logs", response_model=PaginatedAdminAuditLogResponse)
+async def get_admin_audit_logs(
+    keyword: Optional[str] = Query(None, description="姓名、手机号、订单号、备注"),
+    actor_type: Optional[str] = Query(None, description="操作者类型"),
+    event_type: Optional[str] = Query(None, description="事件类型"),
+    object_type: Optional[str] = Query(None, description="对象类型：USER或LOAN"),
+    start_date: Optional[date] = Query(None, description="开始日期"),
+    end_date: Optional[date] = Query(None, description="结束日期"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_admin_audit_logs(db, current_admin, keyword, actor_type, skip, limit, event_type, object_type, start_date, end_date)
+
+
+@router.get("/audit-logs/export")
+async def export_admin_audit_logs(
+    keyword: Optional[str] = Query(None), actor_type: Optional[str] = Query(None), event_type: Optional[str] = Query(None),
+    object_type: Optional[str] = Query(None), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async),
+):
+    """导出审计日志CSV。"""
+    payload = await _get_admin_audit_logs(db, current_admin, keyword, actor_type, 0, 10000, event_type, object_type, start_date, end_date)
+    lines = ["id,operator,event_type,title,user_phone,loan_order_no,created_at"]
+    for item in payload["items"]:
+        values = [item.get(key) for key in ("id", "operator_name", "event_type", "title", "user_phone", "loan_order_no", "created_at")]
+        lines.append(",".join('"' + str(value or '').replace('"', '""') + '"' for value in values))
+    return StreamingResponse(iter(["\ufeff" + "\n".join(lines)]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=audit-logs.csv"})
+
+
+@router.get("/kyc-review-queue", response_model=PaginatedKycReviewResponse)
+async def get_kyc_review_queue(
+    keyword: Optional[str] = Query(None, description="手机号、姓名或身份证号"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_kyc_review_queue(db, current_admin, keyword, skip, limit)
+
+
+@router.post("/kyc-review/user/{user_id}")
+async def review_kyc_user(user_id: int, req: KycReviewActionRequest, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    """处理单个KYC复核结果。"""
+    return await _review_kyc_users(db, current_admin, [user_id], req.action, req.note)
+
+
+@router.post("/kyc-review/batch")
+async def batch_review_kyc(req: KycBatchReviewRequest, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    """批量处理KYC复核结果。"""
+    return await _review_kyc_users(db, current_admin, req.user_ids, req.action, req.note)
+
+
+@router.get("/monitoring-summary", response_model=MonitoringSummaryResponse)
+async def get_monitoring_summary(
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_monitoring_summary(db, current_admin)
+
+
+@router.get("/monitoring/drilldown/{metric}")
+async def monitoring_drilldown(metric: str, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    """查询监控指标对应的订单、用户或任务明细。"""
+    ensure_any_admin_page_permission(current_admin, ("monitoring", "users", "applications", "financials"))
+    if metric in {"momo_pending", "momo_failed"}:
+        status_value = "PENDING" if metric == "momo_pending" else "FAILED"
+        rows = (await db.execute(select(MomoTransaction).where(MomoTransaction.status == status_value).order_by(MomoTransaction.created_at.desc()).limit(100))).scalars().all()
+        return {"metric": metric, "items": [{"id": x.id, "loan_id": x.loan_id, "amount": float(x.amount or 0), "status": x.status, "created_at": x.created_at} for x in rows]}
+    if metric == "kyc_pending":
+        rows = (await db.execute(select(User).where(or_(User.real_name_status.is_(None), User.face_auth_status.is_(None))).order_by(User.created_at.desc()).limit(100))).scalars().all()
+        return {"metric": metric, "items": [{"id": x.id, "phone": x.phone, "name": x.name, "created_at": x.created_at} for x in rows]}
+    return {"metric": metric, "items": []}
+
+
+@router.get("/message-center", response_model=MessageCenterResponse)
+async def get_message_center(
+    keyword: Optional[str] = Query(None, description="标题或内容"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    return await _get_message_center(db, current_admin, keyword, skip, limit)
+
+
+@router.get("/message-templates")
+async def get_message_templates(db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_admin_page_permission(current_admin, "message-center")
+    rows = (await db.execute(select(MessageTemplate).order_by(MessageTemplate.template_key, MessageTemplate.version_no.desc()))).scalars().all()
+    return {"items": [{"id": x.id, "template_key": x.template_key, "version_no": x.version_no, "title": x.title, "content": x.content, "is_active": x.is_active, "created_at": x.created_at} for x in rows]}
+
+
+@router.post("/message-templates")
+async def save_message_template(payload: dict, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_admin_page_permission(current_admin, "message-center")
+    key = str(payload.get("template_key", "")).strip(); title = str(payload.get("title", "")).strip(); content = str(payload.get("content", "")).strip()
+    if not key or not title or not content: raise HTTPException(status_code=400, detail="模板标识、标题和内容不能为空")
+    version = int((await db.scalar(select(func.coalesce(func.max(MessageTemplate.version_no), 0)).where(MessageTemplate.template_key == key))) or 0) + 1
+    if payload.get("is_active", True): await db.execute(select(MessageTemplate).where(MessageTemplate.template_key == key))
+    item = MessageTemplate(template_key=key, version_no=version, title=title, content=content, is_active=bool(payload.get("is_active", True)), created_by=current_admin.username); db.add(item); await db.commit(); await db.refresh(item)
+    return {"id": item.id, "version_no": item.version_no, "template_key": item.template_key, "is_active": item.is_active}
+
+
+@router.patch("/message-templates/{template_id}/active")
+async def toggle_message_template(template_id: int, payload: dict, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_admin_page_permission(current_admin, "message-center"); item = (await db.execute(select(MessageTemplate).where(MessageTemplate.id == template_id))).scalar_one_or_none()
+    if not item: raise HTTPException(status_code=404, detail="模板不存在")
+    item.is_active = bool(payload.get("is_active")); await db.commit(); return {"id": item.id, "is_active": item.is_active}
+
+
 @router.get("/momo-transactions")
 async def get_momo_transactions(
     loan_id: Optional[int] = Query(None, ge=1),
@@ -1450,6 +1598,17 @@ async def get_momo_transactions(
             for item in items
         ],
     }
+
+
+@router.get("/finance/reconciliation")
+async def get_finance_reconciliation(target_date: Optional[date] = Query(None), db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    """返回指定日期的日汇总、差异单和待对账交易。"""
+    ensure_admin_page_permission(current_admin, "financials")
+    day = target_date or date.today(); start = datetime.combine(day, datetime.min.time()); end = start + timedelta(days=1)
+    transactions = (await db.execute(select(MomoTransaction).where(MomoTransaction.created_at >= start, MomoTransaction.created_at < end).order_by(MomoTransaction.created_at.desc()))).scalars().all()
+    pending = [x for x in transactions if x.status == "PENDING"]
+    failed = [x for x in transactions if x.status == "FAILED"]
+    return {"date": day.isoformat(), "daily_summary": {"transaction_count": len(transactions), "amount": round(sum(float(x.amount or 0) for x in transactions), 2), "success_count": sum(x.status == "SUCCESS" for x in transactions), "failed_count": len(failed)}, "difference_orders": [{"id": x.id, "loan_id": x.loan_id, "status": x.status, "amount": float(x.amount or 0), "provider_reference": x.provider_reference} for x in failed], "pending_reconciliation": [{"id": x.id, "loan_id": x.loan_id, "status": x.status, "amount": float(x.amount or 0), "created_at": x.created_at} for x in pending]}
 
 
 @router.get("/disbursement-failures")
@@ -1516,6 +1675,16 @@ async def update_product(
     result = await _update_product(db, current_admin, product_id, req)
     await notify_admin_stats_changed()
     return result
+
+
+@router.post("/products/{product_id}/copy")
+async def copy_product(product_id: int, db: AsyncSession = Depends(get_async_db), current_admin: Admin = Depends(get_current_admin_async)):
+    ensure_admin_page_permission(current_admin, "products")
+    source = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
+    if not source: raise HTTPException(status_code=404, detail="产品不存在")
+    values = {column.name: getattr(source, column.name) for column in Product.__table__.columns if column.name not in {"id", "created_at", "updated_at", "name"}}
+    copied = Product(name=f"{source.name}_COPY_{uuid4().hex[:6]}", **values); db.add(copied); await db.flush(); db.add(ConfigChangeHistory(object_type="PRODUCT", object_id=copied.id, action="COPY", version_no=1, snapshot_json=json.dumps(serialize_product(copied), default=str, ensure_ascii=False), operator_name=current_admin.username)); await db.commit(); await db.refresh(copied)
+    return serialize_product(copied)
 
 
 

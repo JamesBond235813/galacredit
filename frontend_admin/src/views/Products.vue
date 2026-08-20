@@ -69,6 +69,8 @@
         <el-table-column :label="t('actions')" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDialog(row)">{{ t('edit') }}</el-button>
+            <el-button link type="success" @click="copyProductRow(row)">复制</el-button>
+            <el-button link @click="showProductHistory(row)">历史</el-button>
             <el-button v-if="row.product_type !== 'CASH_LOAN'" link type="primary" @click="selectRightsConfig(row)">{{ t('legacyRights') }}</el-button>
           </template>
         </el-table-column>
@@ -265,13 +267,14 @@
         <el-button type="primary" :loading="complianceSaving" @click="saveComplianceRule">保存并生效</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="historyVisible" title="产品变更历史"><el-timeline><el-timeline-item v-for="item in historyItems" :key="item.id" :timestamp="item.created_at">版本 {{ item.version_no }} · {{ item.action }} · {{ item.operator_name }}</el-timeline-item></el-timeline></el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { createComplianceRule, createProduct, getActiveComplianceRule, getProducts, updateProduct, uploadProductRightsImage } from '../api';
+import { createComplianceRule, createProduct, getActiveComplianceRule, getProducts, updateProduct, uploadProductRightsImage, copyProduct, getConfigHistory } from '../api';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { adminLocale, t } from '../i18n/adminLocale';
 
@@ -279,6 +282,9 @@ const loading = ref(false);
 const saving = ref(false);
 const total = ref(0);
 const tableData = ref([]);
+const historyVisible = ref(false); const historyItems = ref([]);
+const copyProductRow = async (row) => { await copyProduct(row.id); ElMessage.success('产品已复制'); fetchData(); };
+const showProductHistory = async (row) => { historyItems.value = (await getConfigHistory('PRODUCT', row.id)).items || []; historyVisible.value = true; };
 const dialogVisible = ref(false);
 const editingId = ref(null);
 const rightsConfigProduct = ref(null);

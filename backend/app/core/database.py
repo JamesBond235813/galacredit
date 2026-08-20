@@ -185,6 +185,7 @@ SCHEMA_PATCHES = {
     },
     "momo_transactions": {
         "provider": "ALTER TABLE momo_transactions ADD COLUMN provider VARCHAR(40) NOT NULL DEFAULT 'mock' COMMENT '支付服务商'",
+        "related_transaction_id": "ALTER TABLE momo_transactions ADD COLUMN related_transaction_id INT NULL COMMENT '关联的业务流水ID'",
     },
     "user_events": {
         "operator_name": "ALTER TABLE user_events ADD COLUMN operator_name VARCHAR(50) NULL",
@@ -386,8 +387,8 @@ async def ensure_default_admins():
     from app.models.admin import Admin
 
     async with AsyncSessionLocal() as db:
+        # 生产环境仅保留指定的超级管理员，避免旧默认账号在重启时被重新创建。
         default_accounts = {
-            "admin": "admin123",
             "xiaojiang": "Cn11235813!@#",
         }
         changed = False

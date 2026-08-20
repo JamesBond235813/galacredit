@@ -1,15 +1,21 @@
 export const ADMIN_PAGE_OPTIONS = [
   { key: 'overview', label: '洞察看板', route: '/overview', iconKey: 'overview' },
+  { key: 'monitoring', label: '运营监控', route: '/monitoring', iconKey: 'monitoring' },
+  { key: 'message-center', label: '消息中心', route: '/message-center', iconKey: 'messageCenter' },
   { key: 'users', label: '用户档案', route: '/users', iconKey: 'users' },
+  { key: 'kyc-review', label: 'KYC复核', route: '/kyc-review', iconKey: 'kycReview' },
   { key: 'applications', label: '申请审批', route: '/applications', iconKey: 'applications' },
   { key: 'disbursements', label: '待MoMo放款', route: '/disbursements', iconKey: 'disbursements' },
   { key: 'disbursement-failures', label: '放款失败客户', route: '/disbursement-failures', iconKey: 'disbursementFailures' },
   { key: 'repayments', label: '还款管理', route: '/repayments', iconKey: 'repayments' },
   { key: 'collections', label: '催收管理', route: '/collections', iconKey: 'collections' },
   { key: 'financials', label: '财务平账', route: '/financials', iconKey: 'financials' },
+  { key: 'audit-log', label: '操作审计', route: '/audit-log', iconKey: 'auditLog' },
   { key: 'risk-single-query', label: '风控报告单查', route: '/risk-single-query', iconKey: 'riskSingleQuery' },
+  { key: 'risk-strategy', label: '风控策略预留', route: '/risk-strategy', iconKey: 'riskStrategy' },
   { key: 'blacklist', label: '黑名单', route: '/blacklist', iconKey: 'users' },
   { key: 'overdue-config', label: '逾期配置', route: '/overdue-config', iconKey: 'overdueConfig' },
+  { key: 'content-config', label: '运营配置', route: '/content-config', iconKey: 'contentConfig' },
   { key: 'products', label: '贷款产品', route: '/products', iconKey: 'products' },
   { key: 'ecard-pool', label: '历史卡池兼容', route: '/ecard-pool', iconKey: 'ecardPool' },
   { key: 'channels', label: '渠道管理', route: '/channels', iconKey: 'channels' },
@@ -18,11 +24,12 @@ export const ADMIN_PAGE_OPTIONS = [
 ];
 
 export const ADMIN_MENU_GROUPS = [
-  { key: 'operations', iconKey: 'overview', itemKeys: ['overview'] },
-  { key: 'customerRisk', iconKey: 'users', itemKeys: ['users', 'risk-single-query', 'blacklist'] },
+  { key: 'operations', iconKey: 'overview', itemKeys: ['overview', 'monitoring', 'message-center'] },
+  { key: 'customerRisk', iconKey: 'users', itemKeys: ['users', 'kyc-review', 'risk-single-query', 'audit-log', 'blacklist'] },
   { key: 'loanOperations', iconKey: 'applications', itemKeys: ['applications', 'disbursements', 'disbursement-failures'] },
   { key: 'repaymentCollections', iconKey: 'repayments', itemKeys: ['repayments', 'collections', 'financials'] },
-  { key: 'productsChannels', iconKey: 'products', itemKeys: ['products', 'overdue-config', 'channels', 'exclusive-links', 'ecard-pool'] },
+  { key: 'productsChannels', iconKey: 'products', itemKeys: ['products', 'overdue-config', 'content-config', 'channels', 'exclusive-links', 'ecard-pool'] },
+  { key: 'riskStrategy', iconKey: 'riskSingleQuery', itemKeys: ['risk-strategy'] },
   { key: 'system', iconKey: 'adminUsers', itemKeys: ['admin-users'] }
 ];
 
@@ -37,17 +44,17 @@ export const ALL_ADMIN_PERMISSION_KEYS = [...ADMIN_PAGE_PERMISSION_KEYS, ...ADMI
 
 export const ADMIN_ROLE_OPTIONS = [
   { key: 'ADMIN', label: '管理员', description: '所有页面与操作权限' },
-  { key: 'REVIEW', label: '审核', description: '用户档案、申请审批、还款管理' },
-  { key: 'FINANCE', label: '财务', description: 'MoMo放款、财务平账、贷款产品、历史卡池兼容' },
-  { key: 'COLLECTION', label: '催收', description: '仅催收管理' },
+  { key: 'REVIEW', label: '审核', description: '用户档案、KYC复核、申请审批、还款管理' },
+  { key: 'FINANCE', label: '财务', description: 'MoMo放款、财务平账、消息中心、贷款产品、历史卡池兼容' },
+  { key: 'COLLECTION', label: '催收', description: '催收管理、消息中心' },
   { key: 'BUSINESS_CONSULTANT', label: '业务顾问', description: '用户档案、专属链接页面' }
 ];
 
 export const ADMIN_ROLE_PERMISSION_MAP = {
   ADMIN: [...ALL_ADMIN_PERMISSION_KEYS],
-  REVIEW: ['users', 'applications', 'repayments', 'risk-single-query', 'blacklist', 'loan-review-takeover'],
-  FINANCE: ['disbursements', 'disbursement-failures', 'financials', 'products', 'ecard-pool', 'blacklist'],
-  COLLECTION: ['collections', 'blacklist'],
+  REVIEW: ['users', 'applications', 'repayments', 'risk-single-query', 'blacklist', 'loan-review-takeover', 'kyc-review', 'audit-log', 'message-center', 'monitoring'],
+  FINANCE: ['disbursements', 'disbursement-failures', 'financials', 'products', 'ecard-pool', 'blacklist', 'message-center', 'monitoring', 'content-config'],
+  COLLECTION: ['collections', 'blacklist', 'message-center', 'audit-log'],
   BUSINESS_CONSULTANT: ['users', 'exclusive-links']
 };
 

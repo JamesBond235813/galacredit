@@ -328,6 +328,7 @@ const onSubmit = async () => {
       localStorage.setItem('refresh_token', res.refresh_token);
     }
     sessionStorage.removeItem('h5_location_authorized');
+    sessionStorage.removeItem('h5_location_attempted');
     clearEntryChannel();
     showToast('Signed in successfully');
     router.replace('/home');

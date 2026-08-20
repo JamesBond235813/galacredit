@@ -11,9 +11,15 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "repayments", "label": "还款管理", "route": "/repayments"},
     {"key": "collections", "label": "催收管理", "route": "/collections"},
     {"key": "financials", "label": "财务平账", "route": "/financials"},
+    {"key": "monitoring", "label": "运营监控", "route": "/monitoring"},
+    {"key": "message-center", "label": "消息中心", "route": "/message-center"},
+    {"key": "audit-log", "label": "操作审计", "route": "/audit-log"},
+    {"key": "kyc-review", "label": "KYC复核", "route": "/kyc-review"},
     {"key": "risk-single-query", "label": "风控报告单查", "route": "/risk-single-query"},
+    {"key": "risk-strategy", "label": "风控策略预留", "route": "/risk-strategy"},
     {"key": "blacklist", "label": "黑名单", "route": "/blacklist"},
     {"key": "overdue-config", "label": "逾期配置", "route": "/overdue-config"},
+    {"key": "content-config", "label": "运营配置", "route": "/content-config"},
     {"key": "products", "label": "商品管理", "route": "/products"},
     {"key": "ecard-pool", "label": "卡池管理", "route": "/ecard-pool"},
     {"key": "channels", "label": "渠道管理", "route": "/channels"},
@@ -43,9 +49,9 @@ ALL_ADMIN_ROLE_KEYS = [item["key"] for item in ADMIN_ROLE_OPTIONS]
 
 ADMIN_ROLE_PERMISSION_MAP = {
     "ADMIN": list(ALL_ADMIN_PERMISSION_KEYS),
-    "REVIEW": ["users", "applications", "repayments", "risk-single-query", "blacklist", "loan-review-takeover"],
-    "FINANCE": ["disbursements", "disbursement-failures", "financials", "products", "ecard-pool", "blacklist"],
-    "COLLECTION": ["collections", "blacklist"],
+    "REVIEW": ["users", "applications", "repayments", "risk-single-query", "blacklist", "loan-review-takeover", "kyc-review", "message-center", "monitoring"],
+    "FINANCE": ["disbursements", "disbursement-failures", "financials", "products", "ecard-pool", "blacklist", "monitoring", "message-center"],
+    "COLLECTION": ["collections", "blacklist", "message-center"],
     "BUSINESS_CONSULTANT": ["users", "exclusive-links"],
 }
 

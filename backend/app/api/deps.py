@@ -97,6 +97,8 @@ async def get_admin_by_token_async(db: AsyncSession, token: str) -> Admin:
     admin = (await db.execute(select(Admin).where(Admin.username == username))).scalar_one_or_none()
     if admin is None:
         raise credentials_exception
+    if not getattr(admin, "is_active", True):
+        raise credentials_exception
     if not is_admin_session_valid(admin, session_id, client_type):
         raise credentials_exception
     return admin

@@ -5,18 +5,18 @@
         <img :src="brandLogo" class="brand-logo" alt="GalaCredit logo" />
         <div>
           <h2>GalaCredit Admin</h2>
-          <p>审批、MoMo放款、还款提醒、催收统一处理</p>
+          <p>Approvals, MoMo disbursement, repayment reminders and collections</p>
         </div>
       </div>
       <el-form :model="form" ref="loginForm" label-position="top">
-        <el-form-item label="账号" prop="username">
-          <el-input v-model="form.username" placeholder="请输入管理员账号" prefix-icon="User" />
+        <el-form-item label="Username" prop="username">
+          <el-input v-model="form.username" placeholder="Enter admin username" prefix-icon="User" />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password @keyup.enter="handleLogin" prefix-icon="Lock" />
+        <el-form-item label="Password" prop="password">
+          <el-input v-model="form.password" type="password" placeholder="Enter password" show-password @keyup.enter="handleLogin" prefix-icon="Lock" />
         </el-form-item>
         <el-button type="primary" class="login-btn" :loading="loading" @click="handleLogin">
-          登录系统
+          Sign in
         </el-button>
       </el-form>
     </el-card>

@@ -21,6 +21,7 @@ ACTIVE_LEDGER_STATUSES = {"DISBURSED", "OVERDUE", "SETTLED"}
 TRANSACTION_TYPE_LABELS = {
     "DISBURSEMENT": "放款",
     "REPAYMENT": "收款登记",
+    "REFUND": "退款冲正",
     "REDUCTION": "减免登记",
     "SETTLEMENT": "结清补录",
     "OTHER_FEE": "其他费用",
@@ -768,6 +769,105 @@ async def register_repayment_async(
         interest_amount=components["interest_amount"],
         guarantee_fee_amount=components["guarantee_fee_amount"],
         penalty_amount=round_money(penalty_amount),
+        operator_name=operator_name,
+        note=note,
+    )
+    db.add(transaction)
+    await db.flush()
+    sync_loan_repayment_state(loan)
+    return transaction
+
+
+def _apply_refund_amount_from_installments(installments: List[LoanInstallment], amount: Any) -> Dict[str, float]:
+    """按最近的已收款分期逆向冲正退款金额。
+
+    :param installments: 已生成分期列表
+    :param amount: 退款金额
+    :return: 冲正后的科目分布
+    """
+    remaining = round_money(amount)
+    components = {
+        "principal_amount": 0.0,
+        "interest_amount": 0.0,
+        "guarantee_fee_amount": 0.0,
+    }
+
+    for item in sorted(installments, key=lambda current: current.period_no, reverse=True):
+        if remaining <= 0:
+            break
+
+        refundable_amount = round_money(item.paid_amount)
+        if refundable_amount <= 0:
+            continue
+
+        current_amount = min(remaining, refundable_amount)
+        allocated = split_money_by_weights(
+            current_amount,
+            {
+                "principal_amount": item.paid_principal_amount,
+                "interest_amount": item.paid_interest_amount,
+                "guarantee_fee_amount": item.paid_guarantee_fee_amount,
+            },
+        )
+        item.paid_principal_amount = round_money(max(item.paid_principal_amount - allocated["principal_amount"], 0))
+        item.paid_interest_amount = round_money(max(item.paid_interest_amount - allocated["interest_amount"], 0))
+        item.paid_guarantee_fee_amount = round_money(
+            max(item.paid_guarantee_fee_amount - allocated["guarantee_fee_amount"], 0)
+        )
+        item.paid_amount = round_money(max(item.paid_amount - current_amount, 0))
+        if item.paid_amount <= 0 and item.reduction_amount <= 0:
+            item.status = "PENDING"
+            item.settled_at = None
+
+        components["principal_amount"] = round_money(components["principal_amount"] + allocated["principal_amount"])
+        components["interest_amount"] = round_money(components["interest_amount"] + allocated["interest_amount"])
+        components["guarantee_fee_amount"] = round_money(
+            components["guarantee_fee_amount"] + allocated["guarantee_fee_amount"]
+        )
+        remaining = round_money(remaining - current_amount)
+
+    return components
+
+
+async def register_refund_async(
+    db: AsyncSession,
+    loan: Loan,
+    amount: Any,
+    operator_name: Optional[str] = None,
+    note: Optional[str] = None,
+    transaction_type: str = "REFUND",
+) -> Optional[LoanTransaction]:
+    """登记退款冲正，逆向回滚最近的分期收款。
+
+    :param db: 异步数据库会话
+    :param loan: 贷款对象
+    :param amount: 退款金额
+    :param operator_name: 操作者
+    :param note: 备注
+    :param transaction_type: 交易类型
+    :return: 退款流水
+    """
+    refund_amount = round_money(amount)
+    if refund_amount <= 0:
+        return None
+
+    installments = await ensure_installment_records_async(db, loan)
+    components = _apply_refund_amount_from_installments(installments, refund_amount)
+    penalty_refund = min(refund_amount, round_money(getattr(loan, "paid_penalty_amount", 0)))
+    loan.paid_penalty_amount = round_money(max(getattr(loan, "paid_penalty_amount", 0) - penalty_refund, 0))
+    loan.repaid_amount = round_money(max(getattr(loan, "repaid_amount", 0) - refund_amount, 0))
+    if loan.repaid_amount <= 0:
+        loan.actual_repayment_date = None
+
+    transaction = LoanTransaction(
+        loan_id=loan.id,
+        user_id=loan.user_id,
+        transaction_type=transaction_type,
+        amount=refund_amount,
+        principal_amount=components["principal_amount"],
+        interest_amount=components["interest_amount"],
+        guarantee_fee_amount=components["guarantee_fee_amount"],
+        penalty_amount=round_money(penalty_refund),
         operator_name=operator_name,
         note=note,
     )

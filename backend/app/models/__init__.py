@@ -9,6 +9,7 @@ from app.models.risk_composite_report import RiskCompositeReport
 from app.models.blacklist import BlacklistEntry
 from app.models.phone_binding import UserPhoneBinding
 from app.models.user_event import UserEvent
+from app.models.ops_history import AdminLoginHistory, ConfigChangeHistory, MessageTemplate
 from app.models.product import Product
 from app.models.ecard_pool import EcardPool
 from app.models.loan_ecard import LoanEcard

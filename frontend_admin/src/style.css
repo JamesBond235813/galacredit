@@ -121,6 +121,90 @@ textarea {
   color: #73839a;
 }
 
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.summary-card {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(13, 63, 131, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(247, 250, 255, 0.95) 100%);
+  box-shadow: 0 14px 32px rgba(18, 48, 95, 0.06);
+}
+
+.summary-card span {
+  font-size: 12px;
+  color: #7a8aa1;
+}
+
+.summary-card strong {
+  display: block;
+  margin-top: 12px;
+  font-size: 28px;
+  line-height: 1.1;
+  color: #16233a;
+}
+
+.summary-card p {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #2c72e5;
+}
+
+.pagination-wrap {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.template-grid,
+.reserve-grid,
+.config-grid,
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.template-card,
+.reserve-card,
+.config-section,
+.preview-card {
+  border-radius: 16px;
+  border: 1px solid rgba(13, 63, 131, 0.08);
+  background: #fff;
+  padding: 16px;
+}
+
+.template-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.template-card p,
+.reserve-card p,
+.preview-card p {
+  margin: 10px 0 0;
+  color: #607086;
+  line-height: 1.7;
+  font-size: 13px;
+}
+
+.sub-text {
+  color: #7a8aa1;
+  font-size: 12px;
+}
+
+.flag-tag {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
 .table-actions {
   display: flex;
   gap: 8px;
@@ -201,6 +285,14 @@ textarea {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .summary-grid,
+  .template-grid,
+  .reserve-grid,
+  .config-grid,
+  .preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .content-grid {
     grid-template-columns: 1fr;
   }
@@ -209,5 +301,13 @@ textarea {
 @media (max-width: 1024px) {
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-grid,
+  .template-grid,
+  .reserve-grid,
+  .config-grid,
+  .preview-grid {
+    grid-template-columns: 1fr;
   }
 }

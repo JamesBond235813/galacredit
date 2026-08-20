@@ -7,8 +7,11 @@ import {
 const Login = () => import('../views/Login.vue');
 const Layout = () => import('../views/Layout.vue');
 const Overview = () => import('../views/Overview.vue');
+const Monitoring = () => import('../views/Monitoring.vue');
+const MessageCenter = () => import('../views/MessageCenter.vue');
 const Applications = () => import('../views/Applications.vue');
 const Users = () => import('../views/Users.vue');
+const KycReview = () => import('../views/KycReview.vue');
 const Channels = () => import('../views/Channels.vue');
 const ExclusiveLinks = () => import('../views/ExclusiveLinks.vue');
 const Disbursements = () => import('../views/Disbursements.vue');
@@ -16,9 +19,12 @@ const DisbursementFailures = () => import('../views/DisbursementFailures.vue');
 const Repayments = () => import('../views/Repayments.vue');
 const Collections = () => import('../views/Collections.vue');
 const FinancialReconciliation = () => import('../views/FinancialReconciliation.vue');
+const AuditLog = () => import('../views/AuditLog.vue');
 const RiskSingleQuery = () => import('../views/RiskSingleQuery.vue');
+const RiskStrategy = () => import('../views/RiskStrategy.vue');
 const Blacklist = () => import('../views/Blacklist.vue');
 const OverdueConfig = () => import('../views/OverdueConfig.vue');
+const ContentConfig = () => import('../views/ContentConfig.vue');
 const Products = () => import('../views/Products.vue');
 const EcardPool = () => import('../views/EcardPool.vue');
 const AdminUsers = () => import('../views/AdminUsers.vue');
@@ -40,12 +46,39 @@ const routes = [
         }
       },
       {
+        path: 'monitoring',
+        component: Monitoring,
+        meta: {
+          title: '运营监控',
+          description: '聚合审计、KYC、消息、资金和调度任务状态',
+          permission: 'monitoring'
+        }
+      },
+      {
+        path: 'message-center',
+        component: MessageCenter,
+        meta: {
+          title: '消息中心',
+          description: '管理到期提醒、逾期提醒和催收触达记录',
+          permission: 'message-center'
+        }
+      },
+      {
         path: 'users',
         component: Users,
         meta: {
           title: '用户档案',
           description: '按客户维度查看实名资料、收款信息、联系人和完整业务时间线',
           permission: 'users'
+        }
+      },
+      {
+        path: 'kyc-review',
+        component: KycReview,
+        meta: {
+          title: 'KYC复核',
+          description: '集中查看待复核用户、风险标签与建议处理动作',
+          permission: 'kyc-review'
         }
       },
       {
@@ -103,12 +136,30 @@ const routes = [
         }
       },
       {
+        path: 'audit-log',
+        component: AuditLog,
+        meta: {
+          title: '操作审计',
+          description: '查询管理员对用户、订单和资金动作的审计记录',
+          permission: 'audit-log'
+        }
+      },
+      {
         path: 'risk-single-query',
         component: RiskSingleQuery,
         meta: {
           title: '风控报告单查',
           description: '输入姓名、身份证号或手机号查询 GalaCredit 风险报告，并查看历史查询记录',
           permission: 'risk-single-query'
+        }
+      },
+      {
+        path: 'risk-strategy',
+        component: RiskStrategy,
+        meta: {
+          title: '风控策略预留',
+          description: '预留自动审核与风控策略配置入口，等待外部三方数据接入',
+          permission: 'risk-strategy'
         }
       },
       {
@@ -127,6 +178,15 @@ const routes = [
           title: '逾期配置',
           description: '配置逾期费用标准，按生效日向后应用，不改变历史记录',
           permission: 'overdue-config'
+        }
+      },
+      {
+        path: 'content-config',
+        component: ContentConfig,
+        meta: {
+          title: '运营配置',
+          description: '维护消息模板、首页内容和运营位预案',
+          permission: 'content-config'
         }
       },
       {

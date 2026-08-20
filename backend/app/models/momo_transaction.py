@@ -15,6 +15,7 @@ class MomoTransaction(Base):
     user_id = Column(Integer, nullable=False, index=True, comment="借款用户ID")
     transaction_type = Column(String(24), nullable=False, index=True, comment="交易类型：DISBURSEMENT或REPAYMENT")
     provider = Column(String(40), nullable=False, default="mock", comment="支付服务商")
+    related_transaction_id = Column(Integer, nullable=True, index=True, comment="关联的业务流水ID")
     provider_reference = Column(String(120), nullable=True, unique=True, index=True, comment="服务商流水号")
     idempotency_key = Column(String(120), nullable=False, unique=True, index=True, comment="幂等键")
     phone = Column(String(20), nullable=False, comment="MoMo手机号")

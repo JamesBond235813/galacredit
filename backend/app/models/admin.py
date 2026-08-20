@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean
 from datetime import datetime
 from app.core.database import Base
 
@@ -10,6 +10,7 @@ class Admin(Base):
     password_hash = Column(String(255), nullable=False)
     roles = Column(Text, nullable=True)
     permissions = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="1", comment="是否启用")
     active_session_id = Column(String(64), nullable=True, index=True)
     active_session_issued_at = Column(DateTime, nullable=True)
     active_web_session_id = Column(String(64), nullable=True, index=True)

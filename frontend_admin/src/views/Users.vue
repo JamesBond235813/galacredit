@@ -394,6 +394,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import IdentityImagePanel from '../components/IdentityImagePanel.vue';
 import IpAuditDialog from '../components/IpAuditDialog.vue';
 import IpAuditTag from '../components/IpAuditTag.vue';
@@ -437,6 +438,7 @@ const resetDialogVisible = ref(false);
 const resetting = ref(false);
 const resetTarget = reactive({ id: null, phone: '', name: '' });
 const resetForm = reactive({ password: '', confirmPassword: '' });
+const route = useRoute();
 
 const resolveNominalAmount = (row) => Number(row?.nominal_loan_amount || row?.ecard_face_value || row?.credit_limit || 0);
 const resolveUpfrontFee = (row) => Number(row?.upfront_fee_amount || row?.fee_amount || row?.rights_price || 0);
@@ -699,6 +701,10 @@ const submitResetPassword = async () => {
 };
 
 onMounted(() => {
+  const keyword = String(route.query.keyword || '').trim();
+  if (keyword) {
+    filters.keyword = keyword;
+  }
   fetchData();
 });
 </script>

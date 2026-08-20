@@ -81,10 +81,13 @@
             {{ formatDateTime(row.updated_at) }}
           </template>
         </el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="row.is_active === false ? 'danger' : 'success'">{{ row.is_active === false ? '已禁用' : '启用' }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <div class="action-group">
               <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+              <el-button link :type="row.is_active === false ? 'success' : 'warning'" :disabled="row.is_current" @click="toggleActive(row)">{{ row.is_active === false ? '启用' : '禁用' }}</el-button>
+              <el-button link @click="showLoginHistory(row)">登录历史</el-button>
               <el-button
                 link
                 type="danger"
@@ -179,6 +182,7 @@
       </template>
     </el-dialog>
   </div>
+  <el-dialog v-model="loginHistoryVisible" title="登录历史"><el-table :data="loginHistory"><el-table-column prop="created_at" label="时间" /><el-table-column prop="client_type" label="客户端" /><el-table-column prop="success" label="结果"><template #default="{row}"><el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag></template></el-table-column><el-table-column prop="failure_reason" label="原因" /></el-table></el-dialog>
 </template>
 
 <script setup>
@@ -190,6 +194,7 @@ import {
   deleteAdminUser,
   getAdminUsers,
   updateAdminUser
+  ,getAdminLoginHistory
 } from '../api';
 import {
   ADMIN_ROLE_OPTIONS,
@@ -201,6 +206,8 @@ import { formatDateTime } from '../utils/format';
 
 const router = useRouter();
 const loading = ref(false);
+const loginHistoryVisible = ref(false); const loginHistory = ref([]);
+const showLoginHistory = async (row) => { loginHistory.value = (await getAdminLoginHistory(row.id)).items || []; loginHistoryVisible.value = true; };
 const saving = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref(null);
@@ -372,6 +379,12 @@ const handleDelete = async (row) => {
   } catch (error) {
     //
   }
+};
+
+const toggleActive = async (row) => {
+  await updateAdminUser(row.id, { is_active: row.is_active === false });
+  ElMessage.success(row.is_active === false ? '账号已启用' : '账号已禁用');
+  fetchData();
 };
 
 onMounted(() => {
