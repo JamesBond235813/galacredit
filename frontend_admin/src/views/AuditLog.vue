@@ -2,8 +2,8 @@
   <div class="admin-page">
     <el-card class="panel-card filter-card">
       <el-form :inline="true" :model="filters">
-        <el-form-item label="搜索">
-          <el-input v-model="filters.keyword" placeholder="姓名 / 手机号 / 订单号 / 备注" clearable @keyup.enter="fetchData" />
+        <el-form-item :label="tr('搜索', 'Search')">
+          <el-input v-model="filters.keyword" :placeholder="tr('姓名 / 手机号 / 订单号 / 备注', 'Name / phone / loan ID / note')" clearable @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="操作者类型">
           <el-select v-model="filters.actorType" style="width: 160px">
@@ -15,9 +15,9 @@
         <el-form-item label="事件类型"><el-input v-model="filters.eventType" placeholder="如 KYC_APPROVE" clearable /></el-form-item>
         <el-form-item label="对象类型"><el-select v-model="filters.objectType" style="width: 130px"><el-option label="全部" value="ALL" /><el-option label="用户" value="USER" /><el-option label="订单" value="LOAN" /></el-select></el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="fetchData">查询</el-button>
-          <el-button @click="resetFilters">重置</el-button>
-          <el-button @click="exportData">导出CSV</el-button>
+          <el-button type="primary" @click="fetchData">{{ tr('查询', 'Search') }}</el-button>
+          <el-button @click="resetFilters">{{ tr('重置', 'Reset') }}</el-button>
+          <el-button @click="exportData">{{ tr('导出CSV', 'Export CSV') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -58,6 +58,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { getAdminAuditLogs, exportAdminAuditLogs } from '../api';
 import { formatDateTime } from '../utils/format';
+import { tr } from '../i18n/adminLocale';
 
 const loading = ref(false);
 const tableData = ref([]);

@@ -39,6 +39,7 @@ from app.services.admin_service import _disburse_loan, notify_admin_stats_change
 from app.services.channel_service import normalize_channel_disbursement_mode
 from app.services.purchase_contract import PARTY_A_LEGAL_PERSON, PARTY_A_NAME, build_contract_payload, generate_contract_no, serialize_purchase_contract
 from app.services.risk_list_service import refresh_user_risk_list_status
+from app.services.risk_decision import record_risk_decision_async
 from app.services.sms_service import sms_service
 
 router = APIRouter()
@@ -265,6 +266,8 @@ async def apply_limit(
         await db.commit()
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
     await refresh_user_risk_list_status(db, db_user)
+    # 第一阶段采用 shadow mode，只沉淀规则命中和特征快照，不改变现有审批结果。
+    await record_risk_decision_async(db, user=db_user, loan=loan, stage="APPLICATION", mode="SHADOW")
 
     if not db_user.application_submitted_at:
         raise HTTPException(status_code=400, detail="请先完成补充资料提交")
@@ -432,6 +435,8 @@ async def withdraw(
         await db.commit()
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
     await refresh_user_risk_list_status(db, db_user)
+    # 下单前再次记录决策，后续可切换为放款前强制策略并支持决策重放。
+    await record_risk_decision_async(db, user=db_user, loan=loan, stage="ORDER", mode="SHADOW")
     source_loan = None
     if req.extension_source_loan_id:
         source_loan = (

@@ -28,7 +28,7 @@
             <strong>后台用户列表</strong>
             <p>按角色分配后台职能，页面权限由角色自动映射。</p>
           </div>
-          <el-tag type="info" effect="plain">共 {{ total }} 个账号</el-tag>
+          <el-tag type="info" effect="plain">{{ tr(`共 ${total} 个账号`, `${total} accounts`) }}</el-tag>
         </div>
       </template>
 
@@ -38,7 +38,7 @@
           <template #default="{ row }">
             <div class="user-name-row">
               <span class="username">{{ row.username }}</span>
-              <el-tag v-if="row.is_current" size="small" type="success" effect="plain">当前登录</el-tag>
+              <el-tag v-if="row.is_current" size="small" type="success" effect="plain">{{ tr('当前登录', 'Current session') }}</el-tag>
             </div>
           </template>
         </el-table-column>
@@ -166,7 +166,7 @@
             <el-empty
               v-if="!selectedPermissionLabels.length"
               :image-size="42"
-              description="请选择角色后自动展示权限"
+              :description="tr('请选择角色后自动展示权限', 'Select roles to preview permissions')"
             />
           </div>
         </el-form-item>
@@ -176,7 +176,7 @@
         <span class="dialog-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="saving" @click="submitForm">
-            {{ editingId ? '保存修改' : '创建账号' }}
+            {{ editingId ? tr('保存修改', 'Save changes') : tr('创建账号', 'Create account') }}
           </el-button>
         </span>
       </template>
@@ -203,6 +203,7 @@ import {
   clearStoredAdminAuth
 } from '../constants/adminPages';
 import { formatDateTime } from '../utils/format';
+import { tr, translateText } from '../i18n/adminLocale';
 
 const router = useRouter();
 const loading = ref(false);
@@ -237,7 +238,7 @@ const mapPermissionLabels = (permissions) => {
   const labels = [];
   ADMIN_PAGE_OPTIONS.forEach((item) => {
     if ((permissions || []).includes(item.key)) {
-      labels.push(item.label);
+      labels.push(translateText(item.label));
     }
   });
   return labels;
@@ -247,7 +248,7 @@ const mapRoleLabels = (roles) => {
   const labels = [];
   ADMIN_ROLE_OPTIONS.forEach((item) => {
     if ((roles || []).includes(item.key)) {
-      labels.push(item.label);
+      labels.push(translateText(item.label));
     }
   });
   return labels;

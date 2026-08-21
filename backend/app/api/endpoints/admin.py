@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
+from app.core.exceptions import BizException
 from app.models.admin import Admin
 from app.models.channel import Channel
 from app.models.ecard_pool import EcardPool
@@ -30,6 +31,9 @@ from app.models.momo_transaction import MomoTransaction
 from app.models.user import User
 from app.models.user_event import UserEvent
 from app.models.ops_history import AdminLoginHistory, ConfigChangeHistory, MessageTemplate
+from app.models.risk_decision import RiskDecision, RiskRuleHit
+from app.models.risk_expansion import RiskManualOverride, RiskDeviceSignal
+from app.services.risk_scoring import record_device_signal
 from app.schemas.admin import (
     AdminLogin,
     AdminTokenResponse,
@@ -1494,6 +1498,117 @@ async def get_monitoring_summary(
     current_admin: Admin = Depends(get_current_admin_async),
 ):
     return await _get_monitoring_summary(db, current_admin)
+
+
+@router.get("/risk-decisions")
+async def get_risk_decisions(
+    user_id: Optional[int] = Query(None, ge=1),
+    loan_id: Optional[int] = Query(None, ge=1),
+    stage: Optional[str] = Query(None),
+    decision: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """查询风控决策、规则命中和可重放特征快照。"""
+    ensure_any_admin_page_permission(current_admin, ("monitoring", "audit-log", "applications", "users"))
+    stmt = select(RiskDecision).order_by(RiskDecision.created_at.desc())
+    count_stmt = select(func.count(RiskDecision.id))
+    filters = []
+    if user_id is not None:
+        filters.append(RiskDecision.user_id == user_id)
+    if loan_id is not None:
+        filters.append(RiskDecision.loan_id == loan_id)
+    if stage:
+        filters.append(RiskDecision.stage == stage.strip().upper())
+    if decision:
+        filters.append(RiskDecision.decision == decision.strip().upper())
+    if filters:
+        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+    total = int((await db.scalar(count_stmt)) or 0)
+    rows = (await db.execute(stmt.offset(skip).limit(limit))).scalars().all()
+    decision_ids = [row.decision_id for row in rows]
+    hit_map = {}
+    if decision_ids:
+        hit_rows = (await db.execute(select(RiskRuleHit).where(RiskRuleHit.decision_id.in_(decision_ids)).order_by(RiskRuleHit.id.asc()))).scalars().all()
+        for item in hit_rows:
+            hit_map.setdefault(item.decision_id, []).append({"rule_code": item.rule_code, "outcome": item.outcome, "severity": item.severity, "detail": item.detail})
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": [
+            {
+                "id": row.id,
+                "decision_id": row.decision_id,
+                "user_id": row.user_id,
+                "loan_id": row.loan_id,
+                "stage": row.stage,
+                "decision": row.decision,
+                "score": float(row.score) if row.score is not None else None,
+                "policy_key": row.policy_key,
+                "policy_version": row.policy_version,
+                "mode": row.mode,
+                "reason_codes": json.loads(row.reason_codes_json or "[]"),
+                "feature_snapshot": json.loads(row.feature_snapshot_json or "{}"),
+                "rule_hits": hit_map.get(row.decision_id, []),
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/risk-decisions/{decision_id}/override")
+async def override_risk_decision(
+    decision_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """登记风控人工覆盖，不直接修改原始决策记录。
+
+    :param decision_id: 决策流水号
+    :param payload: 覆盖动作和原因
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 覆盖记录
+    """
+    ensure_any_admin_page_permission(current_admin, ("monitoring", "applications", "users"))
+    decision = (await db.execute(select(RiskDecision).where(RiskDecision.decision_id == decision_id))).scalar_one_or_none()
+    if decision is None:
+        raise BizException("Risk decision not found", code=404)
+    action = str(payload.get("action") or "").upper()
+    reason = str(payload.get("reason") or "").strip()
+    if action not in {"APPROVE", "REFER", "DECLINE", "BLOCK"} or not reason:
+        raise BizException("Invalid override action or reason", code=400)
+    record = RiskManualOverride(decision_id=decision_id, action=action, reason=reason, operator_id=current_admin.id)
+    db.add(record)
+    await db.flush()
+    return {"id": record.id, "decision_id": decision_id, "action": action, "reason": reason}
+
+
+@router.post("/risk-signals")
+async def ingest_risk_signal(
+    payload: dict,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """接收已脱敏的设备/IP/速度特征，供 shadow 策略和审计使用。
+
+    :param payload: user_id 及特征字段
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 特征记录摘要
+    """
+    ensure_any_admin_page_permission(current_admin, ("monitoring", "users"))
+    user_id = int(payload.get("user_id") or 0)
+    if user_id <= 0:
+        raise BizException("user_id is required", code=400)
+    record = await record_device_signal(db, user_id=user_id, payload=payload)
+    return {"id": record.id, "user_id": record.user_id, "created_at": record.created_at}
 
 
 @router.get("/monitoring/drilldown/{metric}")

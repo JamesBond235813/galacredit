@@ -24,9 +24,10 @@ describe('ops center pages', () => {
     expect(messageCenterSource).toContain('sendAdminReminder');
   });
 
-  it('should keep risk strategy as a reserved placeholder', () => {
-    expect(riskStrategySource).toContain('策略中心预留中');
-    expect(riskStrategySource).toContain('外部三方数据');
+  it('should expose shadow risk decision records and filters', () => {
+    expect(riskStrategySource).toContain('getRiskDecisions');
+    expect(riskStrategySource).toContain('shadow mode');
+    expect(riskStrategySource).toContain('rule_hits');
   });
 
   it('should persist ops content drafts locally for now', () => {
