@@ -79,6 +79,10 @@ export const setAdminLocale = (locale) => {
 export const t = (key) => messages[adminLocale.value]?.[key] || messages['zh-CN'][key] || key;
 
 export const tr = (chineseText, englishText) => adminLocale.value === 'en-GH' ? englishText : chineseText;
+export const translateText = (value) => {
+  if (adminLocale.value !== 'en-GH' || !value) return value;
+  return Object.entries(englishFallback).sort((a, b) => b[0].length - a[0].length).reduce((text, [source, target]) => text.replaceAll(source, target), String(value));
+};
 
 export const getMenuLabel = (key) => t(key);
 
@@ -92,16 +96,10 @@ const englishFallback = {
 export const installEnglishFallback = () => {
   if (typeof document === 'undefined' || window.__galaEnglishFallback) return;
   window.__galaEnglishFallback = true;
-  const translateValue = (value) => {
-    if (adminLocale.value !== 'en-GH' || !value) return value;
-    Object.entries(englishFallback).sort((a, b) => b[0].length - a[0].length).forEach(([source, target]) => { value = value.replaceAll(source, target); });
-    return value;
-  };
+  const translateValue = (value) => translateText(value);
   const translate = (node) => {
     if (adminLocale.value !== 'en-GH' || !node.nodeValue?.trim()) return;
-    let value = translateValue(node.nodeValue);
-    // 最后一道兜底：英文模式下不允许残留中文字符；已知业务词已在词典中优先翻译。
-    value = value.replace(/[\u4e00-\u9fff]+/g, 'Details');
+    const value = translateValue(node.nodeValue);
     if (value !== node.nodeValue) node.nodeValue = value;
   };
   const scan = (root) => {
@@ -118,3 +116,7 @@ export const installEnglishFallback = () => {
   observer.observe(document.body, { childList: true, subtree: true });
   scan(document.body);
 };
+
+// Do not translate isolated Chinese characters: they can be part of a user name,
+// message body or a longer phrase. Page components must use tr() for such labels.
+['单', '次', '人', '天', '至', '当前', '风', '日志'].forEach((key) => delete englishFallback[key]);

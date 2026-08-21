@@ -2,13 +2,13 @@
   <div class="admin-page">
     <el-card class="panel-card filter-card">
       <el-form :inline="true" :model="filters">
-        <el-form-item label="搜索">
-          <el-input v-model="filters.keyword" placeholder="姓名 / 手机号 / 身份证号" clearable @keyup.enter="fetchData" />
+        <el-form-item :label="tr('搜索', 'Search')">
+          <el-input v-model="filters.keyword" :placeholder="tr('姓名 / 手机号 / 身份证号', 'Name / phone / National ID')" clearable @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="fetchData">查询</el-button>
+          <el-button type="primary" @click="fetchData">{{ tr('查询', 'Search') }}</el-button>
           <el-upload :show-file-list="false" :http-request="handleUpload" accept=".xlsx,.xls,.txt,.csv">
-            <el-button>上传名单</el-button>
+            <el-button>{{ tr('上传名单', 'Upload blacklist') }}</el-button>
           </el-upload>
         </el-form-item>
       </el-form>
@@ -16,16 +16,16 @@
 
     <el-card class="panel-card">
       <el-table v-loading="loading" :data="tableData" stripe>
-        <el-table-column prop="name" label="姓名" min-width="140">
+        <el-table-column prop="name" :label="tr('姓名', 'Name')" min-width="140">
           <template #default="{ row }">{{ row.name || '--' }}</template>
         </el-table-column>
-        <el-table-column prop="phone" label="手机号" min-width="180">
+        <el-table-column prop="phone" :label="tr('手机号', 'Phone')" min-width="180">
           <template #default="{ row }">{{ row.phone || '--' }}</template>
         </el-table-column>
-        <el-table-column prop="id_card_num" label="身份证号" min-width="220">
+        <el-table-column prop="id_card_num" :label="tr('身份证号', 'National ID')" min-width="220">
           <template #default="{ row }">{{ row.id_card_num || '--' }}</template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="170">
+        <el-table-column :label="tr('创建时间', 'Created at')" min-width="170">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
       </el-table>
@@ -48,6 +48,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getBlacklist, uploadBlacklist } from '../api';
 import { formatDateTime } from '../utils/format';
+import { tr } from '../i18n/adminLocale';
 
 const loading = ref(false);
 const tableData = ref([]);
@@ -78,7 +79,7 @@ const handleUpload = async ({ file }) => {
   const formData = new FormData();
   formData.append('file', file);
   const result = await uploadBlacklist(formData);
-  ElMessage.success(`导入完成：新增 ${result.created || 0} 条，跳过 ${result.skipped || 0} 条`);
+  ElMessage.success(tr(`导入完成：新增 ${result.created || 0} 条，跳过 ${result.skipped || 0} 条`, `Import completed: ${result.created || 0} added, ${result.skipped || 0} skipped`));
   fetchData();
 };
 

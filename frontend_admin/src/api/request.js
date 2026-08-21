@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { ElMessage } from 'element-plus';
 import { clearStoredAdminAuth } from '../constants/adminPages';
+import { adminLocale, translateText } from '../i18n/adminLocale';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -17,6 +18,7 @@ request.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    config.headers['Accept-Language'] = adminLocale.value;
     return config;
   },
   error => Promise.reject(error)
@@ -36,7 +38,7 @@ request.interceptors.response.use(
         }, 120);
       }
     } else {
-      ElMessage.error(error.response?.data?.detail || '网络异常');
+      ElMessage.error(translateText(error.response?.data?.detail || '网络异常') || 'Network error');
     }
     return Promise.reject(error);
   }
