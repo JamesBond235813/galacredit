@@ -70,6 +70,7 @@ export const setAdminLocale = (locale) => {
   adminLocale.value = locale;
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(STORAGE_KEY, locale);
+    window.dispatchEvent(new CustomEvent('gala-locale-change', { detail: locale }));
   }
 };
 
@@ -84,7 +85,7 @@ export const getPageTitle = (key) => t(key);
 export const getElementLocale = () => adminLocale.value === 'en-GH' ? 'en-US' : 'zh-CN';
 
 const englishFallback = {
-  '搜索':'Search','查询':'Search','重置':'Reset','确认':'Confirm','取消':'Cancel','保存':'Save','编辑':'Edit','删除':'Delete','新增':'Add','操作':'Actions','状态':'Status','全部':'All','启用':'Active','停用':'Inactive','登录系统':'Sign in','账号':'Username','密码':'Password','请输入管理员账号':'Enter admin username','请输入密码':'Enter password','登录成功':'Signed in successfully','客户':'Borrower','用户':'Borrower','订单':'Loan','订单号':'Loan ID','姓名':'Name','手机号':'Phone','身份证号':'National ID','备注':'Note','日期':'Date','更新时间':'Updated','暂无数据':'No data','暂无记录':'No records','加载中':'Loading','详情':'Details','提交':'Submit','下载':'Download','导出':'Export','刷新':'Refresh','开始日期':'Start date','结束日期':'End date','未实名':'Unverified','黑名单':'Blacklisted','首购':'First loan','已结清':'Settled','部分支付':'Partially paid','待支付':'Pending payment','逾期':'Overdue','到期':'Due','今日':'Today','明日':'Tomorrow','类型':'Type','金额':'Amount','总额':'Total','余额':'Balance','成功':'Success','失败':'Failed','跟进处理':'Follow up','一键拉黑':'Blacklist','重新放款':'Retry disbursement'};
+  '搜索':'Search','查询':'Search','重置':'Reset','确认':'Confirm','取消':'Cancel','保存':'Save','编辑':'Edit','删除':'Delete','新增':'Add','操作':'Actions','状态':'Status','全部':'All','启用':'Active','停用':'Inactive','登录系统':'Sign in','账号':'Username','密码':'Password','请输入管理员账号':'Enter admin username','请输入密码':'Enter password','登录成功':'Signed in successfully','客户':'Borrower','用户':'Borrower','订单':'Loan','订单号':'Loan ID','姓名':'Name','手机号':'Phone','身份证号':'National ID','备注':'Note','日期':'Date','更新时间':'Updated','暂无数据':'No data','暂无记录':'No records','加载中':'Loading','详情':'Details','提交':'Submit','下载':'Download','导出':'Export','刷新':'Refresh','开始日期':'Start date','结束日期':'End date','未实名':'Unverified','黑名单':'Blacklisted','首购':'First loan','已结清':'Settled','部分支付':'Partially paid','待支付':'Pending payment','逾期':'Overdue','到期':'Due','今日':'Today','明日':'Tomorrow','类型':'Type','金额':'Amount','总额':'Total','余额':'Balance','成功':'Success','失败':'Failed','跟进处理':'Follow up','一键拉黑':'Blacklist','重新放款':'Retry disbursement','模板总数':'Total templates','预设提醒模板数量':'Preset reminder templates','启用模板':'Active templates','当前可直接使用的模板':'Templates ready to use','历史触达':'Historical sends','已记录的提醒/催收动作':'Recorded reminder and collection actions','待提醒订单':'Loans to remind','今天先补足的触达队列':'Queue requiring attention today','提醒队列':'Reminder queue','模板库':'Template library','服务端模板版本':'Server template versions','新建模板版本':'New template version','模板标识':'Template key','版本':'Version','标题':'Title','内容':'Content','发送时间':'Sent at','消息模板版本':'Message template version','保存新版本':'Save new version','编辑新版本':'Edit version','发送提醒':'Send reminder','模板版本已保存':'Template version saved','模板状态已更新':'Template status updated','提醒已发送':'Reminder sent','预设提醒模板数量':'Preset reminder templates','Due日提醒':'Due date reminder','Overdue第一大提醒':'First overdue reminder','Overdue第二大提醒':'Second overdue reminder','您的还款今天Due，请尽快完成还款。':'Your repayment is due today. Please complete it as soon as possible.','您的账单已Overdue 1天，请尽快处理。':'Your loan is 1 day overdue. Please take action.','您的账单已Overdue 3天，请及时联系催收。':'Your loan is 3 days overdue. Please contact collections promptly.','基于当前到期和逾期订单生成可发送队列，发送动作会回写到现有业务事件里。':'A sendable queue based on due and overdue loans. Sends are recorded in business events.','当前先提供预设模板，后续接短信供应商与文案版本库时可直接切换为服务端配置。':'Preset templates are shown here and can later be switched to provider-managed versions.'};
 
 export const installEnglishFallback = () => {
   if (typeof document === 'undefined' || window.__galaEnglishFallback) return;
@@ -99,6 +100,7 @@ export const installEnglishFallback = () => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node; while ((node = walker.nextNode())) translate(node);
   };
+  window.addEventListener('gala-locale-change', () => scan(document.body));
   const observer = new MutationObserver((mutations) => mutations.forEach(({ addedNodes }) => addedNodes.forEach((node) => node.nodeType === Node.TEXT_NODE ? translate(node) : scan(node))));
   observer.observe(document.body, { childList: true, subtree: true });
   scan(document.body);
