@@ -26,8 +26,12 @@ describe('ops center pages', () => {
 
   it('should expose shadow risk decision records and filters', () => {
     expect(riskStrategySource).toContain('getRiskDecisions');
+    expect(riskStrategySource).toContain('getRiskPolicies');
+    expect(riskStrategySource).toContain('getRiskPolicyHistory');
+    expect(riskStrategySource).toContain('activateRiskPolicy');
     expect(riskStrategySource).toContain('shadow mode');
     expect(riskStrategySource).toContain('rule_hits');
+    expect(riskStrategySource).toContain('版本记录');
   });
 
   it('should persist ops content drafts locally for now', () => {

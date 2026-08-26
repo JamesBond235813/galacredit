@@ -25,6 +25,7 @@ class RiskDeviceSignal(Base):
 
     id = Column(Integer, primary_key=True, comment="特征记录ID")
     user_id = Column(Integer, nullable=False, index=True, comment="用户ID")
+    consent_granted = Column(Integer, nullable=False, default=0, comment="是否完成敏感信息授权")
     device_fingerprint = Column(String(128), nullable=True, index=True, comment="设备指纹")
     ip_address = Column(String(64), nullable=True, index=True, comment="IP地址")
     asn = Column(String(64), nullable=True, comment="网络ASN")
@@ -32,6 +33,13 @@ class RiskDeviceSignal(Base):
     is_emulator = Column(Integer, nullable=False, default=0, comment="是否模拟器")
     application_count_24h = Column(Integer, nullable=False, default=0, comment="24小时申请次数")
     account_count_24h = Column(Integer, nullable=False, default=0, comment="24小时关联账户数")
+    collected_channel = Column(String(30), nullable=False, default="H5", comment="采集来源")
+    risk_level = Column(String(20), nullable=False, default="INFO", comment="风险等级")
+    keyword_hits_json = Column(Text, nullable=False, comment="关键词命中JSON")
+    sms_summary_json = Column(Text, nullable=False, comment="短信摘要JSON")
+    app_summary_json = Column(Text, nullable=False, comment="应用列表摘要JSON")
+    device_summary_json = Column(Text, nullable=False, comment="设备信息摘要JSON")
+    risk_flags_json = Column(Text, nullable=False, comment="风险标记JSON")
     payload_json = Column(Text, nullable=False, comment="原始特征JSON")
     created_at = Column(DateTime, nullable=False, default=datetime.now, index=True, comment="采集时间")
 

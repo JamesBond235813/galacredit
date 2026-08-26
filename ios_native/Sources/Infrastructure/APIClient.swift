@@ -41,6 +41,40 @@ final class APIClient: @unchecked Sendable {
         return try await request(path: "/admin/login", method: "POST", body: payload, token: nil)
     }
 
+    /// 创建滑块验证码挑战。
+    /// :param phone: 加纳手机号（含国家码）
+    /// :param width: 客户端可用宽度
+    /// :return: 验证码挑战信息
+    func createSliderCaptcha(phone: String, width: Int) async throws -> JSONMap {
+        try await post(path: "/auth/slider-captcha/create", body: ["phone": .string(phone), "width": .number(Double(width))], token: nil)
+    }
+
+    /// 校验滑块并取得一次性发送票据。
+    /// :param phone: 加纳手机号
+    /// :param captchaID: 挑战标识
+    /// :param offsetX: 滑块横向偏移
+    /// :param elapsedMs: 拖动耗时
+    /// :return: captcha_ticket
+    func verifySliderCaptcha(phone: String, captchaID: String, offsetX: Double, elapsedMs: Int) async throws -> JSONMap {
+        try await post(path: "/auth/slider-captcha/verify", body: ["phone": .string(phone), "captcha_id": .string(captchaID), "offset_x": .number(offsetX), "elapsed_ms": .number(Double(elapsedMs))], token: nil)
+    }
+
+    /// 发送短信验证码。
+    /// :param phone: 加纳手机号
+    /// :param captchaTicket: 已通过滑块验证的票据
+    /// :return: 发送结果
+    func sendCode(phone: String, captchaTicket: String) async throws -> JSONMap {
+        try await post(path: "/auth/send-code", body: ["phone": .string(phone), "captcha_ticket": .string(captchaTicket)], token: nil)
+    }
+
+    /// 使用短信验证码登录用户端。
+    /// :param phone: 加纳手机号
+    /// :param smsCode: 六位短信验证码
+    /// :return: token 信息
+    func smsLogin(phone: String, smsCode: String) async throws -> JSONMap {
+        try await post(path: "/auth/sms-login", body: ["phone": .string(phone), "sms_code": .string(smsCode)], token: nil)
+    }
+
     /// 发起 GET 请求。
     ///
     /// :param path: 接口路径
@@ -109,6 +143,7 @@ final class APIClient: @unchecked Sendable {
         request.httpMethod = method
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("galacredit-ios", forHTTPHeaderField: "client-id")
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }

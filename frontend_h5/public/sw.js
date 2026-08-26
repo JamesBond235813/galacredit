@@ -1,4 +1,4 @@
-const CACHE_NAME = 'galacredit-shell-v1';
+const CACHE_NAME = 'galacredit-shell-v2';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (event) => {

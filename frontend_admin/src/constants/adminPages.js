@@ -12,7 +12,7 @@ export const ADMIN_PAGE_OPTIONS = [
   { key: 'financials', label: '财务平账', route: '/financials', iconKey: 'financials' },
   { key: 'audit-log', label: '操作审计', route: '/audit-log', iconKey: 'auditLog' },
   { key: 'risk-single-query', label: '风控报告单查', route: '/risk-single-query', iconKey: 'riskSingleQuery' },
-  { key: 'risk-strategy', label: '风控策略预留', route: '/risk-strategy', iconKey: 'riskStrategy' },
+  { key: 'risk-strategy', label: '风控策略', route: '/risk-strategy', iconKey: 'riskStrategy' },
   { key: 'blacklist', label: '黑名单', route: '/blacklist', iconKey: 'users' },
   { key: 'overdue-config', label: '逾期配置', route: '/overdue-config', iconKey: 'overdueConfig' },
   { key: 'content-config', label: '运营配置', route: '/content-config', iconKey: 'contentConfig' },

@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
-PLATFORM="${ANDROID_PLATFORM:-android-34}"
+PLATFORM="${ANDROID_PLATFORM:-android-36}"
 BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-35.0.0}"
-APP_ID="com.juxin.xiaohebao.admin"
+APP_ID="com.galacredit.app"
 
 AAPT2="$SDK_DIR/build-tools/$BUILD_TOOLS/aapt2"
 D8="$SDK_DIR/build-tools/$BUILD_TOOLS/d8"
@@ -19,38 +19,24 @@ RES_FLAT_DIR="$BUILD_DIR/res-flat"
 CLASSES_DIR="$BUILD_DIR/classes"
 DEX_DIR="$BUILD_DIR/dex"
 CLASSES_JAR="$BUILD_DIR/classes.jar"
-UNSIGNED_APK="$BUILD_DIR/xiaohebao-unsigned.apk"
-ALIGNED_APK="$BUILD_DIR/xiaohebao-aligned.apk"
-SIGNED_APK="$BUILD_DIR/xiaohebao-$BUILD_TYPE.apk"
+UNSIGNED_APK="$BUILD_DIR/galacredit-unsigned.apk"
+ALIGNED_APK="$BUILD_DIR/galacredit-aligned.apk"
+SIGNED_APK="$BUILD_DIR/galacredit-$BUILD_TYPE.apk"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$RES_FLAT_DIR" "$CLASSES_DIR" "$DEX_DIR"
 
 if [ "$BUILD_TYPE" = "release" ]; then
-  : "${XHB_NATIVE_API_BASE:?请设置 XHB_NATIVE_API_BASE，例如 https://xhbadmin.juxin.pro/api}"
-  : "${XHB_NATIVE_ASSET_BASE:?请设置 XHB_NATIVE_ASSET_BASE，例如 https://xhbadmin.juxin.pro}"
+  : "${GALA_NATIVE_API_BASE:?请设置 GALA_NATIVE_API_BASE，例如 https://galacredit.ebamotor.com/api}"
+  : "${GALA_NATIVE_ASSET_BASE:?请设置 GALA_NATIVE_ASSET_BASE，例如 https://galacredit.ebamotor.com}"
 else
-  XHB_NATIVE_API_BASE="${XHB_NATIVE_API_BASE:-http://10.0.2.2:8001/api}"
-  XHB_NATIVE_ASSET_BASE="${XHB_NATIVE_ASSET_BASE:-http://10.0.2.2:8001}"
+  GALA_NATIVE_API_BASE="${GALA_NATIVE_API_BASE:-https://galacredit.ebamotor.com/api}"
+  GALA_NATIVE_ASSET_BASE="${GALA_NATIVE_ASSET_BASE:-https://galacredit.ebamotor.com}"
 fi
 
 java_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
-
-CONFIG_DIR="$BUILD_DIR/generated/com/juxin/xiaohebao/admin"
-mkdir -p "$CONFIG_DIR"
-cat > "$CONFIG_DIR/AppConfig.java" <<EOF
-package com.juxin.xiaohebao.admin;
-
-final class AppConfig {
-    static final String API_BASE = "$(java_escape "$XHB_NATIVE_API_BASE")";
-    static final String ASSET_BASE = "$(java_escape "$XHB_NATIVE_ASSET_BASE")";
-
-    private AppConfig() {
-    }
-}
-EOF
 
 "$AAPT2" compile --dir "$ROOT_DIR/app/src/main/res" -o "$RES_FLAT_DIR"
 "$AAPT2" link \
@@ -61,7 +47,7 @@ EOF
   -o "$UNSIGNED_APK" \
   "$RES_FLAT_DIR"/*.flat
 
-find "$ROOT_DIR/app/src/main/java" "$BUILD_DIR/generated" -name '*.java' -exec printf '"%s"\n' {} \; > "$BUILD_DIR/sources.txt"
+find "$ROOT_DIR/app/src/main/java/com/galacredit/app" -name '*.java' -exec printf '"%s"\n' {} \; > "$BUILD_DIR/sources.txt"
 javac -encoding UTF-8 -source 1.8 -target 1.8 \
   -classpath "$ANDROID_JAR" \
   -d "$CLASSES_DIR" \
@@ -76,14 +62,14 @@ cd "$ROOT_DIR"
 "$ZIPALIGN" -f 4 "$UNSIGNED_APK" "$ALIGNED_APK"
 
 if [ "$BUILD_TYPE" = "release" ]; then
-  : "${XHB_RELEASE_KEYSTORE:?请设置 XHB_RELEASE_KEYSTORE}"
-  : "${XHB_RELEASE_STORE_PASS:?请设置 XHB_RELEASE_STORE_PASS}"
-  : "${XHB_RELEASE_KEY_ALIAS:?请设置 XHB_RELEASE_KEY_ALIAS}"
-  : "${XHB_RELEASE_KEY_PASS:?请设置 XHB_RELEASE_KEY_PASS}"
-  KEYSTORE="$XHB_RELEASE_KEYSTORE"
-  STORE_PASS="$XHB_RELEASE_STORE_PASS"
-  KEY_ALIAS="$XHB_RELEASE_KEY_ALIAS"
-  KEY_PASS="$XHB_RELEASE_KEY_PASS"
+  : "${GALA_RELEASE_KEYSTORE:?请设置 GALA_RELEASE_KEYSTORE}"
+  : "${GALA_RELEASE_STORE_PASS:?请设置 GALA_RELEASE_STORE_PASS}"
+  : "${GALA_RELEASE_KEY_ALIAS:?请设置 GALA_RELEASE_KEY_ALIAS}"
+  : "${GALA_RELEASE_KEY_PASS:?请设置 GALA_RELEASE_KEY_PASS}"
+  KEYSTORE="$GALA_RELEASE_KEYSTORE"
+  STORE_PASS="$GALA_RELEASE_STORE_PASS"
+  KEY_ALIAS="$GALA_RELEASE_KEY_ALIAS"
+  KEY_PASS="$GALA_RELEASE_KEY_PASS"
 else
   KEYSTORE="$BUILD_DIR/debug.keystore"
   STORE_PASS="android"
@@ -98,7 +84,7 @@ else
       -keyalg RSA \
       -keysize 2048 \
       -validity 10000 \
-      -dname "CN=Android Debug,O=Xiaohebao,C=CN" >/dev/null 2>&1
+      -dname "CN=Android Debug,O=GalaCredit,C=GH" >/dev/null 2>&1
   fi
 fi
 

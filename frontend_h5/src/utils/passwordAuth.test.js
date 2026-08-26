@@ -9,11 +9,13 @@ describe('passwordAuth utils', () => {
 
   it('should validate 9-digit Ghana local phone only', () => {
     expect(isValidPhone('240000001')).toBe(true);
+    expect(isValidPhone('1234567')).toBe(true);
     expect(isValidPhone('24000001')).toBe(false);
   });
 
   it('should add the Ghana country code for API requests', () => {
     expect(toGhanaPhone('240000001')).toBe('233240000001');
+    expect(toGhanaPhone('1234567')).toBe('233001234567');
     expect(toGhanaPhone('24000001')).toBe('');
   });
 

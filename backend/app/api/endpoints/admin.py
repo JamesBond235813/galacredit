@@ -1,3 +1,4 @@
+import json
 import asyncio
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -31,8 +32,18 @@ from app.models.momo_transaction import MomoTransaction
 from app.models.user import User
 from app.models.user_event import UserEvent
 from app.models.ops_history import AdminLoginHistory, ConfigChangeHistory, MessageTemplate
-from app.models.risk_decision import RiskDecision, RiskRuleHit
+from app.models.risk_decision import RiskDecision, RiskRuleHit, RiskPolicyVersion
 from app.models.risk_expansion import RiskManualOverride, RiskDeviceSignal
+from app.services.risk_policy import (
+    activate_risk_policy_version,
+    copy_risk_policy_version,
+    create_risk_policy_version,
+    disable_risk_policy_version,
+    list_risk_policy_versions,
+    normalize_risk_policy_config,
+    serialize_risk_policy_version,
+    update_risk_policy_version,
+)
 from app.services.risk_scoring import record_device_signal
 from app.schemas.admin import (
     AdminLogin,
@@ -97,6 +108,10 @@ from app.schemas.risk import (
     CompositeRiskReportResponse,
     PaginatedRiskSingleReportHistoryResponse,
     RiskReportResponse,
+    RiskPolicyVersionCreateRequest,
+    RiskPolicyVersionItemResponse,
+    RiskPolicyVersionListResponse,
+    RiskPolicyVersionUpdateRequest,
 )
 from app.schemas.user import PaginatedUserResponse, UserDetailResponse
 from app.services.audit import log_user_event_async
@@ -1559,6 +1574,230 @@ async def get_risk_decisions(
             for row in rows
         ],
     }
+
+
+@router.get("/risk-signals")
+async def get_risk_signals(
+    user_id: Optional[int] = Query(None, ge=1),
+    risk_level: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """查询设备敏感信息授权与风控信号摘要。
+
+    :param user_id: 用户ID
+    :param risk_level: 风险等级
+    :param skip: 跳过条数
+    :param limit: 返回条数
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 设备风险信号分页结果
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy", "monitoring", "users"))
+    stmt = select(RiskDeviceSignal).order_by(RiskDeviceSignal.created_at.desc())
+    count_stmt = select(func.count(RiskDeviceSignal.id))
+    filters = []
+    if user_id is not None:
+        filters.append(RiskDeviceSignal.user_id == user_id)
+    if isinstance(risk_level, str) and risk_level.strip():
+        filters.append(RiskDeviceSignal.risk_level == risk_level.strip().upper())
+    if filters:
+        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+    total = int((await db.scalar(count_stmt)) or 0)
+    rows = (await db.execute(stmt.offset(skip).limit(limit))).scalars().all()
+    items = []
+    for row in rows:
+        try:
+            keyword_hits = json.loads(row.keyword_hits_json or "{}")
+        except Exception:
+            keyword_hits = {}
+        try:
+            sms_summary = json.loads(row.sms_summary_json or "[]")
+        except Exception:
+            sms_summary = []
+        try:
+            app_summary = json.loads(row.app_summary_json or "[]")
+        except Exception:
+            app_summary = []
+        try:
+            device_summary = json.loads(row.device_summary_json or "{}")
+        except Exception:
+            device_summary = {}
+        try:
+            risk_flags = json.loads(row.risk_flags_json or "{}").get("risk_flags", [])
+        except Exception:
+            risk_flags = []
+        items.append(
+            {
+                "id": row.id,
+                "user_id": row.user_id,
+                "consent_granted": bool(row.consent_granted),
+                "device_fingerprint": row.device_fingerprint,
+                "risk_level": row.risk_level,
+                "keyword_hits": keyword_hits,
+                "sms_summary": sms_summary,
+                "app_summary": app_summary,
+                "device_summary": device_summary,
+                "risk_flags": risk_flags,
+                "payload_json": json.loads(row.payload_json or "{}"),
+                "created_at": row.created_at,
+            }
+        )
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
+
+
+@router.get("/risk-policies", response_model=RiskPolicyVersionListResponse)
+async def get_risk_policies(
+    policy_key: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """查询风控策略版本列表。
+
+    :param policy_key: 策略标识
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 策略版本列表
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    rows = await list_risk_policy_versions(db, policy_key=policy_key or None)
+    return {"total": len(rows), "items": [serialize_risk_policy_version(row) for row in rows]}
+
+
+@router.get("/risk-policies/{policy_key}/history", response_model=RiskPolicyVersionListResponse)
+async def get_risk_policy_history(
+    policy_key: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """查询指定策略的版本历史。
+
+    :param policy_key: 策略标识
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 策略版本历史
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    rows = await list_risk_policy_versions(db, policy_key=policy_key)
+    return {"total": len(rows), "items": [serialize_risk_policy_version(row) for row in rows]}
+
+
+@router.post("/risk-policies")
+async def create_risk_policy(
+    payload: RiskPolicyVersionCreateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """创建新的风控策略版本。
+
+    :param payload: 创建请求
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 新策略版本
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    row = await create_risk_policy_version(
+        db,
+        policy_key=payload.policy_key,
+        config_json=payload.config_json,
+        status=payload.status,
+        rollout_percent=payload.rollout_percent,
+        created_by=current_admin.username,
+    )
+    await db.commit()
+    await db.refresh(row)
+    return serialize_risk_policy_version(row)
+
+
+@router.patch("/risk-policies/{version_id}")
+async def update_risk_policy(
+    version_id: int,
+    payload: RiskPolicyVersionUpdateRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """更新指定风控策略版本。
+
+    :param version_id: 策略版本ID
+    :param payload: 更新请求
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 更新后的策略版本
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    row = await update_risk_policy_version(
+        db,
+        version_id=version_id,
+        config_json=payload.config_json,
+        status=payload.status,
+        rollout_percent=payload.rollout_percent,
+    )
+    await db.commit()
+    await db.refresh(row)
+    return serialize_risk_policy_version(row)
+
+
+@router.post("/risk-policies/{version_id}/copy")
+async def copy_risk_policy(
+    version_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """复制指定风控策略版本。
+
+    :param version_id: 被复制的策略版本ID
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 新策略版本
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    row = await copy_risk_policy_version(db, version_id=version_id, created_by=current_admin.username)
+    await db.commit()
+    await db.refresh(row)
+    return serialize_risk_policy_version(row)
+
+
+@router.post("/risk-policies/{version_id}/activate")
+async def activate_risk_policy(
+    version_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """激活指定风控策略版本。
+
+    :param version_id: 策略版本ID
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 激活后的策略版本
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    row = await activate_risk_policy_version(db, version_id=version_id)
+    await db.commit()
+    await db.refresh(row)
+    return serialize_risk_policy_version(row)
+
+
+@router.post("/risk-policies/{version_id}/disable")
+async def disable_risk_policy(
+    version_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: Admin = Depends(get_current_admin_async),
+):
+    """停用指定风控策略版本。
+
+    :param version_id: 策略版本ID
+    :param db: 异步数据库会话
+    :param current_admin: 当前管理员
+    :return: 停用后的策略版本
+    """
+    ensure_any_admin_page_permission(current_admin, ("risk-strategy",))
+    row = await disable_risk_policy_version(db, version_id=version_id)
+    await db.commit()
+    await db.refresh(row)
+    return serialize_risk_policy_version(row)
 
 
 @router.post("/risk-decisions/{decision_id}/override")

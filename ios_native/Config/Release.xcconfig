@@ -1,2 +1,2 @@
-XHB_API_BASE = https:/$()/xhbadmin.juxin.pro/api
-XHB_APP_FLAVOR = prod
+GALA_API_BASE = https:/$()/galacredit.ebamotor.com/api
+GALA_APP_FLAVOR = prod

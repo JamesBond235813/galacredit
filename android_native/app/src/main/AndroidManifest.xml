@@ -1,7 +1,8 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.juxin.xiaohebao.admin" android:versionCode="24" android:versionName="0.1.23">
-  <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="34" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.galacredit.app" android:versionCode="26" android:versionName="0.3.0">
+  <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="35" />
   <uses-permission android:name="android.permission.INTERNET" />
-  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
   <application
     android:allowBackup="false"
@@ -9,11 +10,6 @@
     android:label="GalaCredit"
     android:theme="@style/AppTheme"
     android:usesCleartextTraffic="false">
-    <provider
-      android:name=".ApkInstallProvider"
-      android:authorities="com.juxin.xiaohebao.admin.apkprovider"
-      android:exported="false"
-      android:grantUriPermissions="true" />
     <activity
       android:name=".MainActivity"
       android:exported="true"
@@ -24,5 +20,9 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+    <activity
+      android:name=".NativeWebViewActivity"
+      android:exported="false"
+      android:screenOrientation="portrait" />
   </application>
 </manifest>

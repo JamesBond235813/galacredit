@@ -1,12 +1,12 @@
-name: XiaoHeBaoIOS
+name: GalaCreditIOS
 options:
-  bundleIdPrefix: com.juxin
+  bundleIdPrefix: com.galacredit
 settings:
   base:
     SWIFT_VERSION: 5.10
     IPHONEOS_DEPLOYMENT_TARGET: 18.0
     TARGETED_DEVICE_FAMILY: 1
-    PRODUCT_NAME: XiaoHeBaoIOS
+    PRODUCT_NAME: GalaCreditIOS
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
 configs:
@@ -16,7 +16,7 @@ configFiles:
   Debug: Config/Debug.xcconfig
   Release: Config/Release.xcconfig
 targets:
-  XiaoHeBaoIOS:
+  GalaCreditIOS:
     type: application
     platform: iOS
     sources:
@@ -26,30 +26,31 @@ targets:
       - path: Resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.juxin.xiaohebao.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.galacredit.ios
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: GalaCredit
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.business
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_XHBApiBase: $(XHB_API_BASE)
-        INFOPLIST_KEY_XHBAppFlavor: $(XHB_APP_FLAVOR)
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: GalaCredit uses your location for identity and risk review.
+        INFOPLIST_KEY_GalaApiBase: $(GALA_API_BASE)
+        INFOPLIST_KEY_GalaAppFlavor: $(GALA_APP_FLAVOR)
     scheme:
       testTargets:
-        - XiaoHeBaoIOSTests
-  XiaoHeBaoIOSTests:
+        - GalaCreditIOSTests
+  GalaCreditIOSTests:
     type: bundle.unit-test
     platform: iOS
-    hostApplication: XiaoHeBaoIOS
+    hostApplication: GalaCreditIOS
     sources:
       - path: Tests
     settings:
       base:
-        PRODUCT_NAME: XiaoHeBaoIOSTests
-        PRODUCT_MODULE_NAME: XiaoHeBaoIOSTests
-        PRODUCT_BUNDLE_IDENTIFIER: com.juxin.xiaohebao.ios.tests
+        PRODUCT_NAME: GalaCreditIOSTests
+        PRODUCT_MODULE_NAME: GalaCreditIOSTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.galacredit.ios.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
     dependencies:
-      - target: XiaoHeBaoIOS
+      - target: GalaCreditIOS

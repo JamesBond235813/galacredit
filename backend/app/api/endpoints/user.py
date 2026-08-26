@@ -1,3 +1,4 @@
+import json
 import asyncio
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -11,6 +12,7 @@ from app.api.deps import get_current_user_async
 from app.api.req_util import resolve_client_ip
 from app.core.config import settings
 from app.core.database import get_async_db
+from app.core.exceptions import BizException
 from app.core.security import create_access_token, create_refresh_token, get_password_hash, verify_password
 from app.models.oauth_client import OAuthClient
 from app.models.oauth_token import OAuthToken
@@ -43,7 +45,9 @@ from app.services.admin_service import notify_admin_stats_changed
 from app.services.loan_assignment import assign_review_admin_if_needed_async
 from app.services.phone_binding import build_released_phone, close_active_phone_bindings, record_phone_binding
 from app.services.risk_list_service import refresh_user_risk_list_status
+from app.services.risk_scoring import record_device_signal
 from app.services.upload_storage import build_upload_url, save_user_image
+from app.schemas.user import RiskDeviceConsentRequest, RiskDeviceConsentResponse
 
 router = APIRouter()
 
@@ -231,6 +235,61 @@ async def change_password(
     current_user.password_hash = get_password_hash(req.new_password)
     await db.commit()
     return {"msg": "密码修改成功"}
+
+
+@router.post("/risk-signals", response_model=RiskDeviceConsentResponse)
+async def capture_risk_signals(
+    req: RiskDeviceConsentRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """记录用户对敏感信息采集的授权及设备风险信号。
+
+    :param req: 授权与设备采集请求
+    :param current_user: 当前登录用户
+    :param db: 异步数据库会话
+    :return: 风险信号记录摘要
+    """
+    if req.phone != current_user.phone:
+        raise BizException("Phone mismatch", code=400)
+    if not req.accepted_user_agreement or not req.accepted_personal_authorization:
+        raise BizException("User agreement and personal authorization are required", code=400)
+    payload = dict(req.device_payload.model_dump())
+    payload.update(
+        {
+            "phone": current_user.phone,
+            "consent_granted": bool(req.accepted_sensitive_collection),
+            # 风险信号记录必须绑定服务端看到的来源 IP，客户端不可自行上报该字段。
+            "ip_address": resolve_client_ip(request, default_ip="unknown"),
+        }
+    )
+    signal = await record_device_signal(db, user_id=current_user.id, payload=payload)
+    await log_user_event_async(
+        db,
+        user=current_user,
+        event_type="DEVICE_SIGNAL_CONSENT",
+        title="敏感信息采集授权",
+        detail={
+            "consent_granted": bool(req.accepted_sensitive_collection),
+            "consent_version": req.device_payload.consent_version,
+            "source": req.device_payload.source or "H5",
+            "native_bridge": req.device_payload.native_bridge or "",
+            "sms_count": len(req.device_payload.sms_messages or []),
+            "app_count": len(req.device_payload.installed_apps or []),
+            "device_fingerprint": signal.device_fingerprint,
+        },
+    )
+    await db.commit()
+    return {
+        "consent_id": signal.id,
+        "signal_id": signal.id,
+        "device_fingerprint": signal.device_fingerprint,
+        "risk_level": signal.risk_level,
+        "keyword_hits": json.loads(signal.keyword_hits_json or "{}"),
+        "risk_flags": json.loads(signal.risk_flags_json or "{}").get("risk_flags", []),
+        "message": "Device risk signals captured",
+    }
 
 
 @router.post("/channel-bind", response_model=ChannelBindResponse)

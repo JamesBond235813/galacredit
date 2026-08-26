@@ -66,3 +66,37 @@ class PaginatedRiskSingleReportHistoryResponse(BaseModel):
     page: int
     size: int
     items: List[RiskSingleReportHistoryItem]
+
+
+class RiskPolicyVersionItemResponse(BaseModel):
+    id: int
+    policy_key: str
+    version_no: int
+    status: str
+    rollout_percent: int
+    config_json: dict[str, Any]
+    config_summary: dict[str, Any]
+    created_by: Optional[str] = None
+    created_at: datetime
+    is_active: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class RiskPolicyVersionListResponse(BaseModel):
+    total: int
+    items: List[RiskPolicyVersionItemResponse]
+
+
+class RiskPolicyVersionCreateRequest(BaseModel):
+    policy_key: str = Field(default="GHANA_CASH_LOAN_BASELINE", max_length=80)
+    status: str = Field(default="DRAFT", pattern=r"^(DRAFT|SHADOW|ACTIVE|DISABLED)$")
+    rollout_percent: int = Field(default=0, ge=0, le=100)
+    config_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class RiskPolicyVersionUpdateRequest(BaseModel):
+    status: str = Field(..., pattern=r"^(DRAFT|SHADOW|ACTIVE|DISABLED)$")
+    rollout_percent: int = Field(default=0, ge=0, le=100)
+    config_json: dict[str, Any] = Field(default_factory=dict)

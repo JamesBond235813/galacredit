@@ -61,7 +61,7 @@ const showInstallButton = ref(window.isSecureContext && !window.matchMedia('(dis
 
 const installGalaCredit = async () => {
   if (!installPrompt.value) {
-    showToast('请打开浏览器菜单，选择“添加到主屏幕”或“安装应用”。首次使用前请先信任 HTTPS 证书。');
+    showToast('Open the browser menu and choose Add to Home Screen or Install app. Trust the HTTPS certificate before first use.');
     return;
   }
   installPrompt.value.prompt();
@@ -117,7 +117,7 @@ const startLocationAuthorization = async () => {
   } catch (error) {
     locationBlocked.value = true;
     locationBlockMessage.value = getLocationErrorMessage(error);
-    // 浏览器拒绝后不会再次弹授权框，记录本次结果，避免路由重挂载形成授权死循环。
+    // Record the result so the browser does not keep reopening the permission flow on remount.
     sessionStorage.setItem('h5_location_attempted', '1');
     showToast(locationBlockMessage.value);
   } finally {

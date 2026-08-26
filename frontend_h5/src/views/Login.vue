@@ -1,16 +1,18 @@
 <template>
   <div class="login-container" ref="loginContainerRef">
     <div class="login-stage" ref="loginStageRef">
-      <div class="logo-box brand-header">
-        <img src="../assets/logo.svg" class="brand-logo" alt="GalaCredit logo" />
+      <header class="brand-header">
+        <div class="brand-mark">
+          <img src="../assets/logo.svg" class="brand-logo" alt="GalaCredit logo" />
+        </div>
         <div class="brand-copy">
           <h1 class="brand-title">GalaCredit</h1>
           <p class="brand-slogan">Credit when it matters</p>
         </div>
-      </div>
+      </header>
 
       <section class="login-main">
-        <van-form @submit="onSubmit" class="login-form">
+        <van-form class="login-form" @submit="onSubmit">
           <van-cell-group inset class="login-fields">
             <div class="phone-field-wrapper">
               <div class="phone-zero-placeholder" aria-hidden="true">
@@ -40,6 +42,7 @@
                 </template>
               </van-field>
             </div>
+
             <van-field
               v-model="smsCode"
               name="smsCode"
@@ -63,6 +66,22 @@
               </template>
             </van-field>
           </van-cell-group>
+
+          <section class="agreement-panel">
+            <van-checkbox v-model="consentAccepted" icon-size="16px" class="agreement-check">
+              <span class="consent-text">
+                I agree to GalaCredit's
+                <a href="/agreement" @click.prevent="openLegalPage('/agreement')">User Agreement</a>,
+                <a href="/personal-info-authorization" @click.prevent="openLegalPage('/personal-info-authorization')">Privacy Policy</a>
+                and
+                <a href="/personal-info-authorization" @click.prevent="openLegalPage('/personal-info-authorization')">Personal Data Authorization</a>.
+              </span>
+            </van-checkbox>
+            <p class="agreement-note">
+              Sensitive device permissions are requested only when needed for risk review.
+            </p>
+          </section>
+
           <div class="submit-wrap">
             <van-button round block type="primary" native-type="submit" :loading="loading" class="submit-btn">
               Sign In
@@ -70,13 +89,25 @@
           </div>
         </van-form>
       </section>
-
     </div>
 
-    <div v-if="captchaVisible" class="captcha-layer" @click.self="captchaVisible = false">
-      <div class="captcha-popup">
+    <div v-if="policyVisible" class="popup-layer" @click.self="closePolicyDialog">
+      <div class="popup-card policy-popup">
+        <div class="popup-title">{{ policyTitle }}</div>
+        <div v-if="policyLoading" class="policy-loading">Loading...</div>
+        <div v-else class="policy-content">
+          <p v-for="(item, index) in policyParagraphs" :key="index">{{ item }}</p>
+        </div>
+        <div class="captcha-actions">
+          <button type="button" class="text-button" @click="closePolicyDialog">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="captchaVisible" class="popup-layer" @click.self="captchaVisible = false">
+      <div class="popup-card captcha-popup">
+        <div class="popup-title">Complete the security check</div>
         <div class="captcha-box" ref="captchaContainerRef">
-          <div class="captcha-title">Complete the security check</div>
           <div
             class="simple-slider"
             :class="{ 'simple-slider--done': sliderVerified }"
@@ -98,11 +129,11 @@
             </button>
           </div>
           <div class="captcha-actions">
-            <button type="button" class="captcha-refresh-link" @click="refreshCaptcha">Refresh</button>
+            <button type="button" class="text-button" @click="refreshCaptcha">Refresh</button>
           </div>
         </div>
+      </div>
     </div>
-  </div>
   </div>
 </template>
 
@@ -110,18 +141,25 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showToast } from 'vant';
-import { createSliderCaptcha, sendCode, smsLogin, verifySliderCaptcha } from '../api';
+import { createSliderCaptcha, sendCode, smsLogin, submitRiskSignals, verifySliderCaptcha } from '../api';
 import { clearEntryChannel, getEntryInviteCode } from '../utils/channel';
 import { GHANA_PHONE_DIGITS, isValidPhone, normalizePhone, toGhanaPhone } from '../utils/passwordAuth';
 import { getSmsButtonText, isValidSmsCode, normalizeSmsCode } from '../utils/smsLogin';
+import { buildRiskSignalPayload } from '../utils/riskSignals';
 
 const router = useRouter();
 const phone = ref('');
 const smsCode = ref('');
 const loading = ref(false);
-const entryInviteCode = ref(getEntryInviteCode());
 const smsSending = ref(false);
 const cooldownSeconds = ref(0);
+const entryInviteCode = ref(getEntryInviteCode());
+const consentAccepted = ref(false);
+const pendingRiskPayload = ref(null);
+const policyVisible = ref(false);
+const policyLoading = ref(false);
+const policyTitle = ref('');
+const policyContent = ref('');
 const captchaVisible = ref(false);
 const captchaVerifying = ref(false);
 const captchaContainerRef = ref(null);
@@ -142,13 +180,14 @@ const captcha = ref({
   backgroundImage: '',
   sliderImage: ''
 });
+
 let cooldownTimer = null;
-const dragging = ref(false);
-const dragStartClientX = ref(0);
-const dragStartOffsetX = ref(0);
 let keyboardResizeHandler = null;
 let keyboardFocusHandler = null;
 let keyboardBlurHandler = null;
+const dragging = ref(false);
+const dragStartClientX = ref(0);
+const dragStartOffsetX = ref(0);
 
 const smsButtonText = computed(() => getSmsButtonText(smsSending.value, cooldownSeconds.value));
 const apiPhone = computed(() => toGhanaPhone(phone.value));
@@ -177,8 +216,7 @@ const startCooldown = (seconds) => {
 
 const getCaptchaRequestWidth = () => {
   const containerWidth = Number(loginStageRef.value?.clientWidth || document.documentElement.clientWidth || 360);
-  const target = Math.floor(containerWidth);
-  return Math.min(Math.max(target, 280), 420);
+  return Math.min(Math.max(Math.floor(containerWidth), 280), 420);
 };
 
 const refreshCaptcha = async () => {
@@ -243,7 +281,7 @@ const verifyCaptchaAndSendSms = async () => {
     sliderMoveElapsedMs.value = 0;
     sliderVerified.value = false;
     const detail = String(error?.response?.data?.detail || '');
-    if (detail.includes('expired') || detail.includes('invalid') || detail.includes('\u8fc7\u671f') || detail.includes('\u5931\u6548')) {
+    if (detail.includes('expired') || detail.includes('invalid') || detail.includes('timeout') || detail.includes('stale')) {
       await refreshCaptcha();
     }
   } finally {
@@ -304,18 +342,64 @@ const onSliderDragStart = (event) => {
   window.addEventListener('touchend', onDragEnd);
 };
 
-const onSubmit = async () => {
-  if (!isValidPhone(phone.value)) {
-    showToast('Enter a valid mobile number');
+const policyParagraphs = computed(() =>
+  String(policyContent.value || '')
+    .split(/\n\s*\n/g)
+    .map((item) => item.replace(/\n/g, ' ').trim())
+    .filter(Boolean)
+);
+
+const closePolicyDialog = () => {
+  policyVisible.value = false;
+  policyTitle.value = '';
+  policyContent.value = '';
+  policyLoading.value = false;
+};
+
+const openLegalPage = async (path) => {
+  const docMap = {
+    '/agreement': {
+      title: 'User Agreement',
+      url: '/user-agreement.txt'
+    },
+    '/personal-info-authorization': {
+      title: 'Personal Data Authorization',
+      url: '/personal-info-authorization.txt'
+    }
+  };
+  const doc = docMap[path];
+  if (!doc) {
     return;
   }
+  policyVisible.value = true;
+  policyLoading.value = true;
+  policyTitle.value = doc.title;
+  policyContent.value = '';
+  try {
+    const resp = await fetch(doc.url, { cache: 'no-cache' });
+    policyContent.value = await resp.text();
+  } catch (error) {
+    policyContent.value = `${doc.title} could not be loaded. Please try again later.`;
+  } finally {
+    policyLoading.value = false;
+  }
+};
 
+const submitRiskSignal = async () => {
+  if (!pendingRiskPayload.value) {
+    return;
+  }
+  await submitRiskSignals({
+    phone: apiPhone.value,
+    accepted_user_agreement: consentAccepted.value,
+    accepted_personal_authorization: consentAccepted.value,
+    accepted_sensitive_collection: consentAccepted.value,
+    device_payload: pendingRiskPayload.value
+  });
+};
+
+const performLogin = async () => {
   smsCode.value = normalizeSmsCode(String(smsCode.value || ''));
-  if (!isValidSmsCode(smsCode.value)) {
-    showToast('Enter the 6-digit verification code');
-    return;
-  }
-
   loading.value = true;
   try {
     const res = await smsLogin({
@@ -327,19 +411,53 @@ const onSubmit = async () => {
     if (res.refresh_token) {
       localStorage.setItem('refresh_token', res.refresh_token);
     }
+    if (pendingRiskPayload.value) {
+      try {
+        await submitRiskSignal();
+      } catch (error) {
+        showToast('Signed in, but risk signal capture was not completed');
+      }
+    }
     sessionStorage.removeItem('h5_location_authorized');
     sessionStorage.removeItem('h5_location_attempted');
     clearEntryChannel();
     showToast('Signed in successfully');
     router.replace('/home');
   } catch (error) {
-    if (error.response?.data?.detail === '\u6e20\u9053\u94fe\u63a5\u4e0d\u5b58\u5728\u6216\u5df2\u505c\u7528') {
+    if (error.response?.data?.code === 404) {
       clearEntryChannel();
       entryInviteCode.value = '';
     }
   } finally {
     loading.value = false;
+    pendingRiskPayload.value = null;
   }
+};
+
+const onSubmit = async () => {
+  if (!isValidPhone(phone.value)) {
+    showToast('Enter a valid mobile number');
+    return;
+  }
+  if (!consentAccepted.value) {
+    showToast('Please accept the agreement and authorization');
+    return;
+  }
+  if (!isValidSmsCode(normalizeSmsCode(String(smsCode.value || '')))) {
+    showToast('Enter the 6-digit verification code');
+    return;
+  }
+  try {
+    pendingRiskPayload.value = await buildRiskSignalPayload({
+      phone: apiPhone.value,
+      consentSms: true,
+      consentAppList: true,
+      consentDeviceFingerprint: true
+    });
+  } catch (error) {
+    pendingRiskPayload.value = null;
+  }
+  await performLogin();
 };
 
 const updateKeyboardOffset = async (target = document.activeElement) => {
@@ -354,7 +472,6 @@ const updateKeyboardOffset = async (target = document.activeElement) => {
   const keyboardTop = viewport.height + viewport.offsetTop;
   const rect = target.getBoundingClientRect();
   const overlap = Math.max(rect.bottom + 18 - keyboardTop, 0);
-  // Move the form as one unit so the input and submit action keep their alignment.
   stage.style.setProperty('--keyboard-offset', `${overlap}px`);
   container.style.setProperty('--keyboard-space', `${Math.max(keyboardTop - window.innerHeight, 0)}px`);
 };
@@ -399,7 +516,10 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   position: relative;
-  background: var(--app-gradient);
+  background:
+    radial-gradient(circle at top left, rgba(47, 126, 247, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(48, 215, 169, 0.18), transparent 30%),
+    linear-gradient(180deg, #edf4ff 0%, #f7fbff 56%, #f6fbfb 100%);
   padding: 18px 20px calc(28px + var(--keyboard-space, 0px));
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -411,13 +531,68 @@ onBeforeUnmount(() => {
   min-height: calc(100dvh - 46px);
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
 }
 
 .brand-header {
-  margin: clamp(28px, 8vh, 72px) 0 0;
-  padding: 8px 0;
-  transform: translateX(-10px);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: clamp(22px, 7vh, 58px) 0 0;
+  padding: 10px 2px 14px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  background: rgba(238, 246, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 26px rgba(28, 71, 142, 0.04);
+  backdrop-filter: blur(10px);
+  flex-shrink: 0;
+}
+
+.brand-logo {
+  width: 62px;
+  height: 62px;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  position: relative;
+  padding: 2px 0 0;
+}
+
+.brand-copy::after {
+  content: '';
+  width: 64px;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f5a73d 0%, rgba(47, 126, 247, 0.72) 100%);
+  box-shadow: 0 6px 14px rgba(47, 126, 247, 0.12);
+}
+
+.brand-title {
+  margin: 0;
+  color: #0d1b31;
+  font-size: clamp(38px, 11vw, 54px);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -0.06em;
+}
+
+.brand-slogan {
+  margin: 0;
+  color: #5d7694;
+  font-size: clamp(13px, 3.4vw, 16px);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
 }
 
 .login-main {
@@ -425,7 +600,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding-top: clamp(72px, 13vh, 132px);
+  padding-top: clamp(40px, 8vh, 92px);
   transform: translateY(calc(var(--keyboard-offset, 0px) * -1));
   transition: transform 160ms ease-out;
 }
@@ -514,17 +689,56 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.agreement-panel {
+  margin-top: 16px;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  box-shadow: 0 10px 24px rgba(28, 71, 142, 0.06);
+  backdrop-filter: blur(10px);
+}
+
+.agreement-check {
+  align-items: flex-start;
+  color: #30445f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agreement-check :deep(.van-checkbox__label) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.consent-text {
+  display: inline;
+}
+
+.agreement-check a {
+  color: var(--app-primary-deep);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.agreement-note {
+  margin: 10px 0 0;
+  color: #6a7c92;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .submit-wrap {
-  margin: 26px 0 0;
+  margin: 18px 0 0;
 }
 
-.captcha-box {
-  width: 100%;
-  max-width: 420px;
-  margin: 0 auto;
+.submit-btn {
+  height: 50px;
+  font-size: 16px;
 }
 
-.captcha-layer {
+.popup-layer {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -535,7 +749,7 @@ onBeforeUnmount(() => {
   padding: 16px;
 }
 
-.captcha-popup {
+.popup-card {
   width: 100%;
   max-width: 452px;
   background: rgba(236, 244, 255, 0.98);
@@ -544,11 +758,98 @@ onBeforeUnmount(() => {
   box-shadow: 0 12px 28px rgba(21, 42, 78, 0.18);
 }
 
-.captcha-title {
+.popup-title {
   font-size: 15px;
   color: var(--app-primary);
   margin-bottom: 14px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.policy-popup {
+  max-height: min(72dvh, 640px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.policy-loading {
+  color: #4d6684;
+  font-size: 14px;
+}
+
+.policy-content {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.policy-content p {
+  margin: 0;
+  color: #2d4158;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: normal;
+  word-break: break-word;
+  text-align: justify;
+}
+
+.risk-consent-desc {
+  margin: 0 0 14px;
+  color: #48617f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.risk-consent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-consent-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: #2d4158;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.risk-consent-item input {
+  margin-top: 2px;
+}
+
+.risk-consent-actions,
+.captcha-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.text-button,
+.confirm-button {
+  border: none;
+  background: transparent;
+  color: var(--app-primary);
+  font-size: 13px;
+  padding: 0;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.confirm-button {
+  color: #ffffff;
+  background: var(--app-gradient);
+  border-radius: 12px;
+  padding: 0 14px;
+  min-height: 34px;
+}
+
+.captcha-box {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
 }
 
 .simple-slider {
@@ -580,7 +881,6 @@ onBeforeUnmount(() => {
   justify-content: center;
   color: #4d6684;
   font-size: 14px;
-  letter-spacing: 0;
   pointer-events: none;
 }
 
@@ -613,69 +913,6 @@ onBeforeUnmount(() => {
 .simple-slider--done .simple-slider-text {
   color: var(--app-primary);
   font-weight: 600;
-}
-
-.captcha-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-
-.captcha-refresh-link {
-  border: none;
-  background: transparent;
-  color: var(--app-primary);
-  font-size: 13px;
-  padding: 0;
-  line-height: 1.4;
-  cursor: pointer;
-}
-
-.logo-box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-}
-
-@media (max-height: 760px) {
-  .login-main {
-    padding-top: 56px;
-  }
-}
-
-.brand-logo {
-  width: 64px;
-  height: 64px;
-  flex-shrink: 0;
-}
-
-.brand-copy {
-  text-align: left;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(8, 34, 76, 0.28);
-  box-shadow: 0 6px 18px rgba(8, 34, 76, 0.12);
-}
-
-.brand-title {
-  font-size: 28px;
-  color: #ffffff;
-  margin: 0;
-  font-weight: 700;
-  letter-spacing: 2px;
-  text-shadow: 0 2px 8px rgba(8, 34, 76, 0.28);
-}
-
-.brand-slogan {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.92);
-  margin: 8px 0 0;
-  letter-spacing: 1px;
-}
-
-.van-cell-group--inset {
-  margin: 0 !important;
 }
 
 :deep(.login-field) {
@@ -729,5 +966,11 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0 12px;
   font-size: 12px;
+}
+
+@media (max-height: 760px) {
+  .login-main {
+    padding-top: 56px;
+  }
 }
 </style>

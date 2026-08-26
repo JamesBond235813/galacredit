@@ -1,0 +1,559 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		11943847442256C93BC94441 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD3022192EE982D1C6929B8 /* Formatters.swift */; };
+		1D36AA333C4C23E597E93F46 /* H5HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C612431DA9231E650AA034C /* H5HomeView.swift */; };
+		277F3E373915DEAD078A87B2 /* AppModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FFFE44722D8CA7BA479CAFE /* AppModels.swift */; };
+		3587F5C763A22F5DE25393F5 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C07BC9450FE005EEE83F82CD /* AppConfig.swift */; };
+		462E3875271F2BA81691EEB4 /* XiaoHeBaoIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7BE4030F718D9BC2D00DD7 /* XiaoHeBaoIOSApp.swift */; };
+		4D3FE5DF5C1712871055A14B /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595132DD22A7BAAB3FF41D97 /* JSONValue.swift */; };
+		64EEBD4A4ECE9F8A989C83A8 /* PrimaryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3B485BF4F66B35ECC32FA5 /* PrimaryControls.swift */; };
+		67D778012500BC2B5CDF6CAF /* WorkspaceLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A084DD22E4D592DF803286 /* WorkspaceLogicTests.swift */; };
+		684800B7F1A802024D8C3526 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B338811FADB455EF949BF88D /* SessionStore.swift */; };
+		6B98215C5AFB1A435008CBDD /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C07C59BE12CDE25A018032 /* WorkspaceView.swift */; };
+		7B8F026DC6EF10640C1858A7 /* SummaryCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53C7ED3E0200BB9F6E6DB8C /* SummaryCards.swift */; };
+		7F3EDAE791B748DC00EA9467 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 307FCD7A173C9F7A03CB2304 /* RootView.swift */; };
+		7FB123A5FEBA77C1397A42BB /* WorkspaceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6FCC61222DE95E5F9B137F /* WorkspaceViewModel.swift */; };
+		82A8AC264685B2EABFF7F8C0 /* WorkspaceLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB9E02ECA1CDF7D0F25C6F1 /* WorkspaceLogic.swift */; };
+		8950ABCEE2259D26C32AF724 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A4AD178525A77A13280832 /* AppTheme.swift */; };
+		9E5ECB43B6C13D7875F99B93 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D057118CF5C9DB8BB2665FE /* APIClient.swift */; };
+		AFAE1977A13DDF589C5A1784 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D49B628E739DA2E4532A951 /* LoginView.swift */; };
+		EFC8965EE1823287606FF94C /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42BCA35749B04852C8F02A9B /* DetailView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CC15D728EA7895D76821F0BC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 54C4015A695F9FCE126436CD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D17680E41DC61B14F2E13279;
+			remoteInfo = GalaCreditIOS;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0C612431DA9231E650AA034C /* H5HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = H5HomeView.swift; sourceTree = "<group>"; };
+		1A7BE4030F718D9BC2D00DD7 /* XiaoHeBaoIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiaoHeBaoIOSApp.swift; sourceTree = "<group>"; };
+		2D49B628E739DA2E4532A951 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		2EB7A3C67916859E840392F6 /* GalaCreditIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = GalaCreditIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		307FCD7A173C9F7A03CB2304 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		3CB9E02ECA1CDF7D0F25C6F1 /* WorkspaceLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLogic.swift; sourceTree = "<group>"; };
+		3D057118CF5C9DB8BB2665FE /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		42BCA35749B04852C8F02A9B /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
+		595132DD22A7BAAB3FF41D97 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
+		7A3B485BF4F66B35ECC32FA5 /* PrimaryControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryControls.swift; sourceTree = "<group>"; };
+		88A4AD178525A77A13280832 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
+		8FFFE44722D8CA7BA479CAFE /* AppModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModels.swift; sourceTree = "<group>"; };
+		9CE8F1846653BE6D0A2ADCAF /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		B338811FADB455EF949BF88D /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		B53C7ED3E0200BB9F6E6DB8C /* SummaryCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCards.swift; sourceTree = "<group>"; };
+		BA4AB32134B46877775E1024 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		BF59F642A411B727DF6E2307 /* GalaCreditIOSTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GalaCreditIOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C07BC9450FE005EEE83F82CD /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		C6A084DD22E4D592DF803286 /* WorkspaceLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLogicTests.swift; sourceTree = "<group>"; };
+		F9C07C59BE12CDE25A018032 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
+		FCD3022192EE982D1C6929B8 /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
+		FE6FCC61222DE95E5F9B137F /* WorkspaceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceViewModel.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		028D83B617964DA3E862A052 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				C07BC9450FE005EEE83F82CD /* AppConfig.swift */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		057635F59EDB9272DBCA49B3 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				42BCA35749B04852C8F02A9B /* DetailView.swift */,
+				0C612431DA9231E650AA034C /* H5HomeView.swift */,
+				2D49B628E739DA2E4532A951 /* LoginView.swift */,
+				307FCD7A173C9F7A03CB2304 /* RootView.swift */,
+				F9C07C59BE12CDE25A018032 /* WorkspaceView.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+		122F1DE541596A690DDEA4DA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2EB7A3C67916859E840392F6 /* GalaCreditIOS.app */,
+				BF59F642A411B727DF6E2307 /* GalaCreditIOSTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		32D02C237C9420D2E213F94F /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				8FFFE44722D8CA7BA479CAFE /* AppModels.swift */,
+				3CB9E02ECA1CDF7D0F25C6F1 /* WorkspaceLogic.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		3FE0542E0D8FD9309ED6A026 = {
+			isa = PBXGroup;
+			children = (
+				5C3713431C289EC0C655CC35 /* App */,
+				4F5663BBE2F6E7EBD9E3F64D /* Config */,
+				D89C1CCC81C5F1B3BC0B344E /* Sources */,
+				47FA037272D1A6EF226AA048 /* Tests */,
+				122F1DE541596A690DDEA4DA /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		47FA037272D1A6EF226AA048 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				C6A084DD22E4D592DF803286 /* WorkspaceLogicTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		4F5663BBE2F6E7EBD9E3F64D /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				9CE8F1846653BE6D0A2ADCAF /* Debug.xcconfig */,
+				BA4AB32134B46877775E1024 /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		54F29569589725E7D3A68988 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				7DC50D24A1DF889073AA0AE0 /* Components */,
+				057635F59EDB9272DBCA49B3 /* Screens */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		5C3713431C289EC0C655CC35 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				1A7BE4030F718D9BC2D00DD7 /* XiaoHeBaoIOSApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		7DC50D24A1DF889073AA0AE0 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				88A4AD178525A77A13280832 /* AppTheme.swift */,
+				7A3B485BF4F66B35ECC32FA5 /* PrimaryControls.swift */,
+				B53C7ED3E0200BB9F6E6DB8C /* SummaryCards.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A416600D361F63072C6A5220 /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				3D057118CF5C9DB8BB2665FE /* APIClient.swift */,
+				FCD3022192EE982D1C6929B8 /* Formatters.swift */,
+				595132DD22A7BAAB3FF41D97 /* JSONValue.swift */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
+		D4FE2B5BC6B8E97D2517CDE5 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				B338811FADB455EF949BF88D /* SessionStore.swift */,
+				FE6FCC61222DE95E5F9B137F /* WorkspaceViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		D89C1CCC81C5F1B3BC0B344E /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				028D83B617964DA3E862A052 /* Config */,
+				A416600D361F63072C6A5220 /* Infrastructure */,
+				32D02C237C9420D2E213F94F /* Models */,
+				D4FE2B5BC6B8E97D2517CDE5 /* ViewModels */,
+				54F29569589725E7D3A68988 /* Views */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8C0168DE8724E0024DFD5283 /* GalaCreditIOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 31C3590B4F3F1FE551F65B52 /* Build configuration list for PBXNativeTarget "GalaCreditIOSTests" */;
+			buildPhases = (
+				9FEC02E041A06EB55AE17246 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				13AD4440F4CBC25B0484F51E /* PBXTargetDependency */,
+			);
+			name = GalaCreditIOSTests;
+			packageProductDependencies = (
+			);
+			productName = GalaCreditIOSTests;
+			productReference = BF59F642A411B727DF6E2307 /* GalaCreditIOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D17680E41DC61B14F2E13279 /* GalaCreditIOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 03DCBBD22960FA24088ABDE8 /* Build configuration list for PBXNativeTarget "GalaCreditIOS" */;
+			buildPhases = (
+				9B8240DC04502B03C7E69724 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GalaCreditIOS;
+			packageProductDependencies = (
+			);
+			productName = GalaCreditIOS;
+			productReference = 2EB7A3C67916859E840392F6 /* GalaCreditIOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		54C4015A695F9FCE126436CD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					8C0168DE8724E0024DFD5283 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					D17680E41DC61B14F2E13279 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 97B3DE948FFC545241A9AFA1 /* Build configuration list for PBXProject "GalaCreditIOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3FE0542E0D8FD9309ED6A026;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 122F1DE541596A690DDEA4DA /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D17680E41DC61B14F2E13279 /* GalaCreditIOS */,
+				8C0168DE8724E0024DFD5283 /* GalaCreditIOSTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9B8240DC04502B03C7E69724 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9E5ECB43B6C13D7875F99B93 /* APIClient.swift in Sources */,
+				3587F5C763A22F5DE25393F5 /* AppConfig.swift in Sources */,
+				277F3E373915DEAD078A87B2 /* AppModels.swift in Sources */,
+				8950ABCEE2259D26C32AF724 /* AppTheme.swift in Sources */,
+				EFC8965EE1823287606FF94C /* DetailView.swift in Sources */,
+				11943847442256C93BC94441 /* Formatters.swift in Sources */,
+				1D36AA333C4C23E597E93F46 /* H5HomeView.swift in Sources */,
+				4D3FE5DF5C1712871055A14B /* JSONValue.swift in Sources */,
+				AFAE1977A13DDF589C5A1784 /* LoginView.swift in Sources */,
+				64EEBD4A4ECE9F8A989C83A8 /* PrimaryControls.swift in Sources */,
+				7F3EDAE791B748DC00EA9467 /* RootView.swift in Sources */,
+				684800B7F1A802024D8C3526 /* SessionStore.swift in Sources */,
+				7B8F026DC6EF10640C1858A7 /* SummaryCards.swift in Sources */,
+				82A8AC264685B2EABFF7F8C0 /* WorkspaceLogic.swift in Sources */,
+				6B98215C5AFB1A435008CBDD /* WorkspaceView.swift in Sources */,
+				7FB123A5FEBA77C1397A42BB /* WorkspaceViewModel.swift in Sources */,
+				462E3875271F2BA81691EEB4 /* XiaoHeBaoIOSApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9FEC02E041A06EB55AE17246 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				67D778012500BC2B5CDF6CAF /* WorkspaceLogicTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		13AD4440F4CBC25B0484F51E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D17680E41DC61B14F2E13279 /* GalaCreditIOS */;
+			targetProxy = CC15D728EA7895D76821F0BC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2C48F25DDD18028241BB91C0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = BA4AB32134B46877775E1024 /* Release.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = GalaCreditIOS;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		36E1A6076835ACE04CE80916 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios.tests;
+				PRODUCT_MODULE_NAME = GalaCreditIOSTests;
+				PRODUCT_NAME = GalaCreditIOSTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GalaCreditIOS.app/GalaCreditIOS";
+			};
+			name = Debug;
+		};
+		7E5125573B78C87700C7F148 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = GalaCredit;
+				INFOPLIST_KEY_GalaApiBase = "$(GALA_API_BASE)";
+				INFOPLIST_KEY_GalaAppFlavor = "$(GALA_APP_FLAVOR)";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GalaCredit uses your location for identity and risk review.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C69E31E7B2B9A37FF17C5D0C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios.tests;
+				PRODUCT_MODULE_NAME = GalaCreditIOSTests;
+				PRODUCT_NAME = GalaCreditIOSTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GalaCreditIOS.app/GalaCreditIOS";
+			};
+			name = Release;
+		};
+		D04FCCA1CFC89D63E5064F5C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = GalaCredit;
+				INFOPLIST_KEY_GalaApiBase = "$(GALA_API_BASE)";
+				INFOPLIST_KEY_GalaAppFlavor = "$(GALA_APP_FLAVOR)";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GalaCredit uses your location for identity and risk review.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F05677AEB284FA42AE766FE7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9CE8F1846653BE6D0A2ADCAF /* Debug.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = GalaCreditIOS;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		03DCBBD22960FA24088ABDE8 /* Build configuration list for PBXNativeTarget "GalaCreditIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D04FCCA1CFC89D63E5064F5C /* Debug */,
+				7E5125573B78C87700C7F148 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		31C3590B4F3F1FE551F65B52 /* Build configuration list for PBXNativeTarget "GalaCreditIOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				36E1A6076835ACE04CE80916 /* Debug */,
+				C69E31E7B2B9A37FF17C5D0C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		97B3DE948FFC545241A9AFA1 /* Build configuration list for PBXProject "GalaCreditIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F05677AEB284FA42AE766FE7 /* Debug */,
+				2C48F25DDD18028241BB91C0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 54C4015A695F9FCE126436CD /* Project object */;
+}

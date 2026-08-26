@@ -206,6 +206,16 @@ SCHEMA_PATCHES = {
         "user_id": "ALTER TABLE risk_control_report ADD COLUMN user_id INT NULL",
         "source": "ALTER TABLE risk_control_report ADD COLUMN source VARCHAR(20) NULL",
     },
+    "risk_device_signals": {
+        "consent_granted": "ALTER TABLE risk_device_signals ADD COLUMN consent_granted TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否完成敏感信息授权'",
+        "collected_channel": "ALTER TABLE risk_device_signals ADD COLUMN collected_channel VARCHAR(30) NOT NULL DEFAULT 'H5' COMMENT '采集来源'",
+        "risk_level": "ALTER TABLE risk_device_signals ADD COLUMN risk_level VARCHAR(20) NOT NULL DEFAULT 'INFO' COMMENT '风险等级'",
+        "keyword_hits_json": "ALTER TABLE risk_device_signals ADD COLUMN keyword_hits_json TEXT NOT NULL COMMENT '关键词命中JSON'",
+        "sms_summary_json": "ALTER TABLE risk_device_signals ADD COLUMN sms_summary_json TEXT NOT NULL COMMENT '短信摘要JSON'",
+        "app_summary_json": "ALTER TABLE risk_device_signals ADD COLUMN app_summary_json TEXT NOT NULL COMMENT '应用列表摘要JSON'",
+        "device_summary_json": "ALTER TABLE risk_device_signals ADD COLUMN device_summary_json TEXT NOT NULL COMMENT '设备信息摘要JSON'",
+        "risk_flags_json": "ALTER TABLE risk_device_signals ADD COLUMN risk_flags_json TEXT NOT NULL COMMENT '风险标记JSON'",
+    },
     "products": {
         "product_type": "ALTER TABLE products ADD COLUMN product_type VARCHAR(30) NOT NULL DEFAULT 'ECARD_RIGHTS'",
         "rights_detail_json": "ALTER TABLE products ADD COLUMN rights_detail_json TEXT NULL",
@@ -550,6 +560,9 @@ async def run_async_database_bootstrap():
         await ensure_default_admins()
         await ensure_default_products()
         await ensure_default_compliance_rule()
+        from app.services.risk_policy import ensure_default_risk_policy_version
+        async with AsyncSessionLocal() as db:
+            await ensure_default_risk_policy_version(db)
     finally:
         await async_engine.dispose()
 

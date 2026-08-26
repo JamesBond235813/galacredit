@@ -157,8 +157,8 @@ const routes = [
         path: 'risk-strategy',
         component: RiskStrategy,
         meta: {
-          title: '风控策略预留',
-          description: '预留自动审核与风控策略配置入口，等待外部三方数据接入',
+          title: '风控策略',
+          description: '管理风控策略版本、参数配置、启停状态和灰度比例',
           permission: 'risk-strategy'
         }
       },

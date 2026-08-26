@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct XiaoHeBaoIOSApp: App {
+struct GalaCreditIOSApp: App {
     @StateObject private var sessionStore = SessionStore()
 
     var body: some Scene {

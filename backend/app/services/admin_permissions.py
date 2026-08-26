@@ -16,7 +16,7 @@ ADMIN_PAGE_OPTIONS = [
     {"key": "audit-log", "label": "操作审计", "route": "/audit-log"},
     {"key": "kyc-review", "label": "KYC复核", "route": "/kyc-review"},
     {"key": "risk-single-query", "label": "风控报告单查", "route": "/risk-single-query"},
-    {"key": "risk-strategy", "label": "风控策略预留", "route": "/risk-strategy"},
+    {"key": "risk-strategy", "label": "风控策略", "route": "/risk-strategy"},
     {"key": "blacklist", "label": "黑名单", "route": "/blacklist"},
     {"key": "overdue-config", "label": "逾期配置", "route": "/overdue-config"},
     {"key": "content-config", "label": "运营配置", "route": "/content-config"},

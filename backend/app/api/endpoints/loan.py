@@ -267,7 +267,7 @@ async def apply_limit(
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
     await refresh_user_risk_list_status(db, db_user)
     # 第一阶段采用 shadow mode，只沉淀规则命中和特征快照，不改变现有审批结果。
-    await record_risk_decision_async(db, user=db_user, loan=loan, stage="APPLICATION", mode="SHADOW")
+    await record_risk_decision_async(db, user=db_user, loan=loan, stage="APPLICATION")
 
     if not db_user.application_submitted_at:
         raise HTTPException(status_code=400, detail="请先完成补充资料提交")
@@ -436,7 +436,7 @@ async def withdraw(
         raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
     await refresh_user_risk_list_status(db, db_user)
     # 下单前再次记录决策，后续可切换为放款前强制策略并支持决策重放。
-    await record_risk_decision_async(db, user=db_user, loan=loan, stage="ORDER", mode="SHADOW")
+    await record_risk_decision_async(db, user=db_user, loan=loan, stage="ORDER")
     source_loan = None
     if req.extension_source_loan_id:
         source_loan = (

@@ -1,7 +1,13 @@
 import XCTest
-@testable import XiaoHeBaoIOS
+@testable import GalaCreditIOS
 
 final class WorkspaceLogicTests: XCTestCase {
+    func testWebBaseURLShouldDropApiSuffix() {
+        let url = AppConfig.webBaseURL.absoluteString
+        XCTAssertFalse(url.hasSuffix("/api"))
+        XCTAssertTrue(url.contains("127.0.0.1:8001") || url.contains("gala.ebamotor.com"))
+    }
+
     func testVisibleTabsShouldRespectRoles() {
         let reviewTabs = WorkspaceLogic.visibleTabs(for: ["REVIEW"])
         XCTAssertEqual(reviewTabs, [.profiles, .applications, .repayments])

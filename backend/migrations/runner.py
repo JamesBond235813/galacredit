@@ -6,6 +6,7 @@
 from pathlib import Path
 
 import pymysql
+from pymysql import err
 
 from app.core.config import settings
 
@@ -46,7 +47,12 @@ def upgrade() -> None:
                 sql = migration.read_text(encoding="utf-8")
                 for statement in (item.strip() for item in sql.split(";")):
                     if statement:
-                        cursor.execute(statement)
+                        try:
+                            cursor.execute(statement)
+                        except (err.OperationalError, err.ProgrammingError) as exc:
+                            if exc.args and exc.args[0] in {1050, 1060}:
+                                continue
+                            raise
                 cursor.execute("INSERT INTO schema_migrations(version) VALUES (%s)", (version,))
         connection.commit()
     except Exception:

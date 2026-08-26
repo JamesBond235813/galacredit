@@ -26,6 +26,8 @@ Your registered mobile number and verification code are used to access your acco
 
 You authorise GalaCredit and its approved service providers to verify information submitted during the application process, including identity, contact, device, location and risk information, subject to applicable law and the Personal Data Authorization.
 
+Where the platform shows a device-risk consent dialog, you also understand that the service may request permission to collect SMS content, installed app names and a device fingerprint summary through an approved mobile app bridge or other supported integration. If the device or browser does not support those permissions, the service may still use the other information you submit and the device signals it can lawfully obtain.
+
 False, misleading or incomplete information may result in rejection, suspension, collection action or reporting where permitted by law.
 
 5. LOAN TERMS
@@ -53,6 +55,8 @@ You agree to receive service messages relating to verification, application stat
 9. RESPONSIBLE USE
 
 Borrow only what you can repay. You must not use the service for fraud, money laundering, unlawful activity, identity misuse, account resale or attempts to bypass security and risk controls.
+
+You agree that risk controls may analyse permitted device, SMS and app-list signals together with application history and other lawful risk factors to detect borrowing pressure, device abuse, fraud or other material default indicators.
 
 10. PRIVACY
 

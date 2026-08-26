@@ -337,7 +337,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.juxin.xiaohebao.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios.tests;
 				PRODUCT_MODULE_NAME = XiaoHeBaoIOSTests;
 				PRODUCT_NAME = XiaoHeBaoIOSTests;
 				SDKROOT = iphoneos;
@@ -417,7 +417,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.juxin.xiaohebao.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios.tests;
 				PRODUCT_MODULE_NAME = XiaoHeBaoIOSTests;
 				PRODUCT_NAME = XiaoHeBaoIOSTests;
 				SDKROOT = iphoneos;
@@ -511,7 +511,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.juxin.xiaohebao.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -535,7 +535,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.juxin.xiaohebao.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galacredit.ios;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

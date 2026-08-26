@@ -19,8 +19,16 @@ export const saveMessageTemplate = (data) => request.post('/admin/message-templa
 export const toggleMessageTemplate = (id, data) => request.patch(`/admin/message-templates/${id}/active`, data);
 export const getMonitoringDrilldown = (metric) => request.get(`/admin/monitoring/drilldown/${metric}`);
 export const getRiskDecisions = (params) => request.get('/admin/risk-decisions', { params });
+export const getRiskSignals = (params) => request.get('/admin/risk-signals', { params });
 export const overrideRiskDecision = (decisionId, data) => request.post(`/admin/risk-decisions/${decisionId}/override`, data);
 export const ingestRiskSignal = (data) => request.post('/admin/risk-signals', data);
+export const getRiskPolicies = (params) => request.get('/admin/risk-policies', { params });
+export const getRiskPolicyHistory = (policyKey) => request.get(`/admin/risk-policies/${policyKey}/history`);
+export const createRiskPolicy = (data) => request.post('/admin/risk-policies', data);
+export const updateRiskPolicy = (id, data) => request.patch(`/admin/risk-policies/${id}`, data);
+export const copyRiskPolicy = (id) => request.post(`/admin/risk-policies/${id}/copy`);
+export const activateRiskPolicy = (id) => request.post(`/admin/risk-policies/${id}/activate`);
+export const disableRiskPolicy = (id) => request.post(`/admin/risk-policies/${id}/disable`);
 export const getFinanceReconciliation = (params) => request.get('/admin/finance/reconciliation', { params });
 export const getAdminLoginHistory = (id, params) => request.get(`/admin/admin-users/${id}/login-history`, { params });
 export const getConfigHistory = (type, id) => request.get(`/admin/config-history/${type}/${id}`);

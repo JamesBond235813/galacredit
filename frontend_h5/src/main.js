@@ -23,7 +23,7 @@ app.use(createPinia())
 app.use(router)
 app.mount('#app')
 
-// 仅在 HTTPS/localhost 下注册，满足 Android Chrome 的“安装到桌面”条件。
+// Register only on HTTPS/localhost so Android Chrome can offer app installation.
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('/sw.js').catch(() => {})
 }

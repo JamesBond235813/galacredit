@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.schemas.loan import LoanFundFlowSummaryResponse, LoanHistoryResponse, LoanInstallmentItemResponse
@@ -124,6 +124,98 @@ class SmsLoginRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     accuracy: Optional[float] = None
+    device_signal_id: Optional[int] = Field(None, ge=1)
+
+
+class RiskDeviceSmsItem(BaseModel):
+    """短信摘要项。"""
+
+    sender: Optional[str] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class RiskDeviceAppItem(BaseModel):
+    """应用摘要项。"""
+
+    name: Optional[str] = None
+    package: Optional[str] = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class RiskDeviceClientPayload(BaseModel):
+    """设备授权采集载荷。"""
+
+    consent_sms: bool = False
+    consent_app_list: bool = False
+    consent_device_fingerprint: bool = True
+    sms_messages: list[dict[str, str]] = Field(default_factory=list)
+    installed_apps: list[dict[str, str]] = Field(default_factory=list)
+    device_profile: dict[str, Any] = Field(default_factory=dict)
+    native_bridge: Optional[str] = None
+    source: Optional[str] = Field(default="H5", max_length=30)
+    app_version: Optional[str] = Field(default=None, max_length=40)
+    platform: Optional[str] = Field(default=None, max_length=40)
+    browser_name: Optional[str] = Field(default=None, max_length=40)
+    browser_version: Optional[str] = Field(default=None, max_length=40)
+    screen_width: Optional[int] = Field(None, ge=0)
+    screen_height: Optional[int] = Field(None, ge=0)
+    timezone: Optional[str] = Field(default=None, max_length=64)
+    language: Optional[str] = Field(default=None, max_length=20)
+    device_fingerprint: Optional[str] = Field(default=None, max_length=128)
+    consent_version: Optional[str] = Field(default="2026-08", max_length=20)
+    sms_keywords: list[str] = Field(default_factory=list)
+    app_keywords: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+
+
+class RiskDeviceSignalResponse(BaseModel):
+    """设备风险信号记录。"""
+
+    id: int
+    user_id: int
+    consent_granted: bool
+    device_fingerprint: Optional[str] = None
+    risk_level: str
+    keyword_hits: dict[str, list[str]]
+    sms_summary: list[RiskDeviceSmsItem]
+    app_summary: list[RiskDeviceAppItem]
+    device_summary: dict[str, Any]
+    risk_flags: list[str]
+    payload_json: dict[str, Any]
+    created_at: datetime
+
+
+class RiskDeviceSignalListResponse(BaseModel):
+    """设备风险信号分页列表。"""
+
+    total: int
+    skip: int
+    limit: int
+    items: list[RiskDeviceSignalResponse]
+
+
+class RiskDeviceConsentRequest(BaseModel):
+    """设备风险授权请求。"""
+
+    phone: str = Field(..., pattern=AUTH_PHONE_PATTERN)
+    accepted_user_agreement: bool = False
+    accepted_personal_authorization: bool = False
+    accepted_sensitive_collection: bool = False
+    device_payload: RiskDeviceClientPayload = Field(default_factory=RiskDeviceClientPayload)
+
+
+class RiskDeviceConsentResponse(BaseModel):
+    """设备风险授权结果。"""
+
+    consent_id: int
+    signal_id: int
+    device_fingerprint: Optional[str] = None
+    risk_level: str
+    keyword_hits: dict[str, list[str]]
+    risk_flags: list[str]
+    message: str
 
 
 class SliderCaptchaCreateRequest(BaseModel):

@@ -15,6 +15,9 @@ To provide credit application and account services, GalaCredit and its approved 
 - registered mobile number and verification records;
 - residential, employment and emergency contact information;
 - device, browser, IP address and location information;
+- SMS content that you explicitly authorize the app to read through an approved native bridge, where available;
+- installed app list that you explicitly authorize the app to read through an approved native bridge, where available;
+- device fingerprint signals derived from device, browser, screen and network characteristics;
 - application, credit decision, disbursement, repayment and customer support records;
 - MoMo account and transaction references required for disbursement, repayment and reconciliation;
 - fraud prevention, blacklist and risk assessment results obtained lawfully from approved sources.
@@ -27,6 +30,7 @@ Your data may be used to:
 - verify your identity and mobile ownership;
 - assess eligibility, affordability, fraud and credit risk;
 - process applications and generate loan terms;
+- detect suspicious device, SMS and app activity with rule-based risk checks;
 - arrange MoMo disbursement and repayment;
 - send service, security and repayment notifications;
 - provide customer support and handle complaints;
@@ -40,6 +44,7 @@ You authorise the use of your Ghana Card images and face image to confirm that t
 4. LOCATION AND DEVICE INFORMATION
 
 Location and device information may be used to protect your account, detect suspicious access and support risk assessment. The application will request browser or device permission before collecting precise location information where required.
+GalaCredit does not claim that a normal web page can directly read SMS messages or installed apps on every device. Those items are only collected when an approved native bridge or platform permission makes them available, and they remain optional where the interface lets you decline them.
 
 5. EMERGENCY CONTACTS
 
@@ -53,7 +58,7 @@ Service providers must process data only for authorised purposes and apply appro
 
 7. STORAGE AND RETENTION
 
-Data may be stored in secure systems used to provide the service. Records will be retained only for as long as required for the loan relationship, legal obligations, fraud prevention, audit, complaints and legitimate business purposes.
+Data may be stored in secure systems used to provide the service. Records will be retained only for as long as required for the loan relationship, legal obligations, fraud prevention, audit, complaints and legitimate business purposes. Sensitive raw content is stored in a controlled form together with summaries, keyword hits and authorization records for audit and risk review.
 
 8. SECURITY
 
@@ -63,7 +68,7 @@ GalaCredit applies reasonable technical and organisational safeguards. No electr
 
 Subject to applicable Ghanaian law, you may request access to, correction of or information about your personal data. You may also raise a complaint or request review of how your information is handled through Customer Support.
 
-Withdrawing consent may not affect processing already completed lawfully and may prevent GalaCredit from providing services that require the affected information.
+Withdrawing consent may not affect processing already completed lawfully and may prevent GalaCredit from providing services that require the affected information. You may decline SMS or app-list collection and still use parts of the service that do not depend on them, subject to eligibility and risk rules.
 
 10. AUTHORIZATION
 
@@ -72,4 +77,5 @@ By selecting the agreement checkbox and submitting your information, you confirm
 - the information you provide is accurate and belongs to you;
 - you understand the categories and purposes described above;
 - you authorise GalaCredit and approved providers to process the information for those purposes, subject to applicable law;
+- you understand that SMS and installed-app collection are optional and depend on supported device permissions or native integration;
 - you understand that identity and risk checks are required before a credit decision can be made.
