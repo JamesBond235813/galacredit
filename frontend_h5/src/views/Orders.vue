@@ -4,7 +4,7 @@
 
     <div class="page-inner orders-inner">
       <div v-if="loading" class="loading-box">
-        <van-loading type="spinner" color="#2f7ef7" />
+        <van-loading type="spinner" color="#ea9518" />
       </div>
 
       <template v-else>
@@ -384,7 +384,7 @@ onBeforeUnmount(() => {
 .order-notice {
   margin-top: 14px;
   padding: 8px 12px;
-  background: rgba(47, 126, 247, 0.05);
+  background: rgba(234, 149, 24, 0.05);
   border-radius: 8px;
   font-size: 13px;
   color: var(--app-primary);
@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
 
 .meta-ecard-item {
   padding: 10px;
-  border: 1px solid rgba(47, 126, 247, 0.12);
+  border: 1px solid rgba(234, 149, 24, 0.12);
   border-radius: 14px;
   background: rgba(247, 250, 255, 0.78);
 }
@@ -455,7 +455,7 @@ onBeforeUnmount(() => {
 .meta-copy-btn {
   height: 26px;
   padding: 0 10px;
-  border: 1px solid rgba(47, 126, 247, 0.24);
+  border: 1px solid rgba(234, 149, 24, 0.24);
   border-radius: 999px;
   background: #f5f9ff;
   color: var(--app-primary-deep);

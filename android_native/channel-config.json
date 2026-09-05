@@ -1,0 +1,5 @@
+{
+  "sharedBusinessCode": "frontend_uniapp",
+  "internal": { "applicationId": "com.galacredit.app.internal", "artifact": "apk", "update": "官网或内部分发" },
+  "googlePlay": { "applicationId": "com.galacredit.app", "artifact": "aab", "signing": "Play App Signing", "billing": "Google Play Billing", "push": "Firebase Cloud Messaging" }
+}

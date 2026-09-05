@@ -12,7 +12,7 @@ describe('GalaCredit login layout', () => {
     expect(source).toContain('class="brand-header"');
     expect(source).toContain('class="brand-mark"');
     expect(source).toContain('class="brand-copy"');
-    expect(source).toContain('rgba(238, 246, 255, 0.22)');
+    expect(source).toContain('rgba(255, 255, 255, 0.22)');
     expect(source).toContain('GalaCredit');
     expect(source).toContain('Credit when it matters');
     expect(source).not.toContain('background: rgba(8, 34, 76, 0.28)');

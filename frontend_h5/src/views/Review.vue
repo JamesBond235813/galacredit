@@ -5,7 +5,7 @@
     <div class="page-inner review-inner">
       <section v-if="loading" class="page-card review-loading-card">
         <div class="loading-orbit">
-          <van-loading type="spinner" color="#2f7ef7" size="56px" />
+          <van-loading type="spinner" color="#ea9518" size="56px" />
         </div>
         <h2 class="review-title">Application Under Review</h2>
         <p class="review-desc">
@@ -124,7 +124,7 @@
 
       <section v-else class="page-card review-loading-card">
         <div class="loading-orbit">
-          <van-loading type="spinner" color="#2f7ef7" size="48px" />
+          <van-loading type="spinner" color="#ea9518" size="48px" />
         </div>
         <h2 class="review-title">Updating Status</h2>
         <p class="review-desc">Loading the latest application status.</p>

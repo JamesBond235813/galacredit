@@ -1,10 +1,12 @@
 import json
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 
 from app.api.endpoints import admin
 from app.services.risk_scoring import evaluate_device_risk_signals, summarize_device_collection
+from app.services.sms_filter import filter_sms_messages, match_sms_keywords, sms_collection_allowed
 
 
 class _FakeScalarResult:
@@ -33,7 +35,7 @@ def test_device_summary_collects_keyword_hits_and_fingerprint():
     summary = summarize_device_collection(
         payload={
             "phone": "233240000001",
-            "sms_messages": [{"sender": "Bank", "body": "loan overdue payment reminder"}],
+            "sms_messages": [{"sender": "Bank", "body": "loan overdue payment reminder", "time": "2026-09-01 12:00:00"}],
             "installed_apps": [{"name": "Cash Loan", "package": "com.loan.cash"}],
             "device_profile": {"model": "Pixel", "os": "Android"},
             "screen_width": 1080,
@@ -44,6 +46,100 @@ def test_device_summary_collects_keyword_hits_and_fingerprint():
     assert "loan" in summary["sms_keywords"]
     assert "loan" in summary["app_keywords"]
     assert summary["device_fingerprint"]
+
+
+@pytest.mark.asyncio
+async def test_record_device_signal_does_not_persist_raw_device_identifier():
+    from app.services import risk_scoring
+
+    class FakeDb:
+        def add(self, value):
+            self.value = value
+
+        async def flush(self):
+            self.value.id = 1
+
+    db = FakeDb()
+    await risk_scoring.record_device_signal(
+        db,
+        user_id=1,
+        payload={
+            "phone": "233240000001",
+            "ip_address": "198.51.100.10",
+            "device_fingerprint": "raw-android-id",
+            "device_profile": {"model": "Pixel"},
+        },
+    )
+    assert "raw-android-id" not in db.value.payload_json
+    assert "233240000001" not in db.value.payload_json
+    assert "198.51.100.10" not in db.value.payload_json
+
+
+def test_sms_filter_uses_csv_regex_and_90_day_window():
+    now = datetime(2026, 9, 4, 12, 0, 0)
+    rows = filter_sms_messages([
+        {"sender": "Bank", "body": "Your loan is approved", "time": "2026-09-01 12:00:00"},
+        {"sender": "Bank", "body": "loan approved", "time": (now - timedelta(days=91)).strftime("%Y-%m-%d %H:%M:%S")},
+        {"sender": "Bank", "body": "loanapproved", "time": "2026-09-01 12:00:00"},
+    ], now=now, keywords=["loan", "approved"])
+
+    assert len(rows) == 1
+    assert rows[0]["keywords"] == ["loan", "approved"]
+    assert match_sms_keywords("loanapproved", ["loan"]) == []
+
+
+def test_sms_filter_uses_ascii_boundaries_like_mobile_clients():
+    assert match_sms_keywords("贷款loan提醒", ["loan"]) == ["loan"]
+    assert match_sms_keywords("loanapproved", ["loan"]) == []
+
+
+def test_sms_collection_requires_internal_android_channel_and_consent():
+    assert sms_collection_allowed(
+        platform="Android",
+        app_channel="internal",
+        consent_sms=True,
+        native_bridge="GalaCreditNativeRisk",
+        source="NATIVE_ANDROID",
+    )
+    assert not sms_collection_allowed(platform="Android", app_channel="play", consent_sms=True)
+    assert not sms_collection_allowed(platform="iOS", app_channel="internal", consent_sms=True)
+    assert not sms_collection_allowed(platform="Android", app_channel="internal", consent_sms=False)
+    assert not sms_collection_allowed(
+        platform="Android",
+        app_channel="internal",
+        consent_sms=True,
+        native_bridge="spoofed-page",
+        source="NATIVE_ANDROID",
+    )
+
+
+def test_sms_filter_bounds_rows_and_sanitizes_malformed_flags():
+    now = datetime(2026, 9, 4, 12, 0, 0)
+    rows = [
+        {"sender": "Bank", "body": "loan approved", "time": now, "type": "invalid", "read": "invalid"}
+    ] + [
+        {"sender": "Bank", "body": "loan approved", "time": now}
+        for _ in range(5001)
+    ]
+
+    filtered = filter_sms_messages(rows, now=now, keywords=["loan"])
+
+    assert len(filtered) == 5000
+    assert filtered[0]["type"] == 1
+    assert filtered[0]["read"] == 0
+
+
+def test_sms_filter_accepts_numeric_millisecond_timestamp():
+    now = datetime(2026, 9, 4, 12, 0, 0)
+    timestamp = int(now.timestamp() * 1000)
+
+    filtered = filter_sms_messages(
+        [{"sender": "Bank", "body": "loan approved", "timestamp": timestamp}],
+        now=now,
+        keywords=["loan"],
+    )
+
+    assert len(filtered) == 1
 
 
 def test_device_risk_evaluation_flags_multi_user_device():

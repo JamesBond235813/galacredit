@@ -430,7 +430,7 @@ onBeforeUnmount(() => {
   min-height: 28px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
   font-size: 12px;
   font-weight: 700;
@@ -466,7 +466,7 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.68);
-  border: 1px solid rgba(47, 126, 247, 0.08);
+  border: 1px solid rgba(234, 149, 24, 0.08);
   color: var(--app-primary-deep);
   font-size: 12px;
   font-weight: 600;
@@ -522,7 +522,7 @@ onBeforeUnmount(() => {
   padding: 16px 0;
   border-radius: 18px;
   background:
-    radial-gradient(circle at center, rgba(47, 126, 247, 0.08) 0%, rgba(47, 126, 247, 0.02) 52%, transparent 52%),
+    radial-gradient(circle at center, rgba(234, 149, 24, 0.08) 0%, rgba(234, 149, 24, 0.02) 52%, transparent 52%),
     linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
 }
 
@@ -530,7 +530,7 @@ onBeforeUnmount(() => {
   position: absolute;
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(47, 126, 247, 0.36);
+  border: 2px solid rgba(234, 149, 24, 0.36);
 }
 
 .scan-grid span:nth-child(1) {
@@ -571,16 +571,16 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(circle at center, rgba(47, 126, 247, 0.08) 0%, rgba(47, 126, 247, 0.03) 58%, transparent 58%),
+    radial-gradient(circle at center, rgba(234, 149, 24, 0.08) 0%, rgba(234, 149, 24, 0.03) 58%, transparent 58%),
     linear-gradient(180deg, #ffffff 0%, #f6fbff 100%);
-  border: 2px solid rgba(47, 126, 247, 0.16);
+  border: 2px solid rgba(234, 149, 24, 0.16);
   box-shadow: inset 0 0 0 10px rgba(255, 255, 255, 0.85);
   overflow: hidden;
 }
 
 .scan-ring-scanning {
-  border-color: rgba(47, 126, 247, 0.56);
-  box-shadow: 0 0 0 10px rgba(47, 126, 247, 0.06), inset 0 0 0 10px rgba(255, 255, 255, 0.85);
+  border-color: rgba(234, 149, 24, 0.56);
+  box-shadow: 0 0 0 10px rgba(234, 149, 24, 0.06), inset 0 0 0 10px rgba(255, 255, 255, 0.85);
 }
 
 .scan-ring-success {
@@ -611,7 +611,7 @@ onBeforeUnmount(() => {
   height: 4px;
   border-radius: 999px;
   background: var(--app-gradient);
-  box-shadow: 0 0 16px rgba(47, 126, 247, 0.44);
+  box-shadow: 0 0 16px rgba(234, 149, 24, 0.44);
   animation: scanning 2s linear infinite;
 }
 
@@ -781,7 +781,7 @@ onBeforeUnmount(() => {
 }
 
 .picker-option {
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
 }
 

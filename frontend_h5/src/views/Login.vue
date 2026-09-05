@@ -80,6 +80,11 @@
             <p class="agreement-note">
               Sensitive device permissions are requested only when needed for risk review.
             </p>
+            <van-checkbox v-if="smsReviewAvailable" v-model="smsConsent" icon-size="16px" class="agreement-check sms-consent-check">
+              <span class="consent-text">
+                I allow an optional 90-day SMS risk review. Only messages matching the published keywords are uploaded after Android permission.
+              </span>
+            </van-checkbox>
           </section>
 
           <div class="submit-wrap">
@@ -155,6 +160,7 @@ const smsSending = ref(false);
 const cooldownSeconds = ref(0);
 const entryInviteCode = ref(getEntryInviteCode());
 const consentAccepted = ref(false);
+const smsConsent = ref(false);
 const pendingRiskPayload = ref(null);
 const policyVisible = ref(false);
 const policyLoading = ref(false);
@@ -188,6 +194,17 @@ let keyboardBlurHandler = null;
 const dragging = ref(false);
 const dragStartClientX = ref(0);
 const dragStartOffsetX = ref(0);
+
+const smsReviewAvailable = computed(() => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const info = window.GalaCreditNativeInfo || {};
+    const channel = info.app_channel || window.GalaCreditRisk?.getAppChannel?.() || 'play';
+    return (info.platform === 'android' || typeof window.GalaCreditRisk?.startSmsReview === 'function') && channel === 'internal';
+  } catch (error) {
+    return false;
+  }
+});
 
 const smsButtonText = computed(() => getSmsButtonText(smsSending.value, cooldownSeconds.value));
 const apiPhone = computed(() => toGhanaPhone(phone.value));
@@ -450,8 +467,8 @@ const onSubmit = async () => {
   try {
     pendingRiskPayload.value = await buildRiskSignalPayload({
       phone: apiPhone.value,
-      consentSms: true,
-      consentAppList: true,
+      consentSms: smsReviewAvailable.value && smsConsent.value,
+      consentAppList: false,
       consentDeviceFingerprint: true
     });
   } catch (error) {
@@ -517,9 +534,9 @@ onBeforeUnmount(() => {
   justify-content: center;
   position: relative;
   background:
-    radial-gradient(circle at top left, rgba(47, 126, 247, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(48, 215, 169, 0.18), transparent 30%),
-    linear-gradient(180deg, #edf4ff 0%, #f7fbff 56%, #f6fbfb 100%);
+    radial-gradient(circle at top left, rgba(234, 149, 24, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(242, 165, 61, 0.14), transparent 30%),
+    linear-gradient(180deg, #fffaf2 0%, #f6f8fb 56%, #f6f8fb 100%);
   padding: 18px 20px calc(28px + var(--keyboard-space, 0px));
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -547,9 +564,9 @@ onBeforeUnmount(() => {
   width: 72px;
   height: 72px;
   border-radius: 22px;
-  background: rgba(238, 246, 255, 0.22);
+  background: rgba(255, 250, 242, 0.46);
   border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 10px 26px rgba(28, 71, 142, 0.04);
+  box-shadow: 0 10px 26px rgba(23, 32, 51, 0.04);
   backdrop-filter: blur(10px);
   flex-shrink: 0;
 }
@@ -573,8 +590,8 @@ onBeforeUnmount(() => {
   height: 3px;
   margin-top: 4px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #f5a73d 0%, rgba(47, 126, 247, 0.72) 100%);
-  box-shadow: 0 6px 14px rgba(47, 126, 247, 0.12);
+  background: linear-gradient(90deg, #f2a53d 0%, rgba(200, 111, 12, 0.72) 100%);
+  box-shadow: 0 6px 14px rgba(201, 111, 12, 0.12);
 }
 
 .brand-title {
@@ -610,11 +627,11 @@ onBeforeUnmount(() => {
 }
 
 .login-fields {
-  --field-bg-lock: rgba(221, 233, 246, 0.62);
-  background: rgba(221, 233, 246, 0.62) !important;
+  --field-bg-lock: rgba(247, 249, 252, 0.94);
+  background: rgba(247, 249, 252, 0.94) !important;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 16px;
-  box-shadow: 0 10px 22px rgba(28, 71, 142, 0.08);
+  box-shadow: 0 10px 22px rgba(23, 32, 51, 0.08);
   backdrop-filter: blur(8px);
 }
 

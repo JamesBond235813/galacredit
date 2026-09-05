@@ -4,7 +4,7 @@
 
     <div class="page-inner detail-inner">
       <div v-if="loading" class="loading-box">
-        <van-loading type="spinner" color="#2f7ef7" />
+        <van-loading type="spinner" color="#ea9518" />
       </div>
 
       <template v-else>
@@ -22,7 +22,7 @@
             <strong>GHS {{ formatAmount(discountAmount) }} discount</strong>
             <p>Fees are deducted once before disbursement. Your cash received is shown before confirmation.</p>
           </div>
-          <van-checkbox v-model="useDiscount" checked-color="#2f7ef7">Apply</van-checkbox>
+          <van-checkbox v-model="useDiscount" checked-color="#ea9518">Apply</van-checkbox>
         </section>
 
         <section class="product-card page-card" v-if="selectedProduct">
@@ -206,7 +206,7 @@
         </div>
 
         <div ref="contractScrollRef" class="contract-dialog-scroll" @scroll="handleContractScroll">
-          <van-loading v-if="contractLoading" type="spinner" color="#2f7ef7" />
+          <van-loading v-if="contractLoading" type="spinner" color="#ea9518" />
           <div v-else class="contract-content" v-html="contractContent"></div>
         </div>
 
@@ -214,7 +214,7 @@
           <p class="contract-read-tip">
             {{ contractScrolledToBottom ? 'You have reached the end. You may accept or decline.' : 'Scroll to the end and read the full agreement.' }}
           </p>
-          <van-checkbox v-model="contractCarefulRead" :disabled="!contractScrolledToBottom" checked-color="#2f7ef7">
+          <van-checkbox v-model="contractCarefulRead" :disabled="!contractScrolledToBottom" checked-color="#ea9518">
             I have read and agree to all terms of this agreement
           </van-checkbox>
           <div class="contract-actions">
@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   border: 1px solid rgba(181, 207, 243, 0.9);
   background:
-    radial-gradient(circle at top left, rgba(47, 126, 247, 0.14), transparent 40%),
+    radial-gradient(circle at top left, rgba(234, 149, 24, 0.14), transparent 40%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 250, 255, 0.96) 100%);
 }
 
@@ -771,7 +771,7 @@ onBeforeUnmount(() => {
   height: 24px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
   font-size: 11px;
 }
@@ -800,8 +800,8 @@ onBeforeUnmount(() => {
   height: 22px;
   padding: 0 10px;
   border-radius: 999px;
-  border: 1px solid rgba(47, 126, 247, 0.28);
-  background: rgba(47, 126, 247, 0.08);
+  border: 1px solid rgba(234, 149, 24, 0.28);
+  background: rgba(234, 149, 24, 0.08);
   color: var(--app-primary-deep);
   font-size: 11px;
   line-height: 1;
@@ -945,7 +945,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   flex: 0 0 17px;
   border-radius: 4px;
-  border: 1px solid rgba(47, 126, 247, 0.75);
+  border: 1px solid rgba(234, 149, 24, 0.75);
   font-size: 13px;
   font-weight: 700;
   color: #ffffff;
@@ -989,7 +989,7 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   border-radius: 999px;
   border: none;
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
   font-size: 12px;
   font-weight: 600;
@@ -1060,7 +1060,7 @@ onBeforeUnmount(() => {
 
 .contract-content :deep(.contract-summary th) {
   width: 32%;
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
   color: var(--app-text-soft);
   font-weight: 600;
 }
@@ -1069,7 +1069,7 @@ onBeforeUnmount(() => {
   margin-top: 16px;
   padding: 12px;
   border-radius: 12px;
-  background: rgba(47, 126, 247, 0.06);
+  background: rgba(234, 149, 24, 0.06);
 }
 
 .contract-read-tip {
@@ -1094,7 +1094,7 @@ onBeforeUnmount(() => {
   margin-top: 10px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
 }
 
 .rights-provider p {

@@ -382,7 +382,7 @@ onBeforeUnmount(() => {
 }
 
 .service-item-active {
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
 }
 
 .service-icon {
@@ -392,7 +392,7 @@ onBeforeUnmount(() => {
   width: 42px;
   height: 42px;
   border-radius: 14px;
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
   font-size: 23px;
 }
 

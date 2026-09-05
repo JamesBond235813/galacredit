@@ -43,12 +43,12 @@ struct DetailView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 160)
                 }
-                .safeAreaPadding(.top, 8)
+                .padding(.top, 8)
 
                 actionDock
                     .padding(.horizontal, 16)
                     .padding(.bottom, 18)
-                    .safeAreaPadding(.bottom, 8)
+                    .padding(.bottom, 8)
 
                 edgeDismissHandle
             }

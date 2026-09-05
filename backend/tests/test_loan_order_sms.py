@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.endpoints import loan
+from app.core.exceptions import BizException, biz_exception_handler
 from app.api.deps import get_current_user_async
 
 
@@ -17,6 +18,7 @@ def test_generate_order_no_should_match_required_pattern():
 
 def test_send_order_sms_code_should_return_cooldown(monkeypatch):
     app = FastAPI()
+    app.add_exception_handler(BizException, biz_exception_handler)
     app.include_router(loan.router, prefix="/api/loan")
     app.dependency_overrides[get_current_user_async] = lambda: SimpleNamespace(id=9527)
 
@@ -47,6 +49,7 @@ def test_send_order_sms_code_should_return_cooldown(monkeypatch):
 
 def test_send_order_sms_code_should_return_429_when_frequent(monkeypatch):
     app = FastAPI()
+    app.add_exception_handler(BizException, biz_exception_handler)
     app.include_router(loan.router, prefix="/api/loan")
     app.dependency_overrides[get_current_user_async] = lambda: SimpleNamespace(id=9527)
 
@@ -69,8 +72,9 @@ def test_send_order_sms_code_should_return_429_when_frequent(monkeypatch):
     monkeypatch.setattr(loan, "sms_service", _FakeSmsService())
     client = TestClient(app)
     resp = client.post("/api/loan/order-sms-code")
-    assert resp.status_code == 429
-    assert "发送过于频繁" in resp.json()["detail"]
+    assert resp.status_code == 200
+    assert resp.json()["code"] == 429
+    assert "发送过于频繁" in resp.json()["msg"]
 
 
 def test_withdraw_should_reject_when_sms_code_invalid(monkeypatch):
@@ -85,11 +89,17 @@ def test_withdraw_should_reject_when_sms_code_invalid(monkeypatch):
             def scalar_one_or_none(self):
                 return self._value
 
+            def scalars(self):
+                return self
+
+            def first(self):
+                return self._value
+
         class _FakeDb:
             async def execute(self, statement):
                 text_stmt = str(statement)
                 if "FROM users" in text_stmt:
-                    return _ExecuteResult(SimpleNamespace(id=9527, phone="13800000000", approved_limit=2000))
+                    return _ExecuteResult(SimpleNamespace(id=9527, phone="13800000000", id_card_num=None, approved_limit=2000))
                 return _ExecuteResult(None)
 
         async def _fake_get_or_create_latest_loan(_db, _user_id):
@@ -104,13 +114,14 @@ def test_withdraw_should_reject_when_sms_code_invalid(monkeypatch):
 
         try:
             await loan.withdraw(
-                req=SimpleNamespace(product_id=1, sms_code="123456"),
+                req=SimpleNamespace(product_id=1, sms_code="123456", extension_source_loan_id=None, use_discount=False, contract_signature_id=1),
                 current_user=SimpleNamespace(id=9527),
                 db=_FakeDb(),
             )
             assert False, "expected HTTPException"
         except HTTPException as exc:
-            assert exc.status_code == 400
+            assert exc.status_code == 200
+            assert exc.code == 400
             assert "验证码" in str(exc.detail)
 
     asyncio.run(_run())

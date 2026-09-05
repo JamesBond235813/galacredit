@@ -2,14 +2,15 @@ package com.galacredit.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.provider.Settings.Secure;
 import android.os.Handler;
 import android.os.Looper;
@@ -46,6 +47,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.InputStream;
+import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -81,6 +84,13 @@ public class MainActivity extends Activity {
     private int cooldownSeconds = 0;
     private boolean consentAccepted = false;
     private ImageView loginLogo;
+    private boolean smsConsentAccepted = false;
+    private static final int SMS_PERMISSION_REQUEST = 712;
+    private String pendingRiskPhone = "";
+    private boolean pendingOpenHomeAfterRisk;
+    private Runnable cooldownTicker;
+    private Dialog activeCaptchaDialog;
+    private Dialog activePolicyDialog;
 
     private String pendingCaptchaPhone = "";
     private String pendingCaptchaTicket = "";
@@ -101,12 +111,57 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (cooldownSeconds > 0) {
+        // 页面可能尚未完成登录视图初始化，恢复前台时不能假设按钮已经存在。
+        if (cooldownSeconds > 0 && sendCodeButton != null) {
             sendCodeButton.setEnabled(false);
         }
     }
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // WebView 内退出后通过 CLEAR_TOP 回到已存在的登录壳，必须重新渲染登录界面。
+        if (api != null && api.token().isEmpty()) {
+            showLogin();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        // 页面退出后释放后台线程，避免反复进入登录页或重建 Activity 时累积线程。
+        if (cooldownTicker != null) {
+            main.removeCallbacks(cooldownTicker);
+            cooldownTicker = null;
+        }
+        if (activeCaptchaDialog != null && activeCaptchaDialog.isShowing()) {
+            activeCaptchaDialog.dismiss();
+        }
+        activeCaptchaDialog = null;
+        if (activePolicyDialog != null && activePolicyDialog.isShowing()) {
+            activePolicyDialog.dismiss();
+        }
+        activePolicyDialog = null;
+        worker.shutdownNow();
+        super.onDestroy();
+    }
+
     private void showLogin() {
+        // 退出后重新登录必须重新取得短信单独同意，不能沿用上一个账号的内存状态。
+        if (cooldownTicker != null) {
+            main.removeCallbacks(cooldownTicker);
+            cooldownTicker = null;
+        }
+        cooldownSeconds = 0;
+        if (activeCaptchaDialog != null && activeCaptchaDialog.isShowing()) {
+            activeCaptchaDialog.dismiss();
+        }
+        activeCaptchaDialog = null;
+        if (activePolicyDialog != null && activePolicyDialog.isShowing()) {
+            activePolicyDialog.dismiss();
+        }
+        activePolicyDialog = null;
+        consentAccepted = false;
+        smsConsentAccepted = false;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(Ui.BACKGROUND);
@@ -115,7 +170,7 @@ public class MainActivity extends Activity {
         root.setPadding(Ui.dp(this, 20), Ui.dp(this, 50), Ui.dp(this, 20), Ui.dp(this, 28));
         android.graphics.drawable.GradientDrawable loginBackground = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(237, 244, 255), Color.rgb(247, 251, 255), Color.rgb(246, 251, 251)}
+            new int[]{Color.rgb(255, 248, 237), Color.rgb(246, 248, 251), Color.rgb(242, 248, 246)}
         );
         root.setBackground(loginBackground);
         scroll.addView(root, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -138,11 +193,11 @@ public class MainActivity extends Activity {
 
         LinearLayout brandCopy = new LinearLayout(this);
         brandCopy.setOrientation(LinearLayout.VERTICAL);
-        TextView headline = Ui.text(this, "GalaCredit", 40, Color.rgb(13, 27, 49), true);
-        headline.setLetterSpacing(-0.04f);
+        TextView headline = Ui.text(this, "GalaCredit", 40, Ui.TEXT, true);
+        headline.setLetterSpacing(0f);
         headline.setIncludeFontPadding(false);
         brandCopy.addView(headline);
-        TextView sub = Ui.text(this, "Credit when it matters", 15, Color.rgb(93, 118, 148), true);
+        TextView sub = Ui.text(this, "Credit when it matters", 15, Ui.MUTED, true);
         sub.setPadding(0, Ui.dp(this, 2), 0, 0);
         sub.setIncludeFontPadding(false);
         brandCopy.addView(sub);
@@ -154,7 +209,7 @@ public class MainActivity extends Activity {
         loginCard = new LinearLayout(this);
         loginCard.setOrientation(LinearLayout.VERTICAL);
         loginCard.setPadding(Ui.dp(this, 14), Ui.dp(this, 14), Ui.dp(this, 14), Ui.dp(this, 14));
-        loginCard.setBackground(Ui.rounded(Color.argb(158, 221, 233, 246), 16, Color.argb(72, 255, 255, 255), this));
+        loginCard.setBackground(Ui.rounded(Color.argb(245, 255, 255, 255), 16, Ui.BORDER, this));
         loginCard.setElevation(Ui.dp(this, 2));
         root.addView(loginCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -178,11 +233,11 @@ public class MainActivity extends Activity {
         LinearLayout phoneRow = new LinearLayout(this);
         phoneRow.setOrientation(LinearLayout.HORIZONTAL);
         phoneRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView prefix = Ui.text(this, "🇬🇭  +233", 15, Color.rgb(35, 52, 79), true);
+        TextView prefix = Ui.text(this, "🇬🇭  +233", 15, Ui.TEXT, true);
         prefix.setGravity(Gravity.CENTER_VERTICAL);
         phoneRow.addView(prefix, new LinearLayout.LayoutParams(Ui.dp(this, 86), Ui.dp(this, 48)));
         phoneRow.addView(phoneInput, new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1));
-        limitLabelText = Ui.text(this, "0/9", 12, Color.rgb(122, 139, 161), false);
+        limitLabelText = Ui.text(this, "0/9", 12, Ui.MUTED, false);
         phoneRow.addView(limitLabelText, new LinearLayout.LayoutParams(Ui.dp(this, 28), Ui.dp(this, 48)));
         phoneInput.setGravity(Gravity.CENTER_VERTICAL);
         limitLabelText.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
@@ -222,13 +277,26 @@ public class MainActivity extends Activity {
         consentRow.addView(consent, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         consentRow.addView(consentText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         agreementPanel.addView(consentRow);
-        TextView legalNote = Ui.text(this, "Sensitive device permissions are requested only when needed for risk review.", 12, Color.rgb(106, 124, 146), false);
+        TextView legalNote = Ui.text(this, "Sensitive device permissions are requested only when needed for risk review.", 12, Ui.MUTED, false);
         legalNote.setPadding(Ui.dp(this, 32), Ui.dp(this, 12), 0, 0);
         legalNote.setLineSpacing(0f, 1.1f);
         agreementPanel.addView(legalNote);
         LinearLayout.LayoutParams agreementLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         agreementLp.topMargin = Ui.dp(this, 16);
         root.addView(agreementPanel, agreementLp);
+
+        // 内部授权版才展示短信授权开关；Google Play 构建不声明该权限，也不会诱导用户授权。
+        if (hasSmsPermissionDeclaration()) {
+            CheckBox smsConsent = new CheckBox(this);
+            smsConsent.setText("I allow an optional 90-day SMS risk review. Only messages matching the published keywords are uploaded.");
+            smsConsent.setTextColor(Ui.MUTED);
+            smsConsent.setTextSize(12);
+            smsConsent.setButtonTintList(android.content.res.ColorStateList.valueOf(Ui.BLUE));
+            smsConsent.setOnCheckedChangeListener((buttonView, isChecked) -> smsConsentAccepted = isChecked);
+            LinearLayout.LayoutParams smsConsentLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            smsConsentLp.topMargin = Ui.dp(this, 10);
+            root.addView(smsConsent, smsConsentLp);
+        }
 
         signInButton = Ui.primaryButton(this, "Sign In");
         signInButton.setOnClickListener(v -> submitLogin());
@@ -277,12 +345,25 @@ public class MainActivity extends Activity {
             .setView(panel)
             .setPositiveButton("Close", null)
             .create();
+        activePolicyDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            if (activePolicyDialog == dialog) activePolicyDialog = null;
+        });
         dialog.show();
         worker.execute(() -> {
             try {
                 URL url = new URL(AppConfig.WEB_BASE_URL + path);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(10000);
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestProperty("Accept", "text/plain,text/*;q=0.9,*/*;q=0.1");
+                int responseCode = connection.getResponseCode();
+                if (responseCode < 200 || responseCode >= 300) {
+                    throw new IOException("Policy request failed: " + responseCode);
+                }
                 String text;
-                try (InputStream input = url.openStream()) {
+                try (InputStream input = connection.getInputStream()) {
                     byte[] buffer = new byte[8192];
                     StringBuilder builder = new StringBuilder();
                     int read;
@@ -290,11 +371,17 @@ public class MainActivity extends Activity {
                         builder.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
                     }
                     text = builder.toString();
+                } finally {
+                    connection.disconnect();
                 }
                 String finalText = text;
-                main.post(() -> content.setText(finalText));
+                main.post(() -> {
+                    if (!isFinishing() && (Build.VERSION.SDK_INT < 17 || !isDestroyed())) content.setText(finalText);
+                });
             } catch (Exception error) {
-                main.post(() -> content.setText(title + " could not be loaded. Please try again later."));
+                main.post(() -> {
+                    if (!isFinishing() && (Build.VERSION.SDK_INT < 17 || !isDestroyed())) content.setText(title + " could not be loaded. Please try again later.");
+                });
             }
         });
     }
@@ -314,10 +401,15 @@ public class MainActivity extends Activity {
     }
 
     private void showCaptchaDialog() {
+        if (activeCaptchaDialog != null && activeCaptchaDialog.isShowing()) {
+            return;
+        }
+        pendingCaptchaTicket = "";
+        pendingCaptchaPhone = "";
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 20), Ui.dp(this, 16));
-        panel.setBackground(Ui.rounded(Color.rgb(236, 244, 255), 18, Color.argb(90, 255, 255, 255), this));
+        panel.setBackground(Ui.rounded(Color.rgb(255, 248, 237), 18, Ui.BORDER, this));
         TextView title = Ui.text(this, "Complete the security check", 18, Ui.TEXT, true);
         TextView desc = Ui.text(this, "Slide to the end to verify the phone number before we send the code.", 13, Ui.MUTED, false);
         desc.setLineSpacing(0f, 1.15f);
@@ -335,6 +427,7 @@ public class MainActivity extends Activity {
         cancelLp.topMargin = Ui.dp(this, 8);
         panel.addView(cancel, cancelLp);
         Dialog dialog = new Dialog(this);
+        activeCaptchaDialog = dialog;
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         dialog.setContentView(panel);
         dialog.setCancelable(true);
@@ -342,7 +435,13 @@ public class MainActivity extends Activity {
         slider.setListener((progress, finished) -> {
             if (finished) hint.setText("Verifying...");
         });
-        cancel.setOnClickListener(v -> dialog.dismiss());
+        cancel.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (activeCaptchaDialog == dialog) activeCaptchaDialog = null;
+        });
+        dialog.setOnDismissListener(ignored -> {
+            if (activeCaptchaDialog == dialog) activeCaptchaDialog = null;
+        });
         dialog.show();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -395,11 +494,13 @@ public class MainActivity extends Activity {
                     throw new IllegalStateException("Security check could not be completed.");
                 }
                 main.post(() -> {
+                    if (!dialog.isShowing() || isFinishing() || (Build.VERSION.SDK_INT >= 17 && isDestroyed())) return;
                     dialog.dismiss();
                     sendVerificationCode();
                 });
             } catch (Exception error) {
                 main.post(() -> {
+                    if (!dialog.isShowing() || isFinishing() || (Build.VERSION.SDK_INT >= 17 && isDestroyed())) return;
                     dialog.dismiss();
                     toast("Security check failed. Please try again.");
                 });
@@ -424,7 +525,7 @@ public class MainActivity extends Activity {
             } catch (Exception error) {
                 main.post(() -> {
                     toast("Unable to send the verification code. Please try again.");
-                    sendCodeButton.setEnabled(true);
+                    if (sendCodeButton != null) sendCodeButton.setEnabled(true);
                 });
             }
         });
@@ -455,14 +556,77 @@ public class MainActivity extends Activity {
         worker.execute(() -> {
             try {
                 api.smsLogin(normalized, code, null);
-                // 风险信号补传不阻断登录，也不把内部校验细节暴露给用户。
-                try { api.submitRiskSignals(normalized, buildRiskPayload()); } catch (Exception ignored) { }
-                loadSessionAndShowHome();
+                // 风险信号补传不阻断登录；短信读取必须在主线程取得系统授权后再执行。
+                pendingRiskPhone = normalized;
+                pendingOpenHomeAfterRisk = true;
+                main.post(this::requestRiskCollection);
             } catch (Exception error) {
                 main.post(() -> {
                     signInButton.setEnabled(true);
                     toast("Sign in failed. Check your verification code and try again.");
                 });
+            }
+        });
+    }
+
+    private boolean hasSmsPermissionDeclaration() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS);
+            if (info.requestedPermissions == null) return false;
+            for (String permission : info.requestedPermissions) {
+                if (SmsCollector.permissionName().equals(permission)) return true;
+            }
+        } catch (Exception ignored) {
+            // 无法读取包权限时按 Google Play 安全默认值处理。
+        }
+        return false;
+    }
+
+    private void requestRiskCollection() {
+        if (!SmsCollector.isInternalChannel(this) || !hasSmsPermissionDeclaration() || !smsConsentAccepted) {
+            submitRiskSignalsInBackground(false);
+            openHomeAfterRiskPermission();
+            return;
+        }
+        if (SmsCollector.isPermissionGranted(this)) {
+            submitRiskSignalsInBackground(true);
+            openHomeAfterRiskPermission();
+            return;
+        }
+        requestPermissions(new String[]{SmsCollector.permissionName()}, SMS_PERMISSION_REQUEST);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != SMS_PERMISSION_REQUEST) return;
+        submitRiskSignalsInBackground(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED);
+        openHomeAfterRiskPermission();
+    }
+
+    /**
+     * 确保系统敏感权限弹窗结束后再切换到业务 WebView。
+     *
+     * :return: 无
+     */
+    private void openHomeAfterRiskPermission() {
+        if (!pendingOpenHomeAfterRisk) return;
+        pendingOpenHomeAfterRisk = false;
+        loadSessionAndShowHome();
+    }
+
+    private void submitRiskSignalsInBackground(boolean includeSms) {
+        final String riskPhone = pendingRiskPhone;
+        final String sessionToken = api.token();
+        worker.execute(() -> {
+            try {
+                JSONObject result = api.submitRiskSignals(riskPhone, buildRiskPayload(includeSms));
+                // 用户可能在弱网请求完成前退出；不把旧账号的任务摘要写回新会话。
+                if (!sessionToken.isEmpty() && sessionToken.equals(api.token()) && riskPhone.equals(api.phone())) {
+                    api.saveRiskTask(result);
+                }
+            } catch (Exception ignored) {
+                // 风控数据补传失败不影响已经完成的登录会话。
             }
         });
     }
@@ -476,10 +640,61 @@ public class MainActivity extends Activity {
                 // 登录后的正式首页以 H5 为唯一视觉与交互来源，仍在 App 内 WebView 打开，避免落到旧的原生占位首页。
                 main.post(() -> openUrl(AppConfig.WEB_BASE_URL + "/home"));
             } catch (Exception error) {
-                api.logout();
-                main.post(this::showLogin);
+                // 弱网或服务端短暂不可用时保留本地会话，给用户重试机会；只有明确的 401 才清除登录态。
+                main.post(() -> {
+                    if (isFinishing() || (Build.VERSION.SDK_INT >= 17 && isDestroyed())) return;
+                    if (error instanceof ApiException && ((ApiException) error).statusCode == 401) {
+                        api.logout();
+                        showLogin();
+                        return;
+                    }
+                    showSessionLoadError();
+                });
             }
         });
+    }
+
+    /** 显示会话数据加载失败页面，避免弱网时把仍有效的用户强制踢回登录页。
+     *
+     * :return: 无
+     */
+    private void showSessionLoadError() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Ui.BACKGROUND);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        panel.setPadding(Ui.dp(this, 28), Ui.dp(this, 96), Ui.dp(this, 28), Ui.dp(this, 32));
+        scroll.addView(panel, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(getResources().getIdentifier("galacredit_logo", "drawable", getPackageName()));
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        panel.addView(logo, new LinearLayout.LayoutParams(Ui.dp(this, 72), Ui.dp(this, 72)));
+        TextView title = Ui.text(this, "We could not load your account", 23, Ui.TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, Ui.dp(this, 22), 0, 0);
+        panel.addView(title);
+        // 避免把底层 URL、数据库错误或令牌信息展示给用户。
+        TextView message = Ui.text(this, "Check your connection and try again. Your sign-in is still saved securely on this device.", 14, Ui.MUTED, false);
+        message.setGravity(Gravity.CENTER);
+        message.setLineSpacing(0f, 1.25f);
+        message.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 22));
+        panel.addView(message);
+
+        Button retry = Ui.primaryButton(this, "Try again");
+        retry.setOnClickListener(v -> loadSessionAndShowHome());
+        panel.addView(retry, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)));
+        Button signOut = Ui.secondaryButton(this, "Sign out");
+        signOut.setOnClickListener(v -> {
+            api.logout();
+            showLogin();
+        });
+        LinearLayout.LayoutParams signOutLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48));
+        signOutLp.topMargin = Ui.dp(this, 12);
+        panel.addView(signOut, signOutLp);
+        setContentView(scroll);
     }
 
     private void showHome() {
@@ -589,8 +804,10 @@ public class MainActivity extends Activity {
         descView.setPadding(0, Ui.dp(this, 4), 0, 0);
         copy.addView(descView);
         card.addView(copy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView arrow = Ui.text(this, "›", 24, Ui.BLUE, true);
-        card.addView(arrow);
+        ImageView arrow = new ImageView(this);
+        arrow.setImageResource(getResources().getIdentifier("ic_chevron_right", "drawable", getPackageName()));
+        arrow.setContentDescription("Open");
+        card.addView(arrow, new LinearLayout.LayoutParams(Ui.dp(this, 24), Ui.dp(this, 24)));
         card.setOnClickListener(v -> action.run());
         return card;
     }
@@ -696,32 +913,6 @@ public class MainActivity extends Activity {
         return days > 0 ? days + " days" : "-- days";
     }
 
-    private void checkAppUpdate() {
-        worker.execute(() -> {
-            try {
-                JSONObject update = fetchUpdateInfo();
-                int versionCode = update.optInt("versionCode", 0);
-                if (versionCode > currentVersionCode()) {
-                    main.post(() -> showUpdateDialog(update));
-                }
-            } catch (Exception ignored) {
-            }
-        });
-    }
-
-    private JSONObject fetchUpdateInfo() throws Exception {
-        URL url = new URL(AppConfig.ASSET_BASE + "/download/galacredit-version.json?t=" + System.currentTimeMillis());
-        try (InputStream input = url.openStream()) {
-            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-            return new JSONObject(output.toString("UTF-8"));
-        }
-    }
-
     private int currentVersionCode() {
         try {
             PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -729,63 +920,6 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
             return 0;
         }
-    }
-
-    private void showUpdateDialog(JSONObject update) {
-        String title = "发现新版本";
-        String version = update.optString("versionName", "");
-        if (!version.isEmpty()) {
-            title += " " + version;
-        }
-        String notes = update.optString("notes", "发现新版 GalaCredit，请更新后继续使用。");
-        new AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(notes)
-            .setPositiveButton("升级", (dialog, which) -> downloadAndInstall(update))
-            .setNegativeButton("稍后", null)
-            .show();
-    }
-
-    private void downloadAndInstall(JSONObject update) {
-        String apkUrl = update.optString("apkUrl", AppConfig.ASSET_BASE + "/download/galacredit.apk");
-        worker.execute(() -> {
-            try {
-                java.io.File dir = new java.io.File(getCacheDir(), "galacredit-updates");
-                if (!dir.exists() && !dir.mkdirs()) {
-                    throw new IllegalStateException("无法创建更新目录");
-                }
-                java.io.File apk = new java.io.File(dir, "galacredit-update-" + Math.max(update.optInt("versionCode", 0), currentVersionCode() + 1) + ".apk");
-                try (InputStream input = new URL(apkUrl).openStream();
-                     java.io.FileOutputStream output = new java.io.FileOutputStream(apk)) {
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    while ((read = input.read(buffer)) != -1) {
-                        output.write(buffer, 0, read);
-                    }
-                }
-                main.post(() -> installApk(apk));
-            } catch (Exception error) {
-                main.post(() -> toast(error.getMessage() == null ? "更新下载失败" : error.getMessage()));
-            }
-        });
-    }
-
-    private void installApk(java.io.File apk) {
-        if (apk == null || !apk.exists()) {
-            toast("安装文件不存在");
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
-            toast("请先允许安装未知来源应用");
-            return;
-        }
-        Uri uri = Uri.parse("content://" + getPackageName() + ".apkprovider/" + apk.getName());
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, "application/vnd.android.package-archive");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(intent);
     }
 
     /** GalaCredit 风格滑块：浅蓝轨道、蓝色进度和圆形拖拽钮，避免使用系统 SeekBar 的突兀样式。 */
@@ -820,7 +954,7 @@ public class MainActivity extends Activity {
             paint.setColor(Ui.BLUE);
             canvas.drawRoundRect(left, center - Ui.dp(getContext(), 7), left + (right - left) * progress, center + Ui.dp(getContext(), 7), Ui.dp(getContext(), 7), Ui.dp(getContext(), 7), paint);
             float knobX = left + (right - left) * progress;
-            paint.setShadowLayer(Ui.dp(getContext(), 6), 0, Ui.dp(getContext(), 2), Color.argb(65, 28, 71, 142));
+            paint.setShadowLayer(Ui.dp(getContext(), 6), 0, Ui.dp(getContext(), 2), Color.argb(65, 200, 111, 12));
             paint.setColor(Color.WHITE);
             canvas.drawCircle(knobX, center, radius, paint);
             paint.clearShadowLayer();
@@ -866,7 +1000,8 @@ public class MainActivity extends Activity {
         try {
             Uri target = Uri.parse(url);
             Intent intent = new Intent(this, NativeWebViewActivity.class);
-            intent.putExtra("path", target.getPath());
+            // 保留查询参数，扩展还款等入口依赖 query 传递源订单号；原先只传 path 会静默丢参。
+            intent.putExtra("url", target.toString());
             startActivity(intent);
         } catch (Exception error) {
             toast("无法打开链接");
@@ -906,20 +1041,24 @@ public class MainActivity extends Activity {
     }
 
     private void startCooldown(int seconds) {
+        if (cooldownTicker != null) {
+            main.removeCallbacks(cooldownTicker);
+        }
         cooldownSeconds = Math.max(seconds, 1);
         sendCodeButton.setEnabled(false);
-        Runnable[] ticker = new Runnable[1];
-        ticker[0] = () -> {
+        cooldownTicker = () -> {
+            if (sendCodeButton == null) return;
             if (cooldownSeconds <= 0) {
-                sendCodeButton.setText("获取验证码");
+                sendCodeButton.setText("Send code");
                 sendCodeButton.setEnabled(true);
+                cooldownTicker = null;
                 return;
             }
             sendCodeButton.setText(cooldownSeconds + "s");
             cooldownSeconds--;
-            main.postDelayed(ticker[0], 1000);
+            main.postDelayed(cooldownTicker, 1000);
         };
-        ticker[0].run();
+        cooldownTicker.run();
     }
 
     private String normalizePhone(String value) {
@@ -948,7 +1087,7 @@ public class MainActivity extends Activity {
         return value != null && value.matches("^(?:\\d{7}|\\d{11}|233\\d{9})$");
     }
 
-    private JSONObject buildRiskPayload() throws Exception {
+    private JSONObject buildRiskPayload(boolean includeSms) throws Exception {
         JSONObject profile = new JSONObject();
         profile.put("platform", "Android");
         profile.put("android_version", Build.VERSION.RELEASE);
@@ -960,22 +1099,27 @@ public class MainActivity extends Activity {
         profile.put("screen_height", getResources().getDisplayMetrics().heightPixels);
         JSONObject payload = new JSONObject();
         // Google Play 不允许普通借贷应用申请 READ_SMS 或无边界应用清单权限；仅上报设备完整性摘要。
-        payload.put("consent_sms", false);
+        boolean allowSms = includeSms && smsConsentAccepted && SmsCollector.isInternalChannel(this);
+        payload.put("consent_sms", allowSms);
         payload.put("consent_app_list", false);
         payload.put("consent_device_fingerprint", true);
-        payload.put("sms_messages", new JSONArray());
+        payload.put("sms_messages", allowSms ? SmsCollector.collect(this) : new JSONArray());
         payload.put("installed_apps", new JSONArray());
         payload.put("device_profile", profile);
         payload.put("native_bridge", "GalaCreditNative");
         payload.put("source", "NATIVE");
         payload.put("platform", "Android");
+        // 服务端据此区分内部授权包与 Google Play 包，防止仅靠客户端布尔值绕过短信渠道边界。
+        payload.put("app_channel", getPackageName().endsWith(".internal") ? "internal" : "play");
         payload.put("app_version", String.valueOf(currentVersionCode()));
         payload.put("timezone", TimeZone.getDefault().getID());
         payload.put("language", Locale.getDefault().toLanguageTag());
         payload.put("screen_width", getResources().getDisplayMetrics().widthPixels);
         payload.put("screen_height", getResources().getDisplayMetrics().heightPixels);
-        payload.put("device_fingerprint", Secure.getString(getContentResolver(), Secure.ANDROID_ID));
-        payload.put("consent_version", "2026-08");
+        // 仅发送不可逆摘要，原始 Android ID 不进入网络载荷或服务端审计 JSON。
+        String rawAndroidId = Secure.getString(getContentResolver(), Secure.ANDROID_ID);
+        payload.put("device_fingerprint", DeviceFingerprint.hash(rawAndroidId, getPackageName()));
+        payload.put("consent_version", "2026-09");
         payload.put("risk_flags", new JSONArray());
         return payload;
     }

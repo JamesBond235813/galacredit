@@ -4,7 +4,7 @@
 
     <div v-if="loading" class="page-inner bill-inner">
       <div class="loading-box">
-        <van-loading type="spinner" color="#2f7ef7" />
+        <van-loading type="spinner" color="#ea9518" />
       </div>
     </div>
 
@@ -261,7 +261,7 @@ const onRepay = async (item = null) => {
     title,
     message: 'Contact customer support to complete your repayment. Your bill will update after payment is confirmed.',
     confirmButtonText: 'Got It',
-    confirmButtonColor: '#2f7ef7',
+    confirmButtonColor: '#ea9518',
     className: 'repay-guide-dialog'
   });
 };
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
 .payment-record-card {
   padding: 14px;
   background:
-    radial-gradient(circle at top right, rgba(47, 126, 247, 0.12), transparent 34%),
+    radial-gradient(circle at top right, rgba(234, 149, 24, 0.12), transparent 34%),
     linear-gradient(140deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 250, 255, 0.96) 100%);
 }
 
@@ -323,7 +323,7 @@ onBeforeUnmount(() => {
   height: 28px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
   font-size: 12px;
   font-weight: 700;
@@ -365,7 +365,7 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(47, 126, 247, 0.14);
+  border: 1px solid rgba(234, 149, 24, 0.14);
 }
 
 .payment-record-amount span {
@@ -431,7 +431,7 @@ onBeforeUnmount(() => {
   min-height: 38px;
   padding: 0 16px;
   border-radius: 999px;
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
   color: var(--app-primary-deep);
   font-size: 14px;
   font-weight: 600;
@@ -472,9 +472,9 @@ onBeforeUnmount(() => {
 
 .ecard-card {
   padding: 14px;
-  border: 1px solid rgba(47, 126, 247, 0.16);
+  border: 1px solid rgba(234, 149, 24, 0.16);
   background:
-    radial-gradient(circle at top right, rgba(47, 126, 247, 0.1), transparent 28%),
+    radial-gradient(circle at top right, rgba(234, 149, 24, 0.1), transparent 28%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(243, 249, 255, 0.96) 100%);
 }
 
@@ -492,7 +492,7 @@ onBeforeUnmount(() => {
 .ecard-item {
   margin-top: 12px;
   padding: 10px;
-  border: 1px solid rgba(47, 126, 247, 0.12);
+  border: 1px solid rgba(234, 149, 24, 0.12);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.72);
 }
@@ -546,9 +546,9 @@ onBeforeUnmount(() => {
 
 .rights-service-card {
   padding: 14px;
-  border: 1px solid rgba(47, 126, 247, 0.14);
+  border: 1px solid rgba(234, 149, 24, 0.14);
   background:
-    radial-gradient(circle at top right, rgba(47, 126, 247, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(234, 149, 24, 0.08), transparent 28%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 250, 255, 0.96) 100%);
 }
 
@@ -570,7 +570,7 @@ onBeforeUnmount(() => {
   padding: 8px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.74);
-  border: 1px solid rgba(47, 126, 247, 0.08);
+  border: 1px solid rgba(234, 149, 24, 0.08);
 }
 
 .rights-service-item span {
@@ -602,7 +602,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 18px;
   position: relative;
-  border: 1px solid rgba(47, 126, 247, 0.18);
+  border: 1px solid rgba(234, 149, 24, 0.18);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 249, 255, 0.96) 100%);
   box-shadow: 0 18px 36px rgba(36, 79, 147, 0.1);
@@ -631,7 +631,7 @@ onBeforeUnmount(() => {
   position: relative;
   padding: 12px;
   background:
-    radial-gradient(circle at top right, rgba(47, 126, 247, 0.08), transparent 22%),
+    radial-gradient(circle at top right, rgba(234, 149, 24, 0.08), transparent 22%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 251, 255, 0.94) 100%);
 }
 
@@ -666,7 +666,7 @@ onBeforeUnmount(() => {
   margin-top: 10px;
   height: 40px;
   border-radius: 12px !important;
-  box-shadow: 0 10px 18px rgba(42, 120, 227, 0.2);
+  box-shadow: 0 10px 18px rgba(201, 111, 12, 0.2);
 }
 
 @media (max-height: 860px) {
@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
   border-radius: 18px;
   box-shadow: 0 24px 48px rgba(26, 63, 123, 0.22);
   background:
-    radial-gradient(circle at top right, rgba(47, 126, 247, 0.08), transparent 26%),
+    radial-gradient(circle at top right, rgba(234, 149, 24, 0.08), transparent 26%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(246, 250, 255, 0.98) 100%);
 }
 
@@ -724,7 +724,7 @@ onBeforeUnmount(() => {
   padding: 22px 20px 14px;
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.14), transparent 26%),
-    linear-gradient(135deg, #244b87 0%, #3774e6 58%, #3ed0ba 100%);
+    linear-gradient(135deg, #c86f0c 0%, #ea9518 58%, #f2a53d 100%);
   color: #ffffff;
   font-size: 20px;
   font-weight: 700;

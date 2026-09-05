@@ -5,7 +5,18 @@ final class WorkspaceLogicTests: XCTestCase {
     func testWebBaseURLShouldDropApiSuffix() {
         let url = AppConfig.webBaseURL.absoluteString
         XCTAssertFalse(url.hasSuffix("/api"))
-        XCTAssertTrue(url.contains("127.0.0.1:8001") || url.contains("gala.ebamotor.com"))
+        XCTAssertTrue(url.contains("127.0.0.1:8001") || url.contains("galacredit.ebamotor.com"))
+    }
+
+    func testNativeEnvironmentShouldUseAppStoreAndNeverIncludeSms() {
+        let info = NativeEnvironment.info()
+        XCTAssertEqual(info["platform"] as? String, "ios")
+        XCTAssertEqual(info["app_channel"] as? String, "appstore")
+        let payload = NativeEnvironment.riskPayload()
+        XCTAssertEqual(payload["consent_sms"]?.boolValue, false)
+        XCTAssertEqual(payload["consent_app_list"]?.boolValue, false)
+        XCTAssertEqual(payload["sms_messages"]?.arrayValue?.count, 0)
+        XCTAssertEqual(payload["installed_apps"]?.arrayValue?.count, 0)
     }
 
     func testVisibleTabsShouldRespectRoles() {
@@ -62,7 +73,7 @@ final class WorkspaceLogicTests: XCTestCase {
         XCTAssertEqual(cards.first?.value, "6")
         XCTAssertEqual(cards.first?.subtitle, "未到期且应回款非零")
         XCTAssertEqual(cards.last?.title, "待回总金额")
-        XCTAssertEqual(cards.last?.value, "¥3,200")
+        XCTAssertEqual(cards.last?.value, "GHS 3,200.00")
         XCTAssertEqual(cards.last?.subtitle, "未到期待回金额")
     }
 
@@ -112,7 +123,7 @@ final class WorkspaceLogicTests: XCTestCase {
             overdueFilter: .overdue
         )
         XCTAssertEqual(overdueCards.map(\.title), ["累计逾期人数", "累计逾期金额"])
-        XCTAssertEqual(overdueCards.map(\.value), ["7", "¥8,600"])
+        XCTAssertEqual(overdueCards.map(\.value), ["7", "GHS 8,600.00"])
 
         let allCards = WorkspaceLogic.summaryCards(
             for: .repayments,
@@ -121,7 +132,7 @@ final class WorkspaceLogicTests: XCTestCase {
             overdueFilter: .all
         )
         XCTAssertEqual(allCards.map(\.title), ["今日回款进度", "今日回款金额"])
-        XCTAssertEqual(allCards.map(\.value), ["2/3", "¥1,200/¥1,800"])
+        XCTAssertEqual(allCards.map(\.value), ["2/3", "GHS 1,200.00/GHS 1,800.00"])
     }
 
     func testApplicationFilterTitlesShouldUseFullAndroidLabels() {
@@ -139,7 +150,7 @@ final class WorkspaceLogicTests: XCTestCase {
         ]
         let repaymentCells = WorkspaceLogic.listCardInfoCells(for: .repayments, item: repaymentItem)
         XCTAssertEqual(repaymentCells.map { $0.0 }, ["待处理金额", "还款日"])
-        XCTAssertEqual(repaymentCells.map { $0.1 }, ["¥1,680", "2026-06-01"])
+        XCTAssertEqual(repaymentCells.map { $0.1 }, ["GHS 1,680.00", "2026-06-01"])
 
         let cardItem: JSONMap = [
             "product_total_price": .number(1200),
@@ -147,7 +158,7 @@ final class WorkspaceLogicTests: XCTestCase {
         ]
         let cardCells = WorkspaceLogic.listCardInfoCells(for: .cards, item: cardItem)
         XCTAssertEqual(cardCells.map { $0.0 }, ["订单支付", "提交时间"])
-        XCTAssertEqual(cardCells.map { $0.1 }, ["¥1,200", "2026-05-31"])
+        XCTAssertEqual(cardCells.map { $0.1 }, ["GHS 1,200.00", "2026-05-31"])
     }
 
     func testActionsShouldRespectLocationRiskPermission() {

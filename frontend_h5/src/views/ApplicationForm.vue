@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
   min-height: 22px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
   font-size: 10px;
   font-weight: 700;
@@ -322,7 +322,7 @@ onBeforeUnmount(() => {
   min-height: 24px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
   color: var(--app-primary-deep);
   font-size: 12px;
   font-weight: 700;
@@ -431,7 +431,7 @@ onBeforeUnmount(() => {
   padding: 6px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(47, 126, 247, 0.14);
+  border: 1px solid rgba(234, 149, 24, 0.14);
   box-shadow: 0 14px 28px rgba(31, 47, 71, 0.12);
   backdrop-filter: blur(14px);
 }
@@ -457,7 +457,7 @@ onBeforeUnmount(() => {
 }
 
 .relation-option-active {
-  background: rgba(47, 126, 247, 0.08);
+  background: rgba(234, 149, 24, 0.08);
   color: var(--app-primary-deep);
 }
 

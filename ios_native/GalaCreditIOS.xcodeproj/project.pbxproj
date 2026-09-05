@@ -24,6 +24,7 @@
 		8950ABCEE2259D26C32AF724 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A4AD178525A77A13280832 /* AppTheme.swift */; };
 		9E5ECB43B6C13D7875F99B93 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D057118CF5C9DB8BB2665FE /* APIClient.swift */; };
 		AFAE1977A13DDF589C5A1784 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D49B628E739DA2E4532A951 /* LoginView.swift */; };
+		B3F3D1E5A44BF212A5FEB65D /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A4733C5B7978A6CDDFD7EDD /* KeychainStore.swift */; };
 		EFC8965EE1823287606FF94C /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42BCA35749B04852C8F02A9B /* DetailView.swift */; };
 /* End PBXBuildFile section */
 
@@ -38,6 +39,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0A4733C5B7978A6CDDFD7EDD /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		0C612431DA9231E650AA034C /* H5HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = H5HomeView.swift; sourceTree = "<group>"; };
 		1A7BE4030F718D9BC2D00DD7 /* XiaoHeBaoIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiaoHeBaoIOSApp.swift; sourceTree = "<group>"; };
 		2D49B628E739DA2E4532A951 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -162,6 +164,7 @@
 				3D057118CF5C9DB8BB2665FE /* APIClient.swift */,
 				FCD3022192EE982D1C6929B8 /* Formatters.swift */,
 				595132DD22A7BAAB3FF41D97 /* JSONValue.swift */,
+				0A4733C5B7978A6CDDFD7EDD /* KeychainStore.swift */,
 			);
 			path = Infrastructure;
 			sourceTree = "<group>";
@@ -277,6 +280,7 @@
 				11943847442256C93BC94441 /* Formatters.swift in Sources */,
 				1D36AA333C4C23E597E93F46 /* H5HomeView.swift in Sources */,
 				4D3FE5DF5C1712871055A14B /* JSONValue.swift in Sources */,
+				B3F3D1E5A44BF212A5FEB65D /* KeychainStore.swift in Sources */,
 				AFAE1977A13DDF589C5A1784 /* LoginView.swift in Sources */,
 				64EEBD4A4ECE9F8A989C83A8 /* PrimaryControls.swift in Sources */,
 				7F3EDAE791B748DC00EA9467 /* RootView.swift in Sources */,
@@ -356,7 +360,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = GalaCreditIOS;
@@ -398,7 +402,10 @@
 				INFOPLIST_KEY_GalaApiBase = "$(GALA_API_BASE)";
 				INFOPLIST_KEY_GalaAppFlavor = "$(GALA_APP_FLAVOR)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GalaCredit uses your location for identity and risk review.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "GalaCredit uses the camera for identity verification.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "GalaCredit opens your contacts only when you choose an emergency contact.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GalaCredit uses your location only after you request a location check.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GalaCredit uses selected photos for identity verification.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
@@ -442,7 +449,10 @@
 				INFOPLIST_KEY_GalaApiBase = "$(GALA_API_BASE)";
 				INFOPLIST_KEY_GalaAppFlavor = "$(GALA_APP_FLAVOR)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GalaCredit uses your location for identity and risk review.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "GalaCredit uses the camera for identity verification.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "GalaCredit opens your contacts only when you choose an emergency contact.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GalaCredit uses your location only after you request a location check.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GalaCredit uses selected photos for identity verification.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
@@ -510,7 +520,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

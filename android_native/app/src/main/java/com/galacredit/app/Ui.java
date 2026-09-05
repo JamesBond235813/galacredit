@@ -12,12 +12,13 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 final class Ui {
-    static final int BLUE = Color.rgb(26, 115, 232);
-    static final int BLUE_LIGHT = Color.rgb(232, 240, 254);
-    static final int TEXT = Color.rgb(32, 33, 36);
-    static final int MUTED = Color.rgb(95, 99, 104);
-    static final int BORDER = Color.rgb(218, 220, 224);
-    static final int BACKGROUND = Color.rgb(248, 250, 255);
+    // 与 UniApp 和 iOS 端保持同一品牌色，避免原生登录壳与业务页出现割裂。
+    static final int BLUE = Color.rgb(234, 149, 24);
+    static final int BLUE_LIGHT = Color.rgb(255, 244, 228);
+    static final int TEXT = Color.rgb(23, 32, 51);
+    static final int MUTED = Color.rgb(110, 124, 145);
+    static final int BORDER = Color.rgb(231, 235, 241);
+    static final int BACKGROUND = Color.rgb(246, 248, 251);
     static final int CARD = Color.WHITE;
     static final int DANGER = Color.rgb(217, 48, 37);
     static final int SUCCESS = Color.rgb(52, 168, 83);

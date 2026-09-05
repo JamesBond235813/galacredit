@@ -1,5 +1,4 @@
 import { createApp } from 'vue'
-import './style.css'
 import App from './App.vue'
 import router from './router'
 import { createPinia } from 'pinia'
@@ -10,6 +9,8 @@ import {
   Tabbar, TabbarItem, Image as VanImage, Grid, GridItem, Cell, Checkbox
 } from 'vant'
 import 'vant/lib/index.css'
+// Load the custom brand theme after Vant so all channels share the same visual language.
+import './style.css'
 
 const app = createApp(App)
 

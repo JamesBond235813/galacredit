@@ -150,11 +150,12 @@ class RiskDeviceClientPayload(BaseModel):
     consent_sms: bool = False
     consent_app_list: bool = False
     consent_device_fingerprint: bool = True
-    sms_messages: list[dict[str, str]] = Field(default_factory=list)
-    installed_apps: list[dict[str, str]] = Field(default_factory=list)
+    sms_messages: list[dict[str, Any]] = Field(default_factory=list)
+    installed_apps: list[dict[str, Any]] = Field(default_factory=list)
     device_profile: dict[str, Any] = Field(default_factory=dict)
     native_bridge: Optional[str] = None
     source: Optional[str] = Field(default="H5", max_length=30)
+    app_channel: Optional[str] = Field(default="play", max_length=20)
     app_version: Optional[str] = Field(default=None, max_length=40)
     platform: Optional[str] = Field(default=None, max_length=40)
     browser_name: Optional[str] = Field(default=None, max_length=40)
@@ -215,6 +216,22 @@ class RiskDeviceConsentResponse(BaseModel):
     risk_level: str
     keyword_hits: dict[str, list[str]]
     risk_flags: list[str]
+    task_number: Optional[str] = None
+    message: str
+
+
+class RiskTaskQueryRequest(BaseModel):
+    """第三方 Ghana 风控任务查询请求。"""
+
+    task_number: str = Field(..., min_length=8, max_length=64)
+
+
+class RiskTaskQueryResponse(BaseModel):
+    """第三方 Ghana 风控任务查询结果。"""
+
+    task_number: str
+    task_status: Optional[str] = None
+    task_score: Optional[float] = None
     message: str
 
 

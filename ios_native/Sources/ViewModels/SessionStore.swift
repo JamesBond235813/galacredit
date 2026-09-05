@@ -5,17 +5,28 @@ import SwiftUI
 final class SessionStore: ObservableObject {
     @Published var token: String
     @Published var admin: JSONMap?
+    @Published var riskTask: JSONMap?
     @Published var errorMessage = ""
     @Published var isLoading = false
+    @Published var isRestoring = true
 
     let apiClient: APIClient
     private let tokenKey = "galacredit_ios_token"
     private let phoneKey = "galacredit_ios_phone"
+    private let riskTaskKey = "galacredit_ios_risk_task"
+    private var riskSubmissionTask: Task<Void, Never>?
 
     init(apiClient: APIClient = APIClient()) {
         self.apiClient = apiClient
-        self.token = UserDefaults.standard.string(forKey: tokenKey) ?? ""
-        self.phone = UserDefaults.standard.string(forKey: phoneKey) ?? ""
+        self.token = KeychainStore.read(key: tokenKey) ?? ""
+        self.phone = KeychainStore.read(key: phoneKey) ?? ""
+        if let value = KeychainStore.read(key: riskTaskKey),
+           let data = value.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(JSONValue.self, from: data) {
+            self.riskTask = decoded.objectValue
+        } else {
+            self.riskTask = nil
+        }
     }
 
     var isLoggedIn: Bool {
@@ -54,7 +65,7 @@ final class SessionStore: ObservableObject {
             let response = try await apiClient.login(username: username, password: password)
             let accessToken = response.string("access_token")
             token = accessToken
-            UserDefaults.standard.set(accessToken, forKey: tokenKey)
+            KeychainStore.save(accessToken, key: tokenKey)
             admin = try await apiClient.get(path: "/admin/me", token: accessToken)
             errorMessage = ""
         } catch {
@@ -68,6 +79,7 @@ final class SessionStore: ObservableObject {
     /// :param smsCode: 六位验证码
     /// :return: 无
     func login(phone: String, smsCode: String) async {
+        riskSubmissionTask?.cancel()
         isLoading = true
         defer { isLoading = false }
         do {
@@ -76,10 +88,28 @@ final class SessionStore: ObservableObject {
             guard !accessToken.isEmpty else { throw APIError.invalidResponse }
             token = accessToken
             self.phone = phone
-            UserDefaults.standard.set(accessToken, forKey: tokenKey)
-            UserDefaults.standard.set(phone, forKey: phoneKey)
+            KeychainStore.save(accessToken, key: tokenKey)
+            KeychainStore.save(phone, key: phoneKey)
             admin = nil
             errorMessage = ""
+            // iOS 不读取短信，但登录后仍提交一次最小设备摘要，使三端风控输入保持一致。
+            // 网络失败不阻断登录，用户可在安全检查页面再次提交。
+            let riskPhone = "+233\(phone)"
+            let riskClient = apiClient
+            let riskToken = accessToken
+            riskSubmissionTask = Task { [weak self] in
+                guard let self else { return }
+                if let result = try? await riskClient.submitDeviceRiskSignals(phone: riskPhone, token: riskToken, devicePayload: NativeEnvironment.riskPayload()),
+                   result["task_number"]?.stringValue?.isEmpty == false,
+                   !Task.isCancelled,
+                   self.token == riskToken {
+                    self.riskTask = result
+                    if let data = try? JSONEncoder().encode(JSONValue.object(result)),
+                       let value = String(data: data, encoding: .utf8) {
+                        KeychainStore.save(value, key: self.riskTaskKey)
+                    }
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -90,13 +120,24 @@ final class SessionStore: ObservableObject {
     /// :param none: 无
     /// :return: 无
     func restoreSession() async {
-        guard !token.isEmpty else { return }
+        guard !token.isEmpty else {
+            isRestoring = false
+            return
+        }
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            isRestoring = false
+        }
         do {
+            _ = try await apiClient.get(path: "/user/info", token: token)
             errorMessage = ""
         } catch {
-            logout()
+            // 只有服务端明确返回 401 才清除 Keychain 会话；弱网或服务暂时不可用时保留会话，
+            // 让 WebView 自己展示可重试的离线状态，避免用户被无故踢回登录页。
+            if case APIError.unauthorized = error {
+                logout()
+            }
             errorMessage = error.localizedDescription
         }
     }
@@ -106,10 +147,14 @@ final class SessionStore: ObservableObject {
     /// :param none: 无
     /// :return: 无
     func logout() {
+        riskSubmissionTask?.cancel()
+        riskSubmissionTask = nil
         token = ""
         admin = nil
         phone = ""
-        UserDefaults.standard.removeObject(forKey: tokenKey)
-        UserDefaults.standard.removeObject(forKey: phoneKey)
+        riskTask = nil
+        KeychainStore.remove(key: tokenKey)
+        KeychainStore.remove(key: phoneKey)
+        KeychainStore.remove(key: riskTaskKey)
     }
 }

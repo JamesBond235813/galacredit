@@ -113,7 +113,7 @@ const refreshStatus = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(47, 126, 247, 0.12);
+  background: rgba(234, 149, 24, 0.12);
   color: var(--app-primary-deep);
   font-size: 28px;
 }
@@ -161,7 +161,7 @@ const refreshStatus = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(47, 126, 247, 0.12);
+  background: rgba(234, 149, 24, 0.12);
   color: var(--app-primary-deep);
   font-size: 20px;
 }

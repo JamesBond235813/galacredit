@@ -8,7 +8,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user_async, get_user_by_token_async
 from app.api.req_util import resolve_client_ip
 from app.core.config import settings
+from app.core.exceptions import BizException
 from app.core.database import AsyncSessionLocal, get_async_db
 from app.core.trace import new_trace_id, reset_trace_id, set_trace_id
 from app.models.loan import Loan
@@ -144,27 +145,27 @@ async def _resolve_order_contract_context(
             )
         ).scalar_one_or_none()
         if not source_loan:
-            raise HTTPException(status_code=400, detail="未找到可展期的原账单")
+            raise BizException("未找到可展期的原账单", code=400)
         if not _is_regular_ecard_rights_loan(source_loan):
-            raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+            raise BizException("纯权益包只能用于已有常规订单的展期", code=400)
     elif loan.status != "APPROVED":
-        raise HTTPException(status_code=400, detail="当前状态不可下单")
+        raise BizException("当前状态不可下单", code=400)
 
     product = (
         await db.execute(select(Product).where(Product.id == product_id, Product.is_active.is_(True)))
     ).scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="商品不存在或已下架")
+        raise BizException("商品不存在或已下架", code=404)
     if source_loan and not _is_rights_only_product(product):
-        raise HTTPException(status_code=400, detail="带息费展期只能下单纯权益包")
+        raise BizException("带息费展期只能下单纯权益包", code=400)
     if not source_loan and getattr(product, "product_type", None) == "CASH_LOAN":
         history = (await db.execute(select(Loan).where(Loan.user_id == current_user.id))).scalars().all()
         borrower_type = resolve_borrower_type(history)
         product_type = getattr(product, "borrower_type", None) or "ALL"
         if product_type not in {"ALL", borrower_type}:
-            raise HTTPException(status_code=400, detail="当前贷款政策不适用于您的借款人类型")
+            raise BizException("当前贷款政策不适用于您的借款人类型", code=400)
     if not source_loan and _is_rights_only_product(product):
-        raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+        raise BizException("纯权益包只能用于已有常规订单的展期", code=400)
     return db_user, loan, source_loan, product
 
 
@@ -213,7 +214,7 @@ async def _get_ws_user_by_token(db: AsyncSession, token: Optional[str]) -> Optio
         return None
     try:
         return await get_user_by_token_async(db, token)
-    except HTTPException:
+    except BizException:
         return None
 
 
@@ -264,17 +265,17 @@ async def apply_limit(
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     if await refresh_user_blacklist_status(db, db_user):
         await db.commit()
-        raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+        raise BizException("抱歉 您当前无法申请信用购物额度", code=400)
     await refresh_user_risk_list_status(db, db_user)
     # 第一阶段采用 shadow mode，只沉淀规则命中和特征快照，不改变现有审批结果。
     await record_risk_decision_async(db, user=db_user, loan=loan, stage="APPLICATION")
 
     if not db_user.application_submitted_at:
-        raise HTTPException(status_code=400, detail="请先完成补充资料提交")
+        raise BizException("请先完成补充资料提交", code=400)
     if loan.status == "REJECTED":
-        raise HTTPException(status_code=400, detail="很遗憾，您当前未通过审核")
+        raise BizException("很遗憾，您当前未通过审核", code=400)
     if loan.status != "INIT":
-        raise HTTPException(status_code=400, detail="当前状态不可重新申请额度")
+        raise BizException("当前状态不可重新申请额度", code=400)
 
     loan.status = "REVIEWING"
     loan.review_note = None
@@ -433,7 +434,7 @@ async def withdraw(
     await expire_unused_approved_credit_for_loan(db, loan)
     if await refresh_user_blacklist_status(db, db_user):
         await db.commit()
-        raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+        raise BizException("抱歉 您当前无法申请信用购物额度", code=400)
     await refresh_user_risk_list_status(db, db_user)
     # 下单前再次记录决策，后续可切换为放款前强制策略并支持决策重放。
     await record_risk_decision_async(db, user=db_user, loan=loan, stage="ORDER")
@@ -450,39 +451,73 @@ async def withdraw(
             )
         ).scalar_one_or_none()
         if not source_loan:
-            raise HTTPException(status_code=400, detail="未找到可展期的原账单")
+            raise BizException("未找到可展期的原账单", code=400)
         if not _is_regular_ecard_rights_loan(source_loan):
-            raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+            raise BizException("纯权益包只能用于已有常规订单的展期", code=400)
     elif loan.status != "APPROVED":
-        raise HTTPException(status_code=400, detail="当前状态不可下单")
+        raise BizException("当前状态不可下单", code=400)
+    # 合同签署记录是客户端重试的幂等锚点；在消费一次性验证码前先复用已创建订单。
+    signed_contract = (
+        await db.execute(
+            select(PurchaseContractSignature)
+            .where(
+                PurchaseContractSignature.id == req.contract_signature_id,
+                PurchaseContractSignature.user_id == current_user.id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if (
+        signed_contract
+        and signed_contract.product_id == req.product_id
+        and (signed_contract.extension_source_loan_id or None) == (req.extension_source_loan_id or None)
+        and signed_contract.loan_id
+    ):
+        existing_order = (
+            await db.execute(
+                select(Loan).where(
+                    Loan.id == signed_contract.loan_id,
+                    Loan.user_id == current_user.id,
+                    Loan.status.in_(["WITHDRAWING", "DISBURSED", "OVERDUE", "SETTLED"]),
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_order:
+            return serialize_h5_loan_snapshot(existing_order)
+    # 当前合同与请求产品/展期类型不一致时，后续必须重新按产品查询，不能复用错误记录。
+    if signed_contract and (
+        signed_contract.product_id != req.product_id
+        or (signed_contract.extension_source_loan_id or None) != (req.extension_source_loan_id or None)
+    ):
+        signed_contract = None
+
     verified = await sms_service.verify_code(phone=db_user.phone, biz_type=ORDER_SMS_BIZ_TYPE, code=req.sms_code)
     if not verified:
-        raise HTTPException(status_code=400, detail="短信验证码错误或已过期")
+        raise BizException("短信验证码错误或已过期", code=400)
 
     product = (
         await db.execute(select(Product).where(Product.id == req.product_id, Product.is_active.is_(True)))
     ).scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="商品不存在或已下架")
+        raise BizException("商品不存在或已下架", code=404)
     if source_loan and not _is_rights_only_product(product):
-        raise HTTPException(status_code=400, detail="带息费展期只能下单纯权益包")
+        raise BizException("带息费展期只能下单纯权益包", code=400)
     if not source_loan and _is_rights_only_product(product):
-        raise HTTPException(status_code=400, detail="纯权益包只能用于已有常规订单的展期")
+            raise BizException("纯权益包只能用于已有常规订单的展期", code=400)
     if not source_loan and getattr(product, "product_type", None) == "CASH_LOAN":
         history = (await db.execute(select(Loan).where(Loan.user_id == current_user.id))).scalars().all()
         borrower_type = resolve_borrower_type(history)
         product_type = getattr(product, "borrower_type", None) or "ALL"
         if product_type not in {"ALL", borrower_type}:
-            raise HTTPException(status_code=400, detail="当前贷款政策不适用于您的借款人类型")
-
+            raise BizException("当前贷款政策不适用于您的借款人类型", code=400)
     available_limit = float(getattr(db_user, "available_credit_limit", 0) or 0)
     payment_amount = float(product.payment_amount or 0)
     if payment_amount <= 0:
-        raise HTTPException(status_code=400, detail="商品支付金额配置异常")
+        raise BizException("商品支付金额配置异常", code=400)
     if available_limit <= 0:
-        raise HTTPException(status_code=400, detail="暂无可用信用额度")
+        raise BizException("暂无可用信用额度", code=400)
     if payment_amount - available_limit > 1e-6:
-        raise HTTPException(status_code=400, detail="信用额度不足，请选择更低金额商品")
+        raise BizException("信用额度不足，请选择更低金额商品", code=400)
 
     is_cash_loan = getattr(product, "product_type", None) == "CASH_LOAN"
     nominal_amount = float(getattr(product, "nominal_loan_amount", 0) or payment_amount)
@@ -495,7 +530,7 @@ async def withdraw(
     discount_amount = min(available_discount, rights_price) if req.use_discount else 0.0
     payment_amount = round(nominal_amount if is_cash_loan else payment_amount - discount_amount, 2)
     effective_rights_price = max(rights_price - discount_amount, 0)
-    signature = (
+    signature = signed_contract or (
         await db.execute(
             select(PurchaseContractSignature).where(
                 PurchaseContractSignature.id == req.contract_signature_id,
@@ -505,11 +540,11 @@ async def withdraw(
         )
     ).scalar_one_or_none()
     if not signature:
-        raise HTTPException(status_code=400, detail="请先阅读并同意《GalaCredit Loan Agreement》")
+        raise BizException("请先阅读并同意《GalaCredit Loan Agreement》", code=400)
     if (signature.extension_source_loan_id or None) != (req.extension_source_loan_id or None):
-        raise HTTPException(status_code=400, detail="合同签署记录与当前下单类型不匹配")
+        raise BizException("合同签署记录与当前下单类型不匹配", code=400)
     if abs(float(signature.payment_amount or 0) - float(payment_amount or 0)) > 1e-6:
-        raise HTTPException(status_code=400, detail="合同签署金额与当前下单金额不一致，请重新阅读并同意合同")
+        raise BizException("合同签署金额与当前下单金额不一致，请重新阅读并同意合同", code=400)
     fee_rate = upfront_fee_rate if is_cash_loan else ((effective_rights_price / ecard_face_value) if ecard_face_value > 0 else 0.0)
 
     order_loan = loan
@@ -636,7 +671,7 @@ async def send_order_sms_code(
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     success, cooldown_seconds, message = await sms_service.send_code(phone=db_user.phone, biz_type=ORDER_SMS_BIZ_TYPE)
     if not success:
-        raise HTTPException(status_code=429, detail=message)
+        raise BizException(message, code=429)
     return {"msg": message, "cooldown_seconds": cooldown_seconds}
 
 
@@ -668,7 +703,7 @@ async def register_repay_attempt(
     checkpoint = time.perf_counter()
     sync_loan_repayment_state(loan)
     if loan.status not in {"DISBURSED", "OVERDUE"}:
-        raise HTTPException(status_code=400, detail="当前账单状态不可发起还款提醒")
+        raise BizException("当前账单状态不可发起还款提醒", code=400)
 
     loan.repay_attempt_count = int(loan.repay_attempt_count or 0) + 1
     await log_user_event_async(
@@ -786,10 +821,10 @@ async def get_ecard_secret(
     db: AsyncSession = Depends(get_async_db),
 ):
     if field not in {"account", "password"}:
-        raise HTTPException(status_code=400, detail="字段参数非法")
+        raise BizException("字段参数非法", code=400)
     loan = await get_or_create_latest_loan(db, current_user.id)
     if loan.status not in {"DISBURSED", "OVERDUE", "SETTLED"}:
-        raise HTTPException(status_code=400, detail="当前订单尚未发卡")
+        raise BizException("当前订单尚未发卡", code=400)
     if item_id is not None or index is not None:
         stmt = select(LoanEcard).where(LoanEcard.loan_id == loan.id).order_by(LoanEcard.id.asc())
         if item_id is not None:
@@ -799,7 +834,7 @@ async def get_ecard_secret(
             ecard_items = (await db.execute(stmt)).scalars().all()
             ecard_item = ecard_items[index] if index is not None and 0 <= index < len(ecard_items) else None
         if not ecard_item:
-            raise HTTPException(status_code=404, detail="未找到该张E卡")
+            raise BizException("未找到该张E卡", code=404)
         value = ecard_item.account if field == "account" else ecard_item.password
         await _record_ecard_secret_copy(
             db,
@@ -830,7 +865,7 @@ async def get_ecard_secret(
 
     value = loan.ecard_account if field == "account" else loan.ecard_password
     if not value:
-        raise HTTPException(status_code=404, detail="暂无可复制卡密")
+        raise BizException("暂无可复制卡密", code=404)
     await _record_ecard_secret_copy(db, user=current_user, loan=loan, field=field)
     return {"field": field, "value": value}
 

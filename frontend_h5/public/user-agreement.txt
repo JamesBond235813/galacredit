@@ -1,6 +1,6 @@
 GALACREDIT USER AGREEMENT
 
-Last updated: 18 August 2026
+Last updated: 5 September 2026
 
 IMPORTANT NOTICE
 
@@ -26,7 +26,7 @@ Your registered mobile number and verification code are used to access your acco
 
 You authorise GalaCredit and its approved service providers to verify information submitted during the application process, including identity, contact, device, location and risk information, subject to applicable law and the Personal Data Authorization.
 
-Where the platform shows a device-risk consent dialog, you also understand that the service may request permission to collect SMS content, installed app names and a device fingerprint summary through an approved mobile app bridge or other supported integration. If the device or browser does not support those permissions, the service may still use the other information you submit and the device signals it can lawfully obtain.
+Where the platform shows a device-risk consent dialog, an authorised internal Android build may request optional SMS permission. The device keeps only the most recent 90 days and messages matching the published `sms_keys20260602.csv` regular-expression keywords before upload; the server filters them again. Google Play Android and iOS builds do not read SMS content, and the current builds do not read or upload a complete installed-app list. If the device does not support the optional review, the service may use other lawful information and device signals.
 
 False, misleading or incomplete information may result in rejection, suspension, collection action or reporting where permitted by law.
 
@@ -56,7 +56,7 @@ You agree to receive service messages relating to verification, application stat
 
 Borrow only what you can repay. You must not use the service for fraud, money laundering, unlawful activity, identity misuse, account resale or attempts to bypass security and risk controls.
 
-You agree that risk controls may analyse permitted device, SMS and app-list signals together with application history and other lawful risk factors to detect borrowing pressure, device abuse, fraud or other material default indicators.
+You agree that risk controls may analyse permitted device and filtered SMS signals together with application history and other lawful risk factors to detect borrowing pressure, device abuse, fraud or other material default indicators.
 
 10. PRIVACY
 

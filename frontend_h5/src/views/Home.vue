@@ -9,7 +9,7 @@
       </header>
 
       <div v-if="loading" class="loading-box">
-        <van-loading type="spinner" color="#2f7ef7" />
+        <van-loading type="spinner" color="#ea9518" />
       </div>
 
       <template v-else>
@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
   padding: 18px;
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.22), transparent 34%),
-    linear-gradient(135deg, rgba(44, 95, 183, 0.94) 0%, rgba(47, 126, 247, 0.92) 58%, rgba(48, 215, 169, 0.84) 100%);
+    linear-gradient(135deg, rgba(200, 111, 12, 0.96) 0%, rgba(234, 149, 24, 0.94) 58%, rgba(242, 165, 61, 0.88) 100%);
   color: #ffffff;
 }
 
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
   height: 42px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: rgba(47, 126, 247, 0.1);
+  background: rgba(234, 149, 24, 0.1);
   color: var(--app-primary-deep);
   font-size: 22px;
 }

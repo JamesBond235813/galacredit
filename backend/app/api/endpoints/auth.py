@@ -2,12 +2,13 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from jose import JWTError, jwt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import BizException
 from app.core.database import get_async_db
 from app.core.security import create_access_token, create_refresh_token, verify_password
 from app.models.oauth_client import OAuthClient
@@ -288,16 +289,16 @@ async def send_code(req: SendCodeRequest, request: Request, db: AsyncSession = D
     """
     captcha_ok = await slider_captcha_manager.consume_ticket(req.phone, req.captcha_ticket)
     if not captcha_ok:
-        raise HTTPException(status_code=400, detail="图形验证码校验失败或已过期")
+        raise BizException("图形验证码校验失败或已过期", code=400)
 
     client_ip = resolve_client_ip(request)
     success, remain = await sms_auth_manager.issue_code(phone=req.phone, ip=client_ip)
     if not success:
-        raise HTTPException(status_code=429, detail=f"发送过于频繁，请{remain}秒后重试")
+        raise BizException(f"发送过于频繁，请{remain}秒后重试", code=429)
 
     sms_ok, cooldown_seconds, message = await sms_service.send_code(phone=req.phone, biz_type="LOGIN")
     if not sms_ok:
-        raise HTTPException(status_code=400, detail=message)
+        raise BizException(message, code=400)
     await _remember_sms_code_audit(db, req.phone, client_ip, datetime.now())
     await db.commit()
     return {"msg": "验证码发送成功", "cooldown_seconds": cooldown_seconds}
@@ -319,7 +320,7 @@ async def verify_slider_captcha(req: SliderCaptchaVerifyRequest):
             elapsed_ms=req.elapsed_ms,
         )
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        raise BizException(str(error), code=400) from error
     return {"captcha_ticket": ticket, "expires_seconds": settings.CAPTCHA_SLIDER_TICKET_EXPIRE_SECONDS}
 
 
@@ -327,7 +328,7 @@ async def verify_slider_captcha(req: SliderCaptchaVerifyRequest):
 async def get_channel_entry(channel_name: str, db: AsyncSession = Depends(get_async_db)):
     channel = await get_channel_by_name_async(db, channel_name, active_only=True)
     if not channel:
-        raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
+        raise BizException("渠道链接不存在或已停用", code=404)
     return serialize_channel_landing(channel)
 
 
@@ -341,7 +342,7 @@ async def get_channel_invite_entry(invite_code: str, db: AsyncSession = Depends(
     """
     channel = await get_channel_by_invite_code_async(db, invite_code, active_only=True)
     if not channel:
-        raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
+        raise BizException("渠道链接不存在或已停用", code=404)
     return serialize_channel_landing(channel)
 
 
@@ -356,7 +357,7 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
     """
     frozen_minutes = await password_login_guard.before_verify(req.phone)
     if frozen_minutes > 0:
-        raise HTTPException(status_code=400, detail=_build_login_frozen_message(frozen_minutes))
+        raise BizException(_build_login_frozen_message(frozen_minutes), code=401)
 
     client_id = request.headers.get("client-id", "h5-web").strip() or "h5-web"
     now = datetime.now()
@@ -364,14 +365,14 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
     if req.channel_name:
         channel = await get_channel_by_name_async(db, req.channel_name, active_only=True)
         if not channel:
-            raise HTTPException(status_code=400, detail="渠道链接不存在或已停用")
+            raise BizException("渠道链接不存在或已停用", code=400)
 
     user = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         frozen_minutes = await password_login_guard.on_failure(req.phone)
         if frozen_minutes > 0:
-            raise HTTPException(status_code=400, detail=_build_login_frozen_message(frozen_minutes))
-        raise HTTPException(status_code=400, detail="用户或密码不正确")
+            raise BizException(_build_login_frozen_message(frozen_minutes), code=401)
+        raise BizException("用户或密码不正确", code=401)
 
     await password_login_guard.on_success(req.phone)
     if req.latitude is not None and req.longitude is not None:
@@ -386,7 +387,7 @@ async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(
             )
         except ValueError as exc:
             await db.commit()
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise BizException(str(exc), code=403) from exc
     user.last_login_at = now
     await refresh_user_blacklist_status(db, user)
     await refresh_user_risk_list_status(db, user)
@@ -422,14 +423,14 @@ async def sms_login(req: SmsLoginRequest, request: Request, db: AsyncSession = D
     now = datetime.now()
     verified = await sms_service.verify_code(phone=req.phone, biz_type="LOGIN", code=req.sms_code)
     if not verified:
-        raise HTTPException(status_code=400, detail="短信验证码错误或已过期")
+        raise BizException("短信验证码错误或已过期", code=401)
 
     user = (await db.execute(select(User).where(User.phone == req.phone))).scalar_one_or_none()
     channel = None
     if req.invite_code:
         channel = await get_channel_by_invite_code_async(db, req.invite_code, active_only=True)
         if not channel:
-            raise HTTPException(status_code=400, detail="渠道链接不存在或已停用")
+            raise BizException("渠道链接不存在或已停用", code=400)
 
     if user is None:
         user = User(phone=req.phone, last_login_at=now)
@@ -452,7 +453,7 @@ async def sms_login(req: SmsLoginRequest, request: Request, db: AsyncSession = D
             )
         except ValueError as exc:
             await db.commit()
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+            raise BizException(str(exc), code=403) from exc
     user.last_login_at = now
     await refresh_user_blacklist_status(db, user)
     await refresh_user_risk_list_status(db, user)
@@ -541,7 +542,7 @@ async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get
     :param db: 异步数据库会话
     :return: 新 access token 与 refresh token
     """
-    credentials_exception = HTTPException(status_code=401, detail="refresh_token 无效或已过期")
+    credentials_exception = BizException("refresh_token 无效或已过期", code=401)
     try:
         payload = jwt.decode(req.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         phone = payload.get("sub")

@@ -1,12 +1,12 @@
 package com.galacredit.app;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -17,30 +17,59 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 final class ApiClient {
-    private static final String PREFS = "galacredit_mobile";
-    private static final String TOKEN = "token";
-    private static final String PHONE = "phone";
-
-    private final SharedPreferences prefs;
+    private final SecureSessionStore sessionStore;
 
     ApiClient(Context context) {
-        this.prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        this.sessionStore = new SecureSessionStore(context);
     }
 
     String token() {
-        return prefs.getString(TOKEN, "");
+        return sessionStore.read("token");
     }
 
     String phone() {
-        return prefs.getString(PHONE, "");
+        return sessionStore.read("phone");
+    }
+
+    /** 读取最近一次外部风控任务摘要。
+     *
+     * :return: JSON 摘要；不存在时返回空字符串
+     */
+    String riskTask() {
+        return sessionStore.read("risk_task");
     }
 
     void saveSession(String token, String phone) {
-        prefs.edit().putString(TOKEN, token == null ? "" : token).putString(PHONE, phone == null ? "" : phone).apply();
+        sessionStore.write("token", token == null ? "" : token);
+        sessionStore.write("phone", phone == null ? "" : phone);
+    }
+
+    /** 保存最近一次外部风控任务的最小结果，供业务 WebView 恢复展示。
+     *
+     * :param result: 风控接口响应
+     * :return: 无
+     */
+    void saveRiskTask(JSONObject result) {
+        if (result == null) {
+            return;
+        }
+        String taskNumber = result.optString("task_number", "").trim();
+        if (taskNumber.isEmpty()) {
+            return;
+        }
+        JSONObject summary = new JSONObject();
+        try {
+            summary.put("task_number", taskNumber);
+            summary.put("risk_level", result.optString("risk_level", ""));
+            summary.put("message", result.optString("message", ""));
+            sessionStore.write("risk_task", summary.toString());
+        } catch (Exception ignored) {
+            // 风控任务展示属于辅助能力，序列化失败不能影响主流程。
+        }
     }
 
     void logout() {
-        prefs.edit().remove(TOKEN).remove(PHONE).apply();
+        sessionStore.clear();
     }
 
     JSONObject createCaptcha(String phone, int width) throws Exception {
@@ -136,44 +165,65 @@ final class ApiClient {
 
     private JSONObject post(String path, JSONObject body, boolean withToken) throws Exception {
         String text = requestText("POST", path, body, withToken);
-        return text.isEmpty() ? new JSONObject() : new JSONObject(text);
+        JSONObject result = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+        ensureBusinessSuccess(result);
+        return result;
     }
 
     private JSONObject request(String method, String path, JSONObject body, boolean withToken) throws Exception {
         String text = requestText(method, path, body, withToken);
-        return text.isEmpty() ? new JSONObject() : new JSONObject(text);
+        JSONObject result = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+        ensureBusinessSuccess(result);
+        return result;
     }
 
     private String requestText(String method, String path, JSONObject body, boolean withToken) throws Exception {
-        URL url = new URL(AppConfig.API_BASE + path);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod(method);
-        conn.setConnectTimeout(15000);
-        conn.setReadTimeout(20000);
-        conn.setRequestProperty("Accept", "application/json");
-        conn.setRequestProperty("client-id", "galacredit-android");
-        if (withToken) {
-            String token = token();
-            if (!token.isEmpty()) {
-                conn.setRequestProperty("Authorization", "Bearer " + token);
+        int maxAttempts = ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)) ? 3 : 1;
+        Exception lastError = null;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(AppConfig.API_BASE + path);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod(method);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(20000);
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setRequestProperty("client-id", "galacredit-android");
+                if (withToken) {
+                    String token = token();
+                    if (!token.isEmpty()) {
+                        conn.setRequestProperty("Authorization", "Bearer " + token);
+                    }
+                }
+                if (body != null) {
+                    byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                    conn.setDoOutput(true);
+                    try (OutputStream output = conn.getOutputStream()) {
+                        output.write(bytes);
+                    }
+                }
+                int code = conn.getResponseCode();
+                String text = read(code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream());
+                if (code >= 500 && attempt + 1 < maxAttempts) {
+                    continue;
+                }
+                if (code < 200 || code >= 300) {
+                    JSONObject result = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+                    String message = result.optString("msg", result.optString("detail", "请求失败：" + code));
+                    throw new ApiException(code, message);
+                }
+                return text;
+            } catch (IOException error) {
+                lastError = error;
+                if (attempt + 1 >= maxAttempts) throw error;
+            } finally {
+                if (conn != null) conn.disconnect();
             }
         }
-        if (body != null) {
-            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            conn.setDoOutput(true);
-            try (OutputStream output = conn.getOutputStream()) {
-                output.write(bytes);
-            }
-        }
-        int code = conn.getResponseCode();
-        String text = read(code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream());
-        if (code < 200 || code >= 300) {
-            JSONObject result = text.isEmpty() ? new JSONObject() : new JSONObject(text);
-            String message = result.optString("msg", result.optString("detail", "请求失败：" + code));
-            throw new ApiException(code, message);
-        }
-        return text;
+        if (lastError != null) throw lastError;
+        throw new IOException("请求失败");
     }
 
     private static String read(InputStream input) throws Exception {

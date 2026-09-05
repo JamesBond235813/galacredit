@@ -12,7 +12,7 @@
     </div>
 
     <!-- Vant Tabbar -->
-    <van-tabbar v-model="active" route active-color="#2c5fb7" inactive-color="#9aa8bc">
+    <van-tabbar v-model="active" route active-color="#ea9518" inactive-color="#9aa8bc">
       <van-tabbar-item replace to="/home" icon="balance-list-o">
         GalaCredit
       </van-tabbar-item>
@@ -97,7 +97,7 @@ const startLocationAuthorization = async () => {
       message: 'Allow location access to help protect your account and credit usage.',
       confirmButtonText: 'Allow',
       cancelButtonText: 'Deny',
-      confirmButtonColor: '#2f7ef7',
+      confirmButtonColor: '#ea9518',
       closeOnClickOverlay: false
     });
   } catch {
@@ -156,8 +156,8 @@ onMounted(async () => {
   height: 360px;
   background:
     radial-gradient(circle at top left, rgba(255,255,255,0.7) 0%, transparent 34%),
-    radial-gradient(circle at top right, rgba(47,126,247,0.08) 0%, transparent 42%),
-    repeating-radial-gradient(circle at top right, transparent, transparent 14px, rgba(44,95,183,0.04) 14px, rgba(44,95,183,0.04) 15px);
+    radial-gradient(circle at top right, rgba(234,149,24,0.08) 0%, transparent 42%),
+    repeating-radial-gradient(circle at top right, transparent, transparent 14px, rgba(200,111,12,0.04) 14px, rgba(200,111,12,0.04) 15px);
   z-index: 0;
   pointer-events: none;
 }

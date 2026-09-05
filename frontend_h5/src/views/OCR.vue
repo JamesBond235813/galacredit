@@ -58,7 +58,7 @@
 
     <footer class="ocr-footer">
       <div class="agreement-box">
-        <van-checkbox v-model="agreed" icon-size="18px" checked-color="#2f7ef7" label-disabled>
+        <van-checkbox v-model="agreed" icon-size="18px" checked-color="#ea9518" label-disabled>
           <span class="agreement-toggle" @click.stop="toggleAgreed">I have read and agree to the</span>
           <span class="agreement-link" @click.stop="goPersonalAgreement">Personal Data Authorization</span>
         </van-checkbox>
@@ -107,7 +107,7 @@
       title="Confirm Your Information"
       class-name="ocr-confirm-dialog"
       show-cancel-button
-      confirm-button-color="#2f7ef7"
+      confirm-button-color="#ea9518"
       @confirm="onConfirmInfo"
     >
       <van-cell-group inset>
@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
   position: absolute;
   width: 15px;
   height: 15px;
-  border: 2px solid rgba(47, 126, 247, 0.9);
+  border: 2px solid rgba(234, 149, 24, 0.9);
   z-index: 3;
 }
 
@@ -615,7 +615,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   background: var(--app-primary-deep);
   color: #ffffff;
-  box-shadow: 0 12px 24px rgba(44, 95, 183, 0.24);
+  box-shadow: 0 12px 24px rgba(201, 111, 12, 0.24);
   z-index: 4;
   font-size: 22px;
 }
@@ -912,7 +912,7 @@ onBeforeUnmount(() => {
 .ghana-lines i:nth-child(4) { width: 78%; }
 .ghana-portrait { height: 66px; border-radius: 6px; background: rgba(204, 218, 228, 0.9); overflow: hidden; }
 .ghana-portrait span { display: block; width: 42px; height: 58px; margin: 12px auto 0; border-radius: 50% 50% 35% 35%; background: #9fb1c4; }
-.upload-button { position: absolute; left: 50%; top: 50%; z-index: 4; display: flex; width: 74px; height: 74px; transform: translate(-50%, -50%); align-items: center; justify-content: center; flex-direction: column; gap: 3px; border-radius: 50%; background: var(--app-primary-deep); color: #ffffff; box-shadow: 0 10px 22px rgba(47, 126, 247, 0.25); font-size: 21px; }
+.upload-button { position: absolute; left: 50%; top: 50%; z-index: 4; display: flex; width: 74px; height: 74px; transform: translate(-50%, -50%); align-items: center; justify-content: center; flex-direction: column; gap: 3px; border-radius: 50%; background: var(--app-primary-deep); color: #ffffff; box-shadow: 0 10px 22px rgba(201, 111, 12, 0.25); font-size: 21px; }
 .upload-button span { font-size: 12px; font-weight: 700; }
 .upload-button-float { left: auto; top: auto; right: 12px; bottom: 12px; width: 58px; height: 58px; transform: none; }
 .note-section { margin-top: 18px; }

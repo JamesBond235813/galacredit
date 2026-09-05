@@ -1,0 +1,35 @@
+{
+  "pages": [
+    { "path": "pages/login/index", "style": { "navigationBarTitleText": "Sign in", "navigationStyle": "custom" } },
+    { "path": "pages/home/index", "style": { "navigationBarTitleText": "My Credit", "navigationStyle": "custom" } },
+    { "path": "pages/orders/index", "style": { "navigationBarTitleText": "My Applications" } },
+    { "path": "pages/profile/index", "style": { "navigationBarTitleText": "My Account" } },
+    { "path": "pages/application/index", "style": { "navigationBarTitleText": "Loan Application" } },
+    { "path": "pages/verification/index", "style": { "navigationBarTitleText": "Identity Verification" } },
+    { "path": "pages/withdraw/index", "style": { "navigationBarTitleText": "Loan Application" } },
+    { "path": "pages/bill/index", "style": { "navigationBarTitleText": "Repayment Bill" } },
+    { "path": "pages/location/index", "style": { "navigationBarTitleText": "Location Check" } },
+    { "path": "pages/risk/index", "style": { "navigationBarTitleText": "Security Check" } },
+    { "path": "pages/channel/index", "style": { "navigationBarTitleText": "Invitation Access" } },
+    { "path": "pages/password/index", "style": { "navigationBarTitleText": "Change Password" } },
+    { "path": "pages/agreement/index", "style": { "navigationBarTitleText": "User Agreement" } },
+    { "path": "pages/support/index", "style": { "navigationBarTitleText": "Customer Support" } }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "GalaCredit",
+    "navigationBarBackgroundColor": "#f6f8fb",
+    "backgroundColor": "#f6f8fb"
+  },
+  "tabBar": {
+    "color": "#8a96a8",
+    "selectedColor": "#c86f0c",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "Home" },
+      { "pagePath": "pages/orders/index", "text": "Applications" },
+      { "pagePath": "pages/profile/index", "text": "Account" }
+    ]
+  }
+}

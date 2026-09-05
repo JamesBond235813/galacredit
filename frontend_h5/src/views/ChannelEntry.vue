@@ -4,7 +4,7 @@
       <img src="../assets/logo.svg" class="entry-logo" alt="GalaCredit logo" />
       <h1>Invitation Access</h1>
       <p>{{ message }}</p>
-      <van-loading size="24px" color="#2f7ef7" />
+      <van-loading size="24px" color="#ea9518" />
     </div>
   </div>
 </template>

@@ -1,0 +1,9 @@
+GALACREDIT PERSONAL DATA AUTHORIZATION
+
+Last updated: 5 September 2026
+
+GalaCredit may process your name, Ghana Card and face-verification images, registered mobile number, application and loan records, emergency contacts you choose, one-time location checks, device/browser signals, support records and lawful fraud or risk results for account security, identity verification, responsible lending, servicing and legal obligations.
+
+SMS COLLECTION IS LIMITED AND CHANNEL-SPECIFIC. Only an authorised internal Android build may read SMS, and only after separate consent and Android SMS permission. The device keeps only messages from the most recent 90 days that match the published sms_keys20260602.csv regular-expression keywords. Older, future-dated and unmatched messages are not uploaded. The server applies the same filtering again. Google Play Android builds and iOS builds do not read SMS content. The current builds do not read or upload a complete installed-app list.
+
+The app receives only the emergency contact you choose, requests location only after a user action and permission, and uses selected Ghana Card and face images for identity verification. You may decline optional SMS review and ask Customer Support about access, correction, retention, deletion and complaints. This operational notice must be reviewed by qualified Ghanaian legal and compliance advisers before production release.

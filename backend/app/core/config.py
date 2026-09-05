@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     SMS_PHONE_COOLDOWN_SECONDS: int = 60
     SMS_IP_RATE_LIMIT_PER_MINUTE: int = 10
     SMS_CODE_EXPIRE_SECONDS: int = 300
+    SMS_RISK_WINDOW_DAYS: int = 90
+    SMS_RISK_KEYWORDS_FILE: str = ""
     PASSWORD_LOGIN_MAX_ATTEMPTS: int = 5
     PASSWORD_LOGIN_WINDOW_SECONDS: int = 300
     PASSWORD_LOGIN_FREEZE_SECONDS: int = 1800
@@ -144,6 +146,14 @@ class Settings(BaseSettings):
     GHANA_IDENTITY_API_KEY: str = ""
     GHANA_IDENTITY_TIMEOUT_SECONDS: int = 45
     GHANA_IDENTITY_FACE_CONFIDENCE_THRESHOLD: float = 70.0
+
+    # risktable Ghana v3 风控接口配置
+    GHANA_RISK_ENABLED: bool = False
+    GHANA_RISK_API_BASE_URL: str = "https://www.risktable.xyz/xtable"
+    GHANA_RISK_CUSTOMER_ID: str = ""
+    GHANA_RISK_CUSTOMER_SECRET_KEY: str = ""
+    GHANA_RISK_CALLBACK_URL: str = ""
+    GHANA_RISK_TIMEOUT_SECONDS: int = 30
 
     USER_UPLOAD_DIR: str = "uploads"
     IP138_TOKEN: str = ""

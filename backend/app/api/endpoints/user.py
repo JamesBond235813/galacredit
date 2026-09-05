@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from app.models.oauth_token import OAuthToken
 from app.models.user import User
 from app.models.channel import Channel
 from app.models.product import Product
+from app.models.risk_expansion import RiskExternalCheck
 from app.schemas.channel import ChannelBindRequest, ChannelBindResponse
 from app.schemas.loan import LoanResponse
 from app.schemas.user import (
@@ -46,8 +47,11 @@ from app.services.loan_assignment import assign_review_admin_if_needed_async
 from app.services.phone_binding import build_released_phone, close_active_phone_bindings, record_phone_binding
 from app.services.risk_list_service import refresh_user_risk_list_status
 from app.services.risk_scoring import record_device_signal
+from app.services.risk_scoring import record_external_check
+from app.services.sms_filter import filter_sms_messages, sms_collection_allowed
+from app.services.ghana_risk import ghana_risk_client
 from app.services.upload_storage import build_upload_url, save_user_image
-from app.schemas.user import RiskDeviceConsentRequest, RiskDeviceConsentResponse
+from app.schemas.user import RiskDeviceConsentRequest, RiskDeviceConsentResponse, RiskTaskQueryRequest, RiskTaskQueryResponse
 
 router = APIRouter()
 
@@ -226,10 +230,10 @@ async def change_password(
     :return: 修改结果
     """
     if req.new_password != req.confirm_password:
-        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+        raise BizException("两次输入的新密码不一致", code=400)
 
     if not current_user.password_hash or not verify_password(req.old_password, current_user.password_hash):
-        raise HTTPException(status_code=400, detail="原密码不正确")
+        raise BizException("原密码不正确", code=400)
 
     # 修改密码后立即更新哈希，避免明文在内存中长时间停留。
     current_user.password_hash = get_password_hash(req.new_password)
@@ -264,7 +268,42 @@ async def capture_risk_signals(
             "ip_address": resolve_client_ip(request, default_ip="unknown"),
         }
     )
+    # 以服务端授权结果和发布渠道为准，客户端即使夹带数据也不能绕过短信权限边界。
+    sms_allowed = sms_collection_allowed(
+        platform=req.device_payload.platform,
+        app_channel=req.device_payload.app_channel,
+        consent_sms=req.accepted_sensitive_collection and req.device_payload.consent_sms,
+        native_bridge=req.device_payload.native_bridge,
+        source=req.device_payload.source,
+    )
+    if not sms_allowed:
+        payload["sms_messages"] = []
+        payload["consent_sms"] = False
+    # 当前版本没有完整应用列表采集能力；即使客户端伪造 consent_app_list=true，
+    # 服务端也必须清空该字段，避免把未经过产品/隐私授权的应用清单转发给外部风控平台。
+    payload["installed_apps"] = []
     signal = await record_device_signal(db, user_id=current_user.id, payload=payload)
+    # 外部平台只接收服务端过滤后的短信，未配置时保留可审计的跳过记录。
+    filtered_sms = filter_sms_messages(payload.get("sms_messages") or [])
+    external_result = await ghana_risk_client.submit_task(
+        request_id=f"req_{current_user.id}_{uuid4().hex}",
+        # 第三方接口要求 applyId 全局唯一；不能只使用秒级时间戳，否则用户快速重试会被判定为重复订单。
+        apply_id=f"RISK_{current_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:12]}",
+        apply_time=datetime.now(),
+        sms_list=filtered_sms if sms_allowed else [],
+        # 当前版本不采集完整应用列表，外部接口始终收到空数组。
+        app_list=[],
+    )
+    await record_external_check(
+        db,
+        user_id=current_user.id,
+        provider=ghana_risk_client.provider,
+        check_type="GHANA_DEVICE_RISK",
+        status="PENDING" if external_result.get("task_number") else external_result.get("status", "FAILED"),
+        reason=external_result.get("reason"),
+        response=external_result.get("response"),
+        task_number=external_result.get("task_number"),
+    )
     await log_user_event_async(
         db,
         user=current_user,
@@ -275,8 +314,8 @@ async def capture_risk_signals(
             "consent_version": req.device_payload.consent_version,
             "source": req.device_payload.source or "H5",
             "native_bridge": req.device_payload.native_bridge or "",
-            "sms_count": len(req.device_payload.sms_messages or []),
-            "app_count": len(req.device_payload.installed_apps or []),
+            "sms_count": len(filtered_sms),
+            "app_count": len(payload.get("installed_apps") or []),
             "device_fingerprint": signal.device_fingerprint,
         },
     )
@@ -288,7 +327,74 @@ async def capture_risk_signals(
         "risk_level": signal.risk_level,
         "keyword_hits": json.loads(signal.keyword_hits_json or "{}"),
         "risk_flags": json.loads(signal.risk_flags_json or "{}").get("risk_flags", []),
+        "task_number": external_result.get("task_number"),
         "message": "Device risk signals captured",
+    }
+
+
+@router.post("/risk-callback")
+async def receive_ghana_risk_callback(request: Request, db: AsyncSession = Depends(get_async_db)):
+    """接收 Ghana 风控平台的计算完成回调。
+
+    :param request: 回调 HTTP 请求
+    :param db: 异步数据库会话
+    :return: 平台要求的 HTTP 200 确认
+    """
+    body = await request.json()
+    task_number = str(body.get("task_number") or "").strip()
+    if task_number:
+        record = (await db.execute(select(RiskExternalCheck).where(RiskExternalCheck.task_number == task_number))).scalar_one_or_none()
+        if record:
+            record.status = "SUCCESS" if str(body.get("task_status")) == "2" else "REVIEW"
+            score = body.get("task_score_v2") or body.get("task_score")
+            try:
+                record.score = float(score) if score is not None else None
+            except (TypeError, ValueError):
+                record.score = None
+            record.reason = str(body.get("message") or "")[:500]
+            record.response_json = json.dumps({"task_number": task_number, "task_status": body.get("task_status"), "task_score": score, "message": body.get("message")}, ensure_ascii=False)
+            await db.commit()
+    return {"code": 200}
+
+
+@router.post("/risk-query", response_model=RiskTaskQueryResponse)
+async def query_ghana_risk_task(
+    req: RiskTaskQueryRequest,
+    current_user: User = Depends(get_current_user_async),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """查询当前用户的 Ghana 风控任务结果。
+
+    :param req: 风控任务查询请求
+    :param current_user: 当前登录用户
+    :param db: 异步数据库会话
+    :return: 风控任务状态和评分
+    """
+    record = (await db.execute(select(RiskExternalCheck).where(
+        RiskExternalCheck.user_id == current_user.id,
+        RiskExternalCheck.task_number == req.task_number,
+    ))).scalar_one_or_none()
+    if record is None:
+        raise BizException("Risk task not found", code=404)
+    result = await ghana_risk_client.query_task(task_number=req.task_number)
+    task_status = result.get("task_status")
+    score = result.get("score")
+    if task_status == "2":
+        record.status = "SUCCESS"
+        try:
+            record.score = float(score) if score is not None else None
+        except (TypeError, ValueError):
+            record.score = None
+    elif result.get("status") == "FAILED":
+        record.status = "FAILED"
+    record.reason = str(result.get("reason") or "")[:500]
+    record.response_json = json.dumps(result.get("response") or {}, ensure_ascii=False)
+    await db.commit()
+    return {
+        "task_number": req.task_number,
+        "task_status": task_status,
+        "task_score": float(score) if score is not None else None,
+        "message": str(result.get("reason") or ""),
     }
 
 
@@ -301,7 +407,7 @@ async def bind_channel(
     db_user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     channel = await get_channel_by_name_async(db, req.channel_name, active_only=True)
     if not channel:
-        raise HTTPException(status_code=404, detail="渠道链接不存在或已停用")
+        raise BizException("渠道链接不存在或已停用", code=404)
 
     loan = await get_or_create_loan_async(db, current_user.id)
     attribution_status = await bind_user_source_channel_async(db, user=db_user, channel=channel, loan=loan)
@@ -334,7 +440,7 @@ async def mock_ocr(
     db: AsyncSession = Depends(get_async_db),
 ):
     if not front_image:
-        raise HTTPException(status_code=400, detail="请上传身份证人像面。")
+        raise BizException("请上传身份证人像面。", code=400)
 
     front_bytes = await front_image.read()
     back_bytes = await back_image.read() if back_image else None
@@ -343,7 +449,7 @@ async def mock_ocr(
         try:
             ocr_result = await ghana_card_identity_provider.ocr(front_bytes, back_bytes)
         except GhanaIdentityError as exc:
-            raise HTTPException(status_code=400, detail=f"Ghana Card verification failed: {exc}") from exc
+            raise BizException(f"Ghana Card verification failed: {exc}", code=400) from exc
         ocr_name = (ocr_result.get("name") or "").strip()
         ocr_id_card_num = (ocr_result.get("id_card_num") or "").strip()
         ocr_id_address = (ocr_result.get("id_address") or "").strip()
@@ -352,7 +458,7 @@ async def mock_ocr(
         try:
             ocr_result = await esign_identity_client.id_card_ocr(front_bytes, back_bytes)
         except ESignIdentityError as exc:
-            raise HTTPException(status_code=400, detail=f"身份证识别失败：{exc}") from exc
+            raise BizException(f"身份证识别失败：{exc}", code=400) from exc
         ocr_name = (ocr_result.get("name") or "").strip()
         ocr_id_card_num = (ocr_result.get("id_card_num") or "").strip()
         ocr_id_address = (ocr_result.get("id_address") or "").strip()
@@ -365,7 +471,7 @@ async def mock_ocr(
         ocr_id_address = "Accra, Ghana"
         ocr_id_expiry = "2025.01.01-2035.01.01"
     else:
-        raise HTTPException(status_code=503, detail="实名识别服务未启用，请联系管理员。")
+        raise BizException("实名识别服务未启用，请联系管理员。", code=503)
 
     now = datetime.now()
     active_user = current_user
@@ -454,7 +560,7 @@ async def mock_ocr(
     await refresh_user_risk_list_status(db, active_user)
     if hit:
         await db.commit()
-        raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+        raise BizException("抱歉 您当前无法申请信用购物额度", code=400)
 
     loan = await get_or_create_loan_async(db, active_user.id)
     loan.identity_ocr_submitted_at = now
@@ -489,8 +595,8 @@ async def mock_ocr(
         await db.rollback()
         message = str(getattr(exc.orig, "args", [""])[-1] or exc)
         if "Duplicate entry" in message and "users.id_card_num" in message:
-            raise HTTPException(status_code=400, detail="该身份证号已被其他账号使用，请核对后重试。") from exc
-        raise HTTPException(status_code=500, detail="实名信息保存失败，请稍后重试。") from exc
+            raise BizException("该身份证号已被其他账号使用，请核对后重试。", code=400) from exc
+        raise BizException("实名信息保存失败，请稍后重试。", code=500) from exc
 
     await db.refresh(active_user)
     return _build_user_response(
@@ -508,12 +614,12 @@ async def mock_face_auth(
     db: AsyncSession = Depends(get_async_db),
 ):
     if not current_user.name or not current_user.id_card_num:
-        raise HTTPException(status_code=400, detail="请先完成身份证识别并确认实名信息。")
+        raise BizException("请先完成身份证识别并确认实名信息。", code=400)
 
     score = None
     if settings.GHANA_IDENTITY_ENABLED or settings.GHANA_IDENTITY_MOCK_ENABLED:
         if not face_image:
-            raise HTTPException(status_code=400, detail="Please upload a face photo.")
+            raise BizException("Please upload a face photo.", code=400)
 
         face_image_bytes = await face_image.read()
         try:
@@ -538,10 +644,10 @@ async def mock_face_auth(
                 },
             )
             await db.commit()
-            raise HTTPException(status_code=400, detail=fail_detail) from exc
+            raise BizException(fail_detail, code=400) from exc
     elif settings.ESIGN_IDENTITY_ENABLED:
         if not face_image:
-            raise HTTPException(status_code=400, detail="请上传人脸照片。")
+            raise BizException("请上传人脸照片。", code=400)
 
         face_image_bytes = await face_image.read()
         try:
@@ -569,13 +675,13 @@ async def mock_face_auth(
                 },
             )
             await db.commit()
-            raise HTTPException(status_code=400, detail=fail_detail) from exc
+            raise BizException(fail_detail, code=400) from exc
     elif settings.ESIGN_IDENTITY_MOCK_ENABLED:
         await asyncio.sleep(1.0)
         face_image_bytes = await face_image.read() if face_image else b""
         score = 0.99
     else:
-        raise HTTPException(status_code=503, detail="人脸核验服务未启用，请联系管理员。")
+        raise BizException("人脸核验服务未启用，请联系管理员。", code=503)
 
     if face_image_bytes:
         current_user.face_image = save_user_image(current_user.id, face_image_bytes, prefix="face", content_type=face_image.content_type if face_image else None)
@@ -613,13 +719,13 @@ async def submit_application(
     await refresh_user_risk_list_status(db, db_user)
     if hit:
         await db.commit()
-        raise HTTPException(status_code=400, detail="抱歉 您当前无法申请信用购物额度")
+        raise BizException("抱歉 您当前无法申请信用购物额度", code=400)
     is_resubmitting = False
     contacts = req.emergency_contacts
     if len(contacts) != 2:
-        raise HTTPException(status_code=400, detail="请完整填写两位紧急联系人")
+        raise BizException("请完整填写两位紧急联系人", code=400)
     if contacts[0].phone == contacts[1].phone:
-        raise HTTPException(status_code=400, detail="两位紧急联系人手机号不能相同")
+        raise BizException("两位紧急联系人手机号不能相同", code=400)
 
     loan = await get_latest_loan_async(db, current_user.id)
     if loan is None or loan.status == "SETTLED":
@@ -627,14 +733,14 @@ async def submit_application(
     elif loan.status == "REVIEWING":
         is_resubmitting = True
     elif loan.status == "REJECTED":
-        raise HTTPException(status_code=400, detail="很遗憾，您当前未通过审核")
+        raise BizException("很遗憾，您当前未通过审核", code=400)
     elif loan.status in {"APPROVED", "WITHDRAWING", "DISBURSED", "OVERDUE"}:
-        raise HTTPException(status_code=400, detail="当前订单流程进行中，暂不能重复提交资料")
+        raise BizException("当前订单流程进行中，暂不能重复提交资料", code=400)
 
     if not getattr(loan, "identity_ocr_submitted_at", None):
-        raise HTTPException(status_code=400, detail="请先重新提交身份证正反面照片。")
+        raise BizException("请先重新提交身份证正反面照片。", code=400)
     if not getattr(loan, "identity_face_auth_at", None):
-        raise HTTPException(status_code=400, detail="请先重新完成人脸识别。")
+        raise BizException("请先重新完成人脸识别。", code=400)
 
     db_user.emergency_contact1_name = contacts[0].name.strip()
     db_user.emergency_contact1_relation = contacts[0].relation.strip()
@@ -754,7 +860,7 @@ async def upsert_user_location(
         )
     except ValueError as exc:
         await db.commit()
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        raise BizException(str(exc), code=403) from exc
 
     await db.commit()
     return {

@@ -1,0 +1,30 @@
+{
+  "name": "GalaCredit",
+  "appid": "__UNI__GALACREDIT_INTERNAL",
+  "description": "GalaCredit customer application - authorised internal distribution",
+  "versionName": "1.0.0-internal",
+  "versionCode": "101",
+  "transformPx": false,
+  "h5": { "title": "GalaCredit", "router": { "mode": "history" } },
+  "app-plus": {
+    "modules": { "Camera": {}, "Geolocation": {}, "Push": {} },
+    "distribute": {
+      "android": {
+        "packagename": "com.galacredit.app.internal",
+        "permissions": [
+          "android.permission.CAMERA",
+          "android.permission.ACCESS_FINE_LOCATION",
+          "android.permission.POST_NOTIFICATIONS",
+          "android.permission.READ_SMS"
+        ]
+      },
+      "ios": {
+        "privacyDescription": {
+          "NSCameraUsageDescription": "Used to verify your identity.",
+          "NSLocationWhenInUseUsageDescription": "Used for one-time application security checks."
+        }
+      }
+    }
+  }
+}
+

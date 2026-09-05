@@ -1,0 +1,9 @@
+GALACREDIT USER AGREEMENT
+
+Last updated: 5 September 2026
+
+GalaCredit provides an online application service for short-term credit in Ghana. Eligibility, fees, limits, disbursement and repayment dates are shown before you confirm a product. Applying does not guarantee approval. You must provide accurate information belonging to you and protect your registered phone, SIM and verification codes.
+
+You authorise GalaCredit and approved providers to verify identity, application, device, location and risk information as described in the Personal Data Authorization. An authorised internal Android build may offer optional SMS review: after separate consent and Android permission, only the most recent 90 days and messages matching the published sms_keys20260602.csv regular-expression keywords are uploaded after device-side filtering and server-side re-filtering. Google Play Android and iOS builds do not read SMS content, and the current builds do not read or upload a complete installed-app list.
+
+Before confirming a loan, the app displays the nominal amount, fees, estimated cash received, repayment amount, due dates, instalments and overdue charges. Repay only through methods displayed or confirmed by GalaCredit. Questions and complaints can be submitted through Customer Support. This operational draft must be reviewed by qualified Ghanaian legal and compliance advisers before production release.

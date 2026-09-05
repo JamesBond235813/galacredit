@@ -51,6 +51,7 @@ class RiskExternalCheck(Base):
 
     id = Column(Integer, primary_key=True, comment="查询记录ID")
     user_id = Column(Integer, nullable=False, index=True, comment="用户ID")
+    task_number = Column(String(64), nullable=True, index=True, comment="第三方风控任务号")
     provider = Column(String(80), nullable=False, comment="供应商标识")
     check_type = Column(String(40), nullable=False, comment="查询类型")
     status = Column(String(20), nullable=False, comment="状态：SKIPPED、SUCCESS、FAILED、REVIEW")

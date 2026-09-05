@@ -216,6 +216,9 @@ SCHEMA_PATCHES = {
         "device_summary_json": "ALTER TABLE risk_device_signals ADD COLUMN device_summary_json TEXT NOT NULL COMMENT '设备信息摘要JSON'",
         "risk_flags_json": "ALTER TABLE risk_device_signals ADD COLUMN risk_flags_json TEXT NOT NULL COMMENT '风险标记JSON'",
     },
+    "risk_external_checks": {
+        "task_number": "ALTER TABLE risk_external_checks ADD COLUMN task_number VARCHAR(64) NULL",
+    },
     "products": {
         "product_type": "ALTER TABLE products ADD COLUMN product_type VARCHAR(30) NOT NULL DEFAULT 'ECARD_RIGHTS'",
         "rights_detail_json": "ALTER TABLE products ADD COLUMN rights_detail_json TEXT NULL",

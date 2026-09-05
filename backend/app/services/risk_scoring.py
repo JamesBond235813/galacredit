@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.risk_expansion import RiskDeviceSignal, RiskExternalCheck, RiskModelScore
+from app.services.sms_filter import filter_sms_messages
 
 
 @dataclass(frozen=True)
@@ -112,13 +113,16 @@ def summarize_device_collection(
     :return: 结构化摘要
     """
     sms_rows = []
-    for item in payload.get("sms_messages") or []:
+    # 服务端再次执行最小化过滤，防止客户端绕过时间窗口或关键词规则。
+    for item in filter_sms_messages(payload.get("sms_messages") or []):
         text = _normalize_text(" ".join(str(part or "") for part in [item.get("sender"), item.get("title"), item.get("body")]))
         sms_rows.append(
             {
-                "sender": str(item.get("sender") or "")[:80],
+                "sender": str(item.get("address") or item.get("sender") or "")[:80],
                 "title": str(item.get("title") or "")[:120],
                 "body": str(item.get("body") or "")[:500],
+                "time": str(item.get("time") or "")[:32],
+                "matched_keywords": list(item.get("keywords") or []),
                 "keywords": _merge_unique(_collect_keyword_hits(text, DEVICE_SMS_KEYWORDS)),
             }
         )
@@ -269,7 +273,15 @@ async def record_device_signal(db: AsyncSession, *, user_id: int, payload: dict[
     :param payload: 已脱敏的设备特征
     :return: 特征记录
     """
-    summary = summarize_device_collection(payload=payload)
+    filtered_sms = filter_sms_messages(payload.get("sms_messages") or [])
+    sanitized_payload = dict(payload)
+    sanitized_payload["sms_messages"] = filtered_sms
+    # 载荷审计只保留不可逆指纹，避免 payload_json 意外保存原始 Android ID、手机号或来源 IP。
+    fingerprint = build_device_fingerprint(payload=payload)
+    sanitized_payload["device_fingerprint"] = fingerprint
+    sanitized_payload.pop("phone", None)
+    sanitized_payload.pop("ip_address", None)
+    summary = summarize_device_collection(payload=sanitized_payload)
     shared_device_count = int(payload.get("account_count_24h") or 0)
     risk_level, reasons, keyword_hits, risk_flags = evaluate_device_risk_signals(
         summary=summary,
@@ -279,7 +291,7 @@ async def record_device_signal(db: AsyncSession, *, user_id: int, payload: dict[
         user_id=user_id,
         consent_granted=int(bool(payload.get("consent_granted"))),
         # 服务端统一生成不可逆指纹，不直接保存客户端传入的 Android ID。
-        device_fingerprint=build_device_fingerprint(payload=payload),
+        device_fingerprint=fingerprint,
         ip_address=payload.get("ip_address"),
         asn=payload.get("asn"),
         is_proxy=int(bool(payload.get("is_proxy"))),
@@ -293,7 +305,8 @@ async def record_device_signal(db: AsyncSession, *, user_id: int, payload: dict[
         app_summary_json=json.dumps(summary.get("app_summary") or [], ensure_ascii=False),
         device_summary_json=json.dumps(summary.get("device_summary") or {}, ensure_ascii=False),
         risk_flags_json=json.dumps({"reasons": reasons, "risk_flags": risk_flags}, ensure_ascii=False),
-        payload_json=json.dumps(payload, ensure_ascii=False),
+        # 原始载荷不落库，短信只保留90天内命中关键词的最小集合。
+        payload_json=json.dumps(sanitized_payload, ensure_ascii=False),
     )
     db.add(record)
     await db.flush()
@@ -316,7 +329,8 @@ async def count_device_velocity(db: AsyncSession, *, device_fingerprint: str, si
 
 async def record_external_check(db: AsyncSession, *, user_id: int, provider: str, check_type: str,
                                 status: str = "SKIPPED", score: Optional[float] = None,
-                                reason: Optional[str] = None, response: Optional[dict[str, Any]] = None) -> RiskExternalCheck:
+                                reason: Optional[str] = None, response: Optional[dict[str, Any]] = None,
+                                task_number: Optional[str] = None) -> RiskExternalCheck:
     """记录外部数据查询，供应商不可用时保留安全降级轨迹。
 
     :param db: 异步数据库会话
@@ -329,7 +343,7 @@ async def record_external_check(db: AsyncSession, *, user_id: int, provider: str
     :param response: 脱敏响应
     :return: 查询记录
     """
-    record = RiskExternalCheck(user_id=user_id, provider=provider, check_type=check_type, status=status,
+    record = RiskExternalCheck(user_id=user_id, task_number=task_number, provider=provider, check_type=check_type, status=status,
                                score=score, reason=reason, response_json=json.dumps(response or {}, ensure_ascii=False))
     db.add(record)
     await db.flush()
