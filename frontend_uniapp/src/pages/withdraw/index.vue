@@ -22,13 +22,36 @@ async function load() {
   if (!requireSession()) return
   try {
     extensionSourceLoanId.value = readExtensionSourceLoanId()
+    const requestedProductId = readProductId()
     const [loan, products] = await Promise.all([
       getLoanStatus(),
       getProducts(extensionSourceLoanId.value ? { extension_source_loan_id: extensionSourceLoanId.value } : {})
     ])
+    // 申请入口必须先校验贷款状态，和 H5 一样避免在不可申请状态展示空的产品页。
+    if (loan.status !== 'APPROVED' && !extensionSourceLoanId.value) {
+      uni.showToast({ title: 'A loan application cannot be submitted in the current status', icon: 'none' })
+      uni.reLaunch({ url: ['WITHDRAWING', 'DISBURSED', 'OVERDUE'].includes(loan.status) ? '/pages/bill/index' : '/pages/home/index' })
+      return
+    }
     state.value = { loading: false, error: '', loan, products: Array.isArray(products) ? products : [] }
-    selectedId.value = state.value.products[0]?.id || null
+    selectedId.value = state.value.products.find((item) => String(item.id) === String(requestedProductId))?.id || state.value.products[0]?.id || null
   } catch (error) { state.value = { loading: false, error: errorMessage(error), loan: null, products: [] } }
+}
+
+/**
+ * 从审核页的产品卡片链接中读取预选产品。
+ *
+ * :return: 产品 ID；不存在时返回 null
+ */
+function readProductId() {
+  let raw = ''
+  if (typeof window !== 'undefined') raw = String(window.location.search || '').match(/[?&]product_id=([^&]*)/)?.[1] || ''
+  if (!raw && typeof getCurrentPages === 'function') {
+    const pages = getCurrentPages()
+    const current = pages?.[pages.length - 1]
+    raw = current?.options?.product_id || current?.$page?.options?.product_id || ''
+  }
+  return String(raw || '').trim() || null
 }
 
 /**
@@ -38,7 +61,7 @@ async function load() {
  */
 function readExtensionSourceLoanId() {
   let raw = ''
-  if (typeof window !== 'undefined') raw = new URLSearchParams(window.location.search).get('extension_source_loan_id') || ''
+  if (typeof window !== 'undefined') raw = String(window.location.search || '').match(/[?&]extension_source_loan_id=([^&]*)/)?.[1] || ''
   if (!raw && typeof getCurrentPages === 'function') {
     const pages = getCurrentPages()
     const current = pages?.[pages.length - 1]
@@ -154,12 +177,12 @@ onBeforeUnmount(() => {
 .product-card--active { border-color:var(--gc-brand); box-shadow:0 12rpx 30rpx rgba(234,149,24,.12); }
 .product-card--disabled { opacity:.72; pointer-events:none; }
 .product-name { display:block; font-size:29rpx; font-weight:750; }
-.product-metrics { display:flex; gap:18rpx; margin-top:26rpx; }
+.product-metrics { display:flex; flex-wrap:wrap; gap:18rpx; margin-top:26rpx; }
 .product-metrics view { flex:1; padding:16rpx; border-radius:16rpx; background:#f7f9fc; }
 .product-metrics text,.product-metrics strong { display:block; }
 .product-metrics text { color:var(--gc-muted); font-size:20rpx; }
 .product-metrics strong { margin-top:6rpx; font-size:24rpx; }
-.modal-mask { position:fixed; z-index:30; inset:0; display:flex; align-items:flex-end; padding:20rpx; background:rgba(19,26,39,.52); }
+.modal-mask { position:fixed; z-index:30; inset:0; display:flex; align-items:center; justify-content:center; padding:calc(24rpx + env(safe-area-inset-top)) 20rpx calc(24rpx + env(safe-area-inset-bottom)); background:rgba(19,26,39,.52); }
 .modal { width:100%; max-height:88vh; margin:0; }
 .contract-content { height:48vh; padding:22rpx; border-radius:18rpx; background:#f7f9fc; color:var(--gc-muted); font-size:23rpx; line-height:1.6; white-space:pre-wrap; }
 .contract-hint { display:block; margin-top:12rpx; color:var(--gc-muted); font-size:21rpx; }

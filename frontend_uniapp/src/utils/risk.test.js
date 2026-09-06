@@ -70,4 +70,14 @@ describe('native risk environment bridge', () => {
     const source = await import('./sms-bridge.js?source-check')
     expect(source.collectAndroidSmsBridge).toBeTypeOf('function')
   })
+
+  it('filters user-provided SMS only after explicit consent', async () => {
+    const now = Date.now()
+    const providedSms = [{ address: 'Bank', body: 'loan approved', time: now }]
+    const denied = await collectRiskSignals({ consentSms: false, providedSms })
+    expect(denied.device_payload.sms_messages).toEqual([])
+    const accepted = await collectRiskSignals({ consentSms: true, providedSms })
+    expect(accepted.device_payload.sms_messages).toHaveLength(1)
+    expect(accepted.device_payload.sms_messages[0].keywords).toEqual(expect.arrayContaining(['loan', 'approved']))
+  })
 })

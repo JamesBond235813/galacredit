@@ -39,12 +39,17 @@ function transformRpx() {
 }
 
 const uniTags = new Set(['view', 'text', 'image', 'navigator', 'checkbox', 'slider', 'scroll-view', 'radio', 'picker'])
-export default defineConfig(({ command }) => ({
+export default defineConfig(async ({ command }) => {
+  // UniApp CLI 和 HBuilderX 设置此变量，必须交由官方编译器生成原生运行资源。
+  if (process.env.UNI_PLATFORM) return (await import('./vite.uni.config.js')).default
+  return ({
   define: { 'import.meta.env.VITE_SMS_COLLECTION_ENABLED': JSON.stringify(smsCollectionEnabled ? 'true' : 'false') },
   plugins: [
     vue({ template: { compilerOptions: { isCustomElement: (tag) => uniTags.has(tag) } } }),
     transformRpx(),
     smsChannelPlugin(smsCollectionEnabled, command)
   ],
-  server: { host: '0.0.0.0', port: 2004 }
-}))
+  preview: { host: '0.0.0.0', port: 2001, strictPort: true },
+  server: { host: '0.0.0.0', port: 2001, strictPort: true }
+  })
+})

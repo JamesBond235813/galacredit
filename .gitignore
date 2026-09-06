@@ -95,3 +95,4 @@ backend/.venv/
 data_transfer.zip
 /decrypt_mobile.py
 /frontend_admin/pnpm-lock.yaml
+android_native/.local/

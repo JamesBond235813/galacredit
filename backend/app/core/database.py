@@ -411,9 +411,6 @@ async def ensure_default_admins():
             roles = serialize_admin_roles(["ADMIN"])
             permissions = serialize_admin_permissions(None)
             if exists:
-                if username == "xiaojiang" and not verify_password(password, exists.password_hash):
-                    exists.password_hash = get_password_hash(password)
-                    changed = True
                 if exists.roles != roles:
                     exists.roles = roles
                     changed = True

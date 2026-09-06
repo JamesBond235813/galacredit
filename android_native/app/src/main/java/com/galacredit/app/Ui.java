@@ -80,8 +80,21 @@ final class Ui {
     }
 
     static EditText input(Context context, String hint) {
-        EditText editText = new EditText(context);
-        editText.setHint(hint);
+        EditText editText = new EditText(context) {
+            @Override
+            protected void onDraw(android.graphics.Canvas canvas) {
+                super.onDraw(canvas);
+                // 灰色零仅绘制为提示，不写入 Editable，避免污染真实手机号。
+                if (!"000000000".equals(hint)) return;
+                int count = Math.min(getText().length(), 9);
+                if (count == 9) return;
+                android.graphics.Paint paint = new android.graphics.Paint(getPaint());
+                paint.setColor(Color.rgb(183, 190, 200));
+                float start = getCompoundPaddingLeft() + paint.measureText(getText().toString());
+                canvas.drawText("000000000".substring(count), start, getBaseline(), paint);
+            }
+        };
+        editText.setHint("000000000".equals(hint) ? "" : hint);
         editText.setTextColor(TEXT);
         editText.setHintTextColor(MUTED);
         editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);

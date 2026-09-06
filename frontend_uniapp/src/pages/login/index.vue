@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { loginFormLift } from '../../utils/login-layout.js'
 import BrandLockup from '../../components/BrandLockup.vue'
 import { createSliderCaptcha, sendCode, smsLogin, submitRiskSignals, verifySliderCaptcha } from '../../api/index.js'
 import { errorMessage, isValidGhanaPhone, normalizeGhanaPhone } from '../../utils/app.js'
@@ -7,8 +8,39 @@ import { getAppChannel, getPlatform, getStorage, setStorage } from '../../utils/
 import { collectRiskSignals } from '../../utils/risk.js'
 import { canVerifySlider } from '../../utils/captcha.js'
 
+const formLift = ref(0)
+
+/**
+ * 窗口随键盘缩小时仅移动表单，品牌区不参与位移。
+ * :param event: UniApp 窗口尺寸事件
+ * :return: 无
+ */
+async function resizeLoginForm(event) {
+  await nextTick()
+  const height = event?.size?.windowHeight || (typeof window !== 'undefined' ? (window.visualViewport?.height || window.innerHeight) : 0)
+  if (!height) return
+  const applyBounds = (rect) => {
+    if (rect) formLift.value = loginFormLift(rect.bottom, height, formLift.value)
+  }
+  if (typeof uni.createSelectorQuery === 'function') {
+    uni.createSelectorQuery().select('.sign-in-button').boundingClientRect(applyBounds).exec()
+  } else if (typeof document !== 'undefined') {
+    applyBounds(document.querySelector('.sign-in-button')?.getBoundingClientRect())
+  }
+}
+
+onMounted(() => {
+  if (typeof uni.onWindowResize === 'function') uni.onWindowResize(resizeLoginForm)
+  else if (typeof window !== 'undefined') window.visualViewport?.addEventListener('resize', resizeLoginForm)
+})
+onBeforeUnmount(() => {
+  if (typeof uni.offWindowResize === 'function') uni.offWindowResize(resizeLoginForm)
+  else if (typeof window !== 'undefined') window.visualViewport?.removeEventListener('resize', resizeLoginForm)
+})
+
 const phone = ref('')
 const smsCode = ref('')
+const codeInputRef = ref(null)
 const consent = ref(false)
 const smsConsent = ref(false)
 const busy = ref(false)
@@ -16,12 +48,20 @@ const captchaBusy = ref(false)
 const captchaVisible = ref(false)
 const captcha = ref(null)
 const sliderValue = ref(0)
+const sliderDragging = ref(false)
+const sliderRef = ref(null)
+const sliderTrackWidth = ref(0)
+let sliderStartX = 0
+let sliderStartValue = 0
 const cooldown = ref(0)
 let timer = null
 let sliderStartedAt = 0
 let captchaVerificationSubmitted = false
 
 const normalizedPhone = computed(() => normalizeGhanaPhone(phone.value))
+const phoneHintDigits = computed(() => Array.from({ length: 9 }, (_, index) => ({ value: phone.value[index] || '0' })))
+function onPhoneInput(event) { phone.value = String(event.detail?.value ?? event.target?.value ?? '').replace(/\D/g, '').slice(0, 9) }
+function onSmsInput(event) { smsCode.value = String(event.detail?.value ?? event.target?.value ?? '').replace(/\D/g, '').slice(0, 6) }
 const canRequest = computed(() => isValidGhanaPhone(phone.value) && consent.value && !busy.value && cooldown.value <= 0)
 const canSignIn = computed(() => /^\d{6}$/.test(smsCode.value) && isValidGhanaPhone(phone.value) && consent.value && !busy.value)
 
@@ -46,6 +86,8 @@ async function openCaptcha() {
     sliderValue.value = 0
     sliderStartedAt = Date.now()
     captchaVisible.value = true
+    await nextTick()
+    measureSlider()
   } catch (error) { notify(errorMessage(error, 'Unable to start security check.')) }
   finally { captchaBusy.value = false }
 }
@@ -70,10 +112,51 @@ async function verifyCaptcha(event) {
     cooldown.value = Number(response.cooldown_seconds || 60)
     timer = setInterval(() => { cooldown.value -= 1; if (cooldown.value <= 0) { cooldown.value = 0; clearInterval(timer); timer = null } }, 1000)
     captchaVisible.value = false
-    notify('Verification code sent.')
+    // 验证成功后直接回到验证码输入框，不再弹出阻塞式提示框。
+    await nextTick()
+    codeInputRef.value?.focus?.()
   } catch (error) { sliderValue.value = 0; captchaVerificationSubmitted = false; notify(errorMessage(error, 'Security check failed. Please retry.')) }
   finally { captchaBusy.value = false }
 }
+
+function touchX(event) { return Number(event?.touches?.[0]?.clientX ?? event?.changedTouches?.[0]?.clientX ?? event?.clientX ?? 0) }
+function sliderThumbWidth() { return typeof uni.upx2px === 'function' ? uni.upx2px(92) : 46 }
+function measureSlider() {
+  const rect = sliderRef.value?.getBoundingClientRect?.()
+  if (rect?.width) {
+    sliderTrackWidth.value = rect.width
+    return
+  }
+  if (typeof uni.createSelectorQuery === 'function') {
+    uni.createSelectorQuery().select('.captcha-slider').boundingClientRect((result) => {
+      if (result?.width) sliderTrackWidth.value = result.width
+    }).exec()
+  }
+}
+function sliderUsableWidth() {
+  const systemInfo = typeof uni.getSystemInfoSync === 'function' ? uni.getSystemInfoSync() : {}
+  const trackWidth = sliderTrackWidth.value || Math.max((systemInfo.windowWidth || 390) - 96, 220)
+  return Math.max(trackWidth - sliderThumbWidth(), 1)
+}
+const sliderThumbLeft = computed(() => sliderTrackWidth.value ? `${(sliderValue.value / 100) * sliderUsableWidth()}px` : `${sliderValue.value}%`)
+function startSlider(event) {
+  event?.preventDefault?.()
+  sliderDragging.value = true
+  sliderStartX = touchX(event)
+  sliderStartValue = sliderValue.value
+}
+function moveSlider(event) {
+  if (!sliderDragging.value) return
+  event?.preventDefault?.()
+  sliderValue.value = Math.min(100, Math.max(0, sliderStartValue + ((touchX(event) - sliderStartX) / sliderUsableWidth()) * 100))
+}
+function endSlider() {
+  sliderDragging.value = false
+  if (sliderValue.value >= 98) verifyCaptcha({ detail: { value: 100 } })
+}
+function pointerSlider(event) { startSlider({ touches: [{ clientX: event.clientX }] }) }
+function movePointerSlider(event) { moveSlider({ touches: [{ clientX: event.clientX }] }) }
+function endPointerSlider() { endSlider() }
 
 /**
  * 关闭滑块挑战并清理一次性状态，避免旧挑战被重复提交。
@@ -85,6 +168,7 @@ function closeCaptcha() {
   captchaVerificationSubmitted = false
   captcha.value = null
   sliderValue.value = 0
+  sliderDragging.value = false
 }
 
 /**
@@ -96,7 +180,9 @@ async function signIn() {
   if (!canSignIn.value) return notify('Complete the phone, code and consent fields.')
   busy.value = true
   try {
-    const result = await smsLogin({ phone: normalizedPhone.value, sms_code: smsCode.value })
+    // 输入控件在部分 H5/WebView 中可能保留空格或非数字字符，提交前统一清洗，避免后端 Pydantic 直接返回 422。
+    const loginCode = String(smsCode.value || '').replace(/\D/g, '').slice(0, 6)
+    const result = await smsLogin({ phone: normalizedPhone.value, sms_code: loginCode })
     // 登录切换账号时不能沿用上一位用户的风控任务号。
     setStorage('galacredit_risk_task', '')
     const loginToken = result.access_token || result.token
@@ -128,38 +214,65 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 <template>
   <view class="gc-page login-page">
-    <view class="login-page__hero"><BrandLockup /><text class="login-page__headline">A clearer path to your next step.</text><text class="login-page__intro">Secure access to your credit application, identity checks and repayment plan.</text></view>
+    <view class="login-page__hero"><BrandLockup /><text class="login-page__headline">Get the money you need, faster.</text><text class="login-page__intro">Apply in minutes and move forward with confidence.</text></view>
+    <view class="login-form" :style="{ transform: `translateY(-${formLift}px)` }">
     <view class="gc-card login-card">
-      <text class="gc-section-title">Sign in securely</text>
-      <view class="phone-wrap"><text class="phone-prefix">🇬🇭 +233</text><input v-model="phone" class="gc-field phone-field" type="number" maxlength="9" placeholder="Mobile number" /></view>
-      <view class="code-row"><input v-model="smsCode" class="gc-field code-field" type="number" maxlength="6" placeholder="6-digit code" /><button class="gc-button gc-button--secondary code-button" :disabled="!canRequest || captchaBusy" @click="openCaptcha">{{ cooldown > 0 ? `${cooldown}s` : captchaBusy ? 'Checking…' : 'Send code' }}</button></view>
-      <label class="consent-row"><checkbox :checked="consent" color="#ea9518" @click="consent = !consent" /><text>I agree to GalaCredit's <text class="gc-link" @click.stop="openAgreement">User Agreement</text>, <text class="gc-link" @click.stop="openAgreement">Privacy Policy</text> and <text class="gc-link" @click.stop="openAgreement">Personal Data Authorization</text>.</text></label>
-      <label v-if="getPlatform() === 'android' && getAppChannel() === 'internal'" class="consent-row consent-row--optional"><checkbox :checked="smsConsent" color="#ea9518" @click="smsConsent = !smsConsent" /><text>I allow an optional 90-day SMS risk review. Only messages matching the published keywords are uploaded.</text></label>
-      <text class="gc-safe-note">We use only the information needed to provide and protect the service. Sensitive device permissions are requested only when required and supported.</text>
-      <button class="gc-button" :disabled="!canSignIn" :loading="busy" @click="signIn">{{ busy ? 'Signing in…' : 'Continue' }}</button>
+      <view class="phone-wrap"><text class="phone-prefix">🇬🇭 +233</text><view class="phone-hint" :class="{ 'has-value': phone.length > 0 }" aria-hidden="true"><text v-for="(digit, index) in phoneHintDigits" :key="index" class="phone-hint__digit">{{ digit.value }}</text></view><input :value="phone" class="gc-field phone-field" type="text" inputmode="numeric" maxlength="9" placeholder="" @input="onPhoneInput" /><text class="phone-count">{{ phone.length }}/9</text></view>
+      <view class="code-row"><input ref="codeInputRef" :value="smsCode" class="gc-field code-field" type="text" inputmode="numeric" maxlength="6" placeholder="Enter the 6-digit code" @input="onSmsInput" /><button class="gc-button gc-button--secondary code-button" :disabled="!canRequest || captchaBusy" @click="openCaptcha">{{ cooldown > 0 ? `${cooldown}s` : captchaBusy ? 'Checking…' : 'Send code' }}</button></view>
     </view>
-    <view class="login-page__footer"><text>GalaCredit · Responsible credit, made clear.</text></view>
-    <view v-if="captchaVisible" class="captcha-mask"><view class="captcha-modal gc-card"><text class="gc-section-title">Complete security check</text><text class="captcha-copy">Slide all the way to confirm you are human.</text><slider :value="sliderValue" :disabled="captchaBusy" activeColor="#ea9518" backgroundColor="#f1e9dc" block-size="24" :show-value="false" @change="verifyCaptcha" /><button class="gc-button gc-button--ghost" :disabled="captchaBusy" @click="closeCaptcha">Cancel</button></view></view>
+    <view class="gc-card agreement-card">
+      <label class="consent-row consent-row--first" @click="consent = !consent"><view :class="['consent-check', { checked: consent }]">{{ consent ? '✓' : '' }}</view><text>I agree to GalaCredit's <text class="gc-link" @click.stop="openAgreement">User Agreement</text>, <text class="gc-link" @click.stop="openAgreement">Privacy Policy</text> and <text class="gc-link" @click.stop="openAgreement">Personal Data Authorization</text>.</text></label>
+      <label v-if="getPlatform() === 'android' && getAppChannel() === 'internal'" class="consent-row consent-row--optional"><checkbox :checked="smsConsent" color="#ea9518" @click="smsConsent = !smsConsent" /><text>I allow an optional 90-day SMS risk review. Only messages matching the published keywords are uploaded.</text></label>
+      <text class="gc-safe-note">Sensitive device permissions are requested only when needed for risk review.</text>
+    </view>
+    <button class="gc-button sign-in-button" :disabled="!canSignIn" :loading="busy" @click="signIn">{{ busy ? 'Signing in…' : 'Sign In' }}</button>
+    </view>
+    <view v-if="captchaVisible" class="captcha-mask"><view class="captcha-modal gc-card"><text class="gc-section-title">Complete security check</text><text class="captcha-copy">Slide all the way to confirm you are human.</text><view ref="sliderRef" class="captcha-slider" :class="{ 'is-dragging': sliderDragging }" role="slider" aria-label="Slide to verify" :aria-valuenow="Math.round(sliderValue)" aria-valuemin="0" aria-valuemax="100" @touchstart="startSlider" @touchmove="moveSlider" @touchend="endSlider" @pointerdown="pointerSlider" @pointermove="movePointerSlider" @pointerup="endPointerSlider" @pointercancel="endPointerSlider"><view class="captcha-slider__track" /><view class="captcha-slider__fill" :style="{ width: `${sliderValue}%` }" /><view class="captcha-slider__thumb" :style="{ left: sliderThumbLeft }">›</view><text class="captcha-slider__label">Slide to verify</text></view><button class="captcha-cancel gc-button gc-button--ghost" :disabled="captchaBusy" @click="closeCaptcha">Cancel</button></view></view>
   </view>
 </template>
 
 <style scoped>
-.login-page { display:flex; flex-direction:column; padding-top:74rpx; background:linear-gradient(180deg,#fffaf2 0,#f6f8fb 56%); }
-.login-page__hero { padding:0 6rpx; }
-.login-page__headline { display:block; margin-top:60rpx; font-size:52rpx; line-height:1.12; font-weight:800; letter-spacing:0; }
-.login-page__intro { display:block; margin-top:18rpx; color:var(--gc-muted); font-size:26rpx; line-height:1.55; }
-.login-card { margin-top:34rpx; }
-.phone-wrap { position:relative; display:flex; align-items:center; }
-.phone-prefix { position:absolute; z-index:1; left:24rpx; font-size:27rpx; font-weight:650; }
-.phone-field { padding-left:210rpx; margin-top:18rpx; }
-.code-row { display:flex; gap:16rpx; align-items:center; }
-.code-field { flex:1; }
-.code-button { width:210rpx; min-height:94rpx; margin-top:18rpx; padding:0 12rpx; font-size:23rpx; }
-.consent-row { display:flex; gap:12rpx; align-items:flex-start; margin-top:26rpx; color:var(--gc-muted); font-size:22rpx; line-height:1.5; }
-.consent-row checkbox { transform:scale(.78); transform-origin:top left; }
+.login-page { display:flex; flex-direction:column; width:100%; max-width:800rpx; min-height:100vh; margin:0 auto; padding:calc(40px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom)); background:radial-gradient(circle at top left,rgba(234,149,24,.16),transparent 28%),radial-gradient(circle at top right,rgba(242,165,61,.14),transparent 30%),linear-gradient(180deg,#fffaf2 0%,#f6f8fb 56%,#f6f8fb 100%); }
+.login-page__hero { margin-top:100rpx; padding:10px 2px 14px; }
+.login-page__hero :deep(.gc-brand) { gap:32rpx; }
+.login-page__hero :deep(.gc-brand__logo) { width:126rpx; height:126rpx; border-radius:38rpx; }
+.login-page__hero :deep(.gc-brand__logo-card) { inset:20rpx; }
+.login-page__hero :deep(.gc-brand__name) { font-size:84rpx; letter-spacing:-2rpx; }
+.login-page__hero :deep(.gc-brand__tagline) { margin-top:8rpx; font-size:26rpx; }
+.login-page__hero :deep(.gc-brand > view:last-child) { position:relative; }
+.login-page__hero :deep(.gc-brand > view:last-child)::after { content:''; display:block; width:64rpx; height:4rpx; margin-top:10rpx; border-radius:999rpx; background:linear-gradient(90deg,#f2a53d 0%,rgba(200,111,12,.72) 100%); }
+.login-page__headline,.login-page__intro { display:none; }
+.login-card { margin-top:calc(114rpx + 12px); padding:0; border:1rpx solid rgba(255,255,255,.28); border-radius:28rpx; background:rgba(247,249,252,.94); box-shadow:0 10px 22px rgba(23,32,51,.08); overflow:hidden; }
+.agreement-card { margin-top:16px; padding:14px 14px 16px; border-radius:18px; background:rgba(255,255,255,.62); border:1rpx solid rgba(255,255,255,.68); box-shadow:0 10px 24px rgba(28,71,142,.06); }
+.phone-wrap { position:relative; display:flex; align-items:center; min-height:64px; }
+.phone-prefix { position:absolute; z-index:1; left:24rpx; top:0; height:64px; display:flex; align-items:center; font-size:25rpx; font-weight:650; }
+.phone-field { position:relative; z-index:2; height:64px; min-height:64px; padding-left:178rpx; margin-top:0; border:0; border-radius:0; background:transparent; font-family:monospace; letter-spacing:0; color:#23344f; -webkit-text-fill-color:#23344f; caret-color:#23344f; }
+.phone-field:focus { background:transparent; box-shadow:0 0 0 2rpx rgba(234,149,24,.14); }
+.phone-count { position:absolute; z-index:3; right:20rpx; top:0; height:64px; display:flex; align-items:center; color:#7a8ba1; font-size:21rpx; pointer-events:none; }
+.phone-hint { position:absolute; z-index:1; left:178rpx; top:0; height:64px; display:flex; align-items:center; pointer-events:none; color:rgba(116,132,151,.42); font-size:25rpx; font-family:monospace; letter-spacing:0; transition:opacity .12s ease; }
+.phone-hint.has-value { opacity:0; }
+.phone-hint__digit { width:1ch; text-align:center; }
+.code-row { display:flex; gap:8px; align-items:center; height:64px; padding:0 14px; }
+.code-field { flex:1; height:64px; min-height:64px; margin-top:0; padding:0; border:0; border-radius:0; background:transparent; }
+.code-button { width:88px; height:32px; min-height:32px; margin-top:0; padding:0 4px; border:1px solid rgba(234,149,24,.44); border-radius:10px; color:var(--gc-brand-deep); background:rgba(255,244,228,.86); font-size:12px; white-space:nowrap; }
+.consent-row { display:flex; gap:8px; align-items:flex-start; margin-top:10px; color:#30445f; font-size:12px; line-height:1.5; }
+.consent-row--first { margin-top:0; }
+.consent-check { flex:none; width:34rpx; height:34rpx; border:2rpx solid #c8cdd5; border-radius:50%; color:#fff; text-align:center; font-size:25rpx; line-height:30rpx; }
+.consent-check.checked { border-color:var(--gc-brand); background:var(--gc-brand); }
+.login-page .gc-safe-note { display:block; margin-top:10px; padding:0; border-radius:0; color:#6a7c92; background:transparent; font-size:12px; line-height:1.55; }
+.sign-in-button { margin-top:18px; min-height:50px; border-radius:25px; background:linear-gradient(135deg,#f2a53d 0%,#d9790d 100%); font-size:16px; font-weight:800; }
 .login-page__footer { margin-top:auto; padding:48rpx 0 12rpx; text-align:center; color:#9aa4b3; font-size:21rpx; }
-.captcha-mask { position:fixed; z-index:20; inset:0; display:flex; align-items:flex-end; padding:24rpx; background:rgba(19,26,39,.52); }
-.captcha-modal { width:100%; padding:34rpx; margin:0; }
+.captcha-mask { position:fixed; z-index:20; inset:0; display:flex; align-items:flex-start; justify-content:center; padding:22vh 24rpx 24rpx; background:rgba(19,26,39,.52); }
+.captcha-modal { width:100%; max-width:620rpx; padding:34rpx; margin:0; }
 .captcha-copy { display:block; color:var(--gc-muted); font-size:24rpx; }
-.captcha-modal slider { margin:40rpx 0 20rpx; }
+.captcha-slider { position:relative; height:92rpx; margin:34rpx 0 20rpx; overflow:hidden; border-radius:46rpx; touch-action:none; user-select:none; cursor:grab; }
+.captcha-slider:active { cursor:grabbing; }
+.captcha-slider__track { position:absolute; inset:20rpx 0; border-radius:26rpx; background:#f1e9dc; }
+.captcha-slider__fill { position:absolute; left:0; top:20rpx; bottom:20rpx; border-radius:26rpx; background:#f7c477; }
+.captcha-slider__thumb { position:absolute; top:0; width:92rpx; height:92rpx; border-radius:50%; color:#fff; background:#ea9518; text-align:center; font-size:64rpx; line-height:82rpx; box-shadow:0 6rpx 18rpx rgba(201,111,12,.28); transition:left .08s linear; }
+.captcha-slider__label { position:absolute; left:112rpx; right:24rpx; color:#9b774a; text-align:center; font-size:24rpx; line-height:92rpx; pointer-events:none; }
+.captcha-slider.is-dragging .captcha-slider__label { opacity:.2; }
+.captcha-cancel { position:relative; display:flex; clear:both; width:100%; margin:18rpx 0 0; }
+/* 表单作为整体移动，保留卡片间距；品牌区使用稳定尺寸，不随键盘窗口变高或变矮。 */
+.login-form { display:flex; flex-direction:column; flex-shrink:0; }
 </style>

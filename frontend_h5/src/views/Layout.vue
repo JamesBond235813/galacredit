@@ -4,6 +4,7 @@
     <div class="layout-bg"></div>
 
     <div class="layout-content">
+      <button v-if="route.path !== '/home' && route.path !== '/login'" class="mobile-back-button" type="button" aria-label="Back" @click="router.back()">‹</button>
       <router-view v-slot="{ Component }">
         <transition name="van-fade" mode="out-in">
           <component :is="Component" />
@@ -36,7 +37,6 @@
         </van-button>
       </div>
     </div>
-    <button v-if="showInstallButton" type="button" class="install-app-button" @click="installGalaCredit">Install GalaCredit</button>
   </div>
 </template>
 
@@ -56,19 +56,6 @@ const active = computed({
 const locationBlocked = ref(false);
 const locationRequesting = ref(false);
 const locationBlockMessage = ref('Please allow location access to continue using this service.');
-const installPrompt = ref(null);
-const showInstallButton = ref(window.isSecureContext && !window.matchMedia('(display-mode: standalone)').matches);
-
-const installGalaCredit = async () => {
-  if (!installPrompt.value) {
-    showToast('Open the browser menu and choose Add to Home Screen or Install app. Trust the HTTPS certificate before first use.');
-    return;
-  }
-  installPrompt.value.prompt();
-  await installPrompt.value.userChoice;
-  installPrompt.value = null;
-  showInstallButton.value = false;
-};
 
 const closeLocationPanel = () => {
   if (locationRequesting.value) {
@@ -126,11 +113,6 @@ const startLocationAuthorization = async () => {
 };
 
 onMounted(async () => {
-  window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
-    installPrompt.value = event;
-    showInstallButton.value = true;
-  });
   if (sessionStorage.getItem('h5_location_authorized') === '1' || sessionStorage.getItem('h5_location_attempted') === '1') {
     return;
   }
@@ -211,7 +193,7 @@ onMounted(async () => {
   background: rgba(10, 22, 42, 0.38);
 }
 
-.install-app-button { position: fixed; right: 16px; bottom: 78px; z-index: 20; border: 0; border-radius: 999px; padding: 10px 16px; color: #fff; background: #f19e2e; box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+.mobile-back-button { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px; z-index: 40; width: 44px; height: 44px; border: 1px solid var(--app-border); border-radius: 50%; color: var(--app-text-main); background: rgba(255,255,255,.95); box-shadow: var(--app-shadow); font-size: 32px; line-height: 36px; cursor: pointer; }
 
 .location-lock-panel {
   position: relative;

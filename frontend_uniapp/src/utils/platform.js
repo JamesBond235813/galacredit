@@ -118,7 +118,7 @@ export function getAppChannel() {
   } catch {
     // 非 App-Plus 运行时没有 plus 对象。
   }
-  return (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_CHANNEL) === 'internal' ? 'internal' : 'play'
+  return 'play'
 }
 
 /**
@@ -189,7 +189,7 @@ function parseUploadResponse(data, statusCode) {
 }
 
 function uploadBaseUrl() {
-  return (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'https://galacredit.ebamotor.com/api'
+  return 'https://galacredit.ebamotor.com/api'
 }
 
 function nativeImagePickerAvailable() {
@@ -297,22 +297,29 @@ export function uploadImage(url, formData = {}, fileName = 'file') {
  * :param formData: 附加表单字段
  * :return: Promise<接口响应>
  */
-export function uploadIdentityImages(url, formData = {}) {
+export function uploadIdentityImages(url, formData = {}, options = {}) {
+  const sourceType = Array.isArray(options.sourceType) && options.sourceType.length ? options.sourceType : undefined
   return new Promise((resolve, reject) => {
     if (nativeImagePickerAvailable()) {
       const token = getStorage('token')
       chooseNativeShellImages(2).then((files) => uploadNativeFiles(url, files, formData, token, ['front_image', 'back_image'])).then(resolve).catch(reject)
       return
     }
-    uni.chooseImage({ count: 2, success: ({ tempFilePaths }) => {
-      if (!tempFilePaths || tempFilePaths.length < 2) {
-        reject(new Error('Please choose both sides in the GalaCredit app.'))
+    uni.chooseImage({ count: 2, ...(sourceType ? { sourceType } : {}), success: ({ tempFilePaths }) => {
+      // 部分 Android 相机只返回单张照片；自动继续拍摄另一面，避免用户看到“请选择两面”的死路。
+      if (tempFilePaths && tempFilePaths.length === 1) {
+        uni.chooseImage({ count: 1, sourceType: ['camera'], success: ({ tempFilePaths: secondPaths }) => {
+          uploadSelected([tempFilePaths[0], ...(secondPaths || [])])
+        }, fail: reject })
         return
       }
+      uploadSelected(tempFilePaths || [])
+      function uploadSelected(selectedPaths) {
+       if (selectedPaths.length < 2) { reject(new Error('Please capture both the front and back of your Ghana Card.')); return }
       const token = getStorage('token')
       if (typeof plus === 'undefined' && uni.uploadFiles) {
         const header = { 'client-id': 'uniapp', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-        uni.uploadFiles({ url: `${uploadBaseUrl()}${url}`, files: [{ name: 'front_image', uri: tempFilePaths[0] }, { name: 'back_image', uri: tempFilePaths[1] }], formData, header, timeout: 45000, success: ({ data, statusCode }) => { try { resolve(parseUploadResponse(data, statusCode)) } catch (error) { reject(error) } }, fail: reject })
+        uni.uploadFiles({ url: `${uploadBaseUrl()}${url}`, files: [{ name: 'front_image', uri: selectedPaths[0] }, { name: 'back_image', uri: selectedPaths[1] }], formData, header, timeout: 45000, success: ({ data, statusCode }) => { try { resolve(parseUploadResponse(data, statusCode)) } catch (error) { reject(error) } }, fail: reject })
         return
       }
       if (typeof plus === 'undefined') { reject(new Error('This browser cannot upload both document sides together.')); return }
@@ -321,12 +328,13 @@ export function uploadIdentityImages(url, formData = {}) {
           try { resolve(parseUploadResponse(upload.responseText || '{}', status)) } catch (error) { reject(error) }
         } else reject(new Error(`Upload failed (${status})`))
       })
-      task.addFile(tempFilePaths[0], { key: 'front_image' })
-      task.addFile(tempFilePaths[1], { key: 'back_image' })
+      task.addFile(selectedPaths[0], { key: 'front_image' })
+      task.addFile(selectedPaths[1], { key: 'back_image' })
       Object.entries(formData).forEach(([key, value]) => task.addData(key, String(value)))
       if (token) task.setRequestHeader('Authorization', `Bearer ${token}`)
       task.setRequestHeader('client-id', 'uniapp')
       task.start()
+      }
     }, fail: reject })
   })
 }

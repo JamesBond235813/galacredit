@@ -9,10 +9,45 @@ const props = defineProps({
 })
 
 const paths = computed(() => ICON_PATHS[props.name] || [])
+const VANT_NAMES = Object.freeze({
+  home: 'wap-home-o',
+  'balance-list': 'balance-list-o',
+  applications: 'orders-o',
+  records: 'records',
+  idcard: 'idcard',
+  account: 'user-o',
+  'user-circle': 'user-circle-o',
+  'shield-check': 'shield-o',
+  plus: 'plus',
+  help: 'question-o',
+  support: 'service-o',
+  balance: 'balance-pay',
+  document: 'orders-o',
+  info: 'info-o',
+  refresh: 'replay',
+  message: 'comment-o',
+  volume: 'volume-o',
+  camera: 'photograph',
+  'chevron-left': 'arrow-left',
+  'chevron-right': 'arrow',
+  warning: 'warning-o',
+  close: 'close',
+  passed: 'passed',
+  underway: 'underway'
+})
+const vantName = computed(() => VANT_NAMES[props.name] || '')
 </script>
 
 <template>
+  <i
+    v-if="vantName"
+    class="gc-vant-icon"
+    :class="`gc-vant-icon--${vantName}`"
+    :style="{ fontSize: `${size}px` }"
+    aria-hidden="true"
+  />
   <svg
+    v-else
     class="gc-icon"
     :width="size"
     :height="size"

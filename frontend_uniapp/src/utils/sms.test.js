@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { filterSmsMessages, matchSmsKeywords } from './sms.js'
+import { collectAndroidSmsBridge } from './sms-bridge.js'
 import { chooseContact, getAppChannel, getCurrentLocation, normalizeContact, uploadIdentityImages, uploadImage } from './platform.js'
 
 describe('device SMS minimisation', () => {
@@ -112,6 +113,17 @@ describe('device SMS minimisation', () => {
     const result = await collectAndroidSms({ consent: false, channel: 'internal' })
     expect(result.reason).toBe('CHANNEL_OR_CONSENT')
     expect(startSmsReview).not.toHaveBeenCalled()
+    delete globalThis.window
+  })
+
+  it('passes the explicit consent value to the native bridge', async () => {
+    const startSmsReview = vi.fn((callbackName, consentAccepted) => {
+      expect(consentAccepted).toBe(true)
+      window[callbackName]?.({ supported: false, permission: 'granted', reason: 'OK' })
+    })
+    globalThis.window = { GalaCreditRisk: { startSmsReview } }
+    await expect(collectAndroidSmsBridge({ consent: true })).resolves.toMatchObject({ reason: 'OK' })
+    expect(startSmsReview).toHaveBeenCalled()
     delete globalThis.window
   })
 

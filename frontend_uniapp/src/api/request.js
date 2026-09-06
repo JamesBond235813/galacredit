@@ -1,6 +1,7 @@
 import { getStorage } from '../utils/platform.js'
 
-const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'https://galacredit.ebamotor.com/api'
+// app-plus 的 JS 引擎不提供 import.meta，运行时直接使用公开 API 地址。
+const API_BASE_URL = 'https://galacredit.ebamotor.com/api'
 
 /**
  * 统一发起 API 请求，H5 与 App 使用同一请求契约。

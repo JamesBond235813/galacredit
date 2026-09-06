@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PageHeader from '../../components/PageHeader.vue'
 import AsyncState from '../../components/AsyncState.vue'
 import Icon from '../../components/Icon.vue'
@@ -8,6 +8,10 @@ import { errorMessage, formatDate, requireSession, signOut, verificationStatusLa
 import { usePageResume } from '../../utils/page-resume.js'
 
 const state = ref({ loading: true, error: '', user: null })
+const maskedPhone = computed(() => {
+  const value = String(state.value.user?.phone || '')
+  return /^\d{11}$/.test(value) ? value.replace(/(\d{3})\d{6}(\d{2})/, '$1******$2') : value
+})
 
 async function load() {
   if (!requireSession()) return
@@ -22,24 +26,42 @@ usePageResume(load)
 </script>
 
 <template>
-  <view class="gc-page">
-    <PageHeader title="My account" subtitle="Your details and security controls." :back="false" />
+  <view class="gc-page profile-page">
+    <view class="profile-header"><view><text class="greeting">Hello, {{ maskedPhone || 'there' }}</text><view class="protection"><Icon name="shield-check" :size="16" /><text>Your information is encrypted and protected</text></view></view><view class="avatar"><Icon name="account" :size="34" /></view></view>
     <AsyncState :loading="state.loading" :error="state.error" :empty="!state.user" empty-text="No account details yet." @retry="load">
-      <view class="gc-card account-hero"><view class="avatar">{{ state.user.name?.slice(0, 1) || 'G' }}</view><view><text class="name">{{ state.user.name || 'GalaCredit customer' }}</text><text class="phone">{{ state.user.phone }}</text></view></view>
-      <view class="gc-card"><text class="gc-section-title">Verification</text><view class="gc-list-row"><text class="gc-list-row__label">Identity</text><text class="gc-list-row__value">{{ verificationStatusLabel(state.user.real_name_status) }}</text></view><view class="gc-list-row"><text class="gc-list-row__label">Face check</text><text class="gc-list-row__value">{{ verificationStatusLabel(state.user.face_auth_status) }}</text></view><view class="gc-list-row"><text class="gc-list-row__label">Member since</text><text class="gc-list-row__value">{{ formatDate(state.user.created_at) }}</text></view></view>
-      <view class="gc-card"><navigator url="/pages/verification/index" class="menu">Identity verification <Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/location/index" class="menu">Location check <Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/risk/index" class="menu">Security review <Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/password/index" class="menu">Change password <Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/agreement/index" class="menu">Agreements and privacy <Icon name="chevron-right" :size="20" /></navigator></view>
-      <button class="gc-button gc-button--ghost" @click="confirmSignOut">Sign out</button>
+      <view class="notice-panel"><view class="notice-banner"><Icon name="volume" :size="16" /><text class="notice-copy">Notice: Never send repayment funds to a private account.</text><text class="notice-brand">GalaCredit</text></view><view class="gc-card services-card"><text class="gc-section-title">My Services</text><view class="services-grid"><navigator url="/pages/withdraw/index" class="service-item"><view class="service-icon"><Icon name="balance" :size="23" /></view><text>Apply</text></navigator><navigator url="/pages/review/index" class="service-item"><view class="service-icon"><Icon name="records" :size="23" /></view><text>Under Review</text></navigator><navigator url="/pages/bill/index" class="service-item"><view class="service-icon"><Icon name="idcard" :size="23" /></view><text>Repayment</text></navigator></view></view></view>
+      <view class="gc-card menu-card"><text class="gc-section-title">More Services</text><navigator url="/pages/support/index" class="menu"><Icon name="support" :size="21" /><text>Customer Support</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/password/index" class="menu"><Icon name="shield-check" :size="21" /><text>Change Password</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/profile/index" class="menu" @click="uni.showToast({ title: 'Your information has been refreshed', icon: 'none' })"><Icon name="refresh" :size="21" /><text>Refresh Status</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/about/index" class="menu"><Icon name="info" :size="21" /><text>About Us</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/agreement/index" class="menu"><Icon name="document" :size="21" /><text>User Agreement</text><Icon name="chevron-right" :size="20" /></navigator><view class="menu" @click="uni.showToast({ title: 'The feedback channel is being prepared', icon: 'none' })"><Icon name="message" :size="21" /><text>Feedback</text><Icon name="chevron-right" :size="20" /></view></view>
     </AsyncState>
   </view>
 </template>
 
 <style scoped>
-.account-hero { display:flex; align-items:center; gap:20rpx; }
-.avatar { display:flex; align-items:center; justify-content:center; width:88rpx; height:88rpx; border-radius:30rpx; color:#fff; background:linear-gradient(135deg,#f2a53d,#d9790d); font-size:38rpx; font-weight:800; }
+.profile-page { padding:calc(40px + env(safe-area-inset-top)) 10px calc(120px + env(safe-area-inset-bottom)); }
+.profile-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 10px; }
+.greeting { display:block; font-size:24px; line-height:1.2; font-weight:700; }
+.protection { display:flex; align-items:center; gap:6px; width:max-content; max-width:304px; margin-top:14px; padding:8px 14px; border-radius:999px; color:#b37712; background:linear-gradient(180deg,#fff7dc 0%,#fff1cb 100%); font-size:13px; line-height:1.2; }
+.protection text { flex:1; min-width:0; }
+.avatar { display:flex; align-items:center; justify-content:center; width:70px; height:70px; padding:4px; border-radius:50%; color:var(--gc-brand-deep); background:linear-gradient(180deg,#eef3ff 0%,#f8fbff 100%); box-shadow:0 12px 26px rgba(23,32,51,.08); font-size:38rpx; font-weight:800; }
 .name,.phone { display:block; }
 .name { font-size:30rpx; font-weight:800; }
 .phone { margin-top:8rpx; color:var(--gc-muted); font-size:24rpx; }
-.menu { display:flex; justify-content:space-between; padding:26rpx 0; border-bottom:1rpx solid var(--gc-border); font-size:26rpx; }
+.menu { display:flex; align-items:center; gap:14px; min-height:60px; padding:0; border-bottom:1rpx solid #eef3fb; color:var(--gc-ink); font-size:15px; }
 .menu:last-child { border-bottom:0; }
+.menu text { flex:1; }
 .menu .gc-icon { color:var(--gc-muted); }
+.menu .gc-vant-icon { color:var(--gc-muted); }
+.notice-panel { margin-top:28px; }
+.notice-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:78px; padding:14px 16px 40px; border-radius:18px; color:rgba(255,255,255,.92); background:var(--gc-brand-deep); box-shadow:0 18px 36px rgba(201,111,12,.18); font-size:13px; }
+.notice-copy { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.notice-icon { flex:none; }
+.notice-brand { flex:none; color:rgba(255,255,255,.68); }
+.services-card { position:relative; z-index:1; margin-top:-24px; padding:22px 18px 20px; border-radius:18px; }
+.menu-card { margin-top:18px; padding:22px 18px 12px; border-radius:18px; }
+.services-card .gc-section-title,.menu-card .gc-section-title { margin:0; font-size:17px; line-height:20px; }
+.menu-card .gc-section-title + .menu { margin-top:12px; }
+.services-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:22px; }
+.service-item { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:92px; border-radius:16px; color:var(--gc-brand-deep); background:transparent; text-decoration:none; font-size:14px; font-weight:600; }
+.service-item > text { color:var(--gc-ink); }
+.service-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:14px; color:var(--gc-brand-deep); background:rgba(234,149,24,.08); }
+.service-item:active { background:rgba(234,149,24,.08); }
 </style>

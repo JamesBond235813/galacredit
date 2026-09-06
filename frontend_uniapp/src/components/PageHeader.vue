@@ -19,7 +19,7 @@ function goBack() {
 </script>
 
 <template>
-  <view class="gc-page-header">
+  <view class="gc-page-header" :class="{ 'gc-page-header--back': back }">
     <button v-if="back" class="gc-page-header__back" aria-label="Back" @click="goBack"><Icon name="chevron-left" :size="24" label="Back" /></button>
     <view class="gc-page-header__copy">
       <text class="gc-page-header__title">{{ title }}</text>
@@ -29,10 +29,11 @@ function goBack() {
 </template>
 
 <style scoped>
-.gc-page-header { display:flex; align-items:center; gap:16rpx; margin-bottom:28rpx; }
-.gc-page-header__back { width:66rpx; height:66rpx; padding:0; border:1rpx solid var(--gc-border); border-radius:20rpx; color:var(--gc-ink); background:#fff; font-size:48rpx; line-height:58rpx; }
+.gc-page-header { display:flex; align-items:center; gap:8px; min-height:54px; margin:0 -16px 8px; padding:0 8px; background:transparent; }
+.gc-page-header__back { width:36px; height:36px; padding:0; border:0; border-radius:50%; color:var(--gc-ink); background:rgba(255,255,255,.96); box-shadow:0 4px 12px rgba(31,42,58,.12); font-size:24px; line-height:36px; }
 .gc-page-header__back::after { border:0; }
 .gc-page-header__copy { flex:1; }
-.gc-page-header__title { display:block; font-size:42rpx; font-weight:800; }
-.gc-page-header__subtitle { display:block; margin-top:6rpx; color:var(--gc-muted); font-size:23rpx; }
+.gc-page-header__title { display:block; padding-right:0; font-size:18px; line-height:24px; font-weight:700; text-align:center; }
+.gc-page-header--back .gc-page-header__title { padding-right:0; }
+.gc-page-header__subtitle { display:none; }
 </style>

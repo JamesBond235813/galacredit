@@ -16,4 +16,5 @@ async function bind() {
 }
 </script>
 
-<template><view class="gc-page"><PageHeader title="Invitation access" subtitle="If a partner invited you, enter their code once." :back="true" /><view class="gc-card"><input v-model="code" class="gc-field" maxlength="32" placeholder="Invitation code" /><button class="gc-button" :loading="busy" :disabled="busy" @click="bind">{{ busy ? 'Linking…' : 'Link invitation' }}</button><view class="gc-safe-note">Only use a code from a trusted GalaCredit partner.</view></view></view></template>
+<template>
+  <view class="gc-page"><PageHeader title="Invitation access" subtitle="If a partner invited you, enter their code once." :back="true" /><view class="gc-card"><input v-model="code" class="gc-field" maxlength="32" placeholder="Invitation code" /><button class="gc-button" :loading="busy" :disabled="busy" @click="bind">{{ busy ? 'Linking…' : 'Link invitation' }}</button><view class="gc-safe-note">Only use a code from a trusted GalaCredit partner.</view></view></view></template>

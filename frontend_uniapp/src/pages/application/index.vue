@@ -40,6 +40,10 @@ async function pick(index) {
 }
 
 function validPhone(value) { return /^(?:233\d{9}|\d{11})$/.test(String(value || '').replace(/\D/g, '')) }
+function displayLocalPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  return digits.startsWith('233') && digits.length === 12 ? digits.slice(3) : digits
+}
 
 function validate() {
   const rows = contacts.value
@@ -72,30 +76,50 @@ usePageResume(() => { if (!busy.value) return load() })
 </script>
 
 <template>
-  <view class="gc-page">
-    <PageHeader title="Additional information" subtitle="Add two contacts so we can support you responsibly." :back="true" />
+  <view class="gc-page application-page">
+    <PageHeader title="Additional Information" :back="true" />
+    <view class="application-heading"><text class="hero-chip">Step 3 of 4</text><text class="hero-title">Emergency Contacts</text><text class="hero-desc">Provide two emergency contacts from your address book.</text></view>
     <AsyncState :loading="state.loading" :error="state.error" :empty="false" @retry="load">
-      <view v-for="(contact, index) in contacts" :key="contact.category" class="gc-card contact-card">
-        <view class="gc-row"><text class="gc-section-title">Emergency contact {{ index + 1 }}</text><text class="gc-badge">{{ contact.category === 'FAMILY' ? 'Family' : 'Social' }}</text></view>
-        <picker mode="selector" :range="contact.category === 'FAMILY' ? familyRelations : socialRelations" :value="Math.max((contact.category === 'FAMILY' ? familyRelations : socialRelations).indexOf(contact.relation), 0)" @change="contact.relation = (contact.category === 'FAMILY' ? familyRelations : socialRelations)[$event.detail.value]">
-          <view class="gc-field picker-field">{{ contact.relation || 'Select relationship' }} <text>⌄</text></view>
-        </picker>
-        <button class="gc-button gc-button--secondary" :disabled="busy" @click="pick(index)">{{ contact.name ? 'Change contact' : 'Choose from address book' }}</button>
-        <view v-if="contact.name" class="selected-contact"><text class="selected-contact__name">{{ contact.name }}</text><text class="selected-contact__phone">{{ contact.phone }}</text></view>
+      <view class="contact-grid">
+        <view v-for="(contact, index) in contacts" :key="contact.category" class="gc-card contact-card">
+          <view class="contact-head"><text class="contact-index">Emergency contact {{ index + 1 }} ({{ contact.category === 'FAMILY' ? 'family' : 'friend' }})</text></view>
+          <view class="contact-fields">
+            <view class="contact-display-field contact-field">
+              <text class="contact-display-label">Relatives</text>
+              <picker class="relation-picker" mode="selector" :range="contact.category === 'FAMILY' ? familyRelations : socialRelations" :value="Math.max((contact.category === 'FAMILY' ? familyRelations : socialRelations).indexOf(contact.relation), 0)" @change="contact.relation = (contact.category === 'FAMILY' ? familyRelations : socialRelations)[$event.detail.value]">
+                <view class="relation-trigger" :class="{ empty: !contact.relation }"><text>{{ contact.relation || 'Select relationship' }}</text><text>⌄</text></view>
+              </picker>
+            </view>
+            <button class="contact-display-field contact-action-field" :disabled="busy" @click="pick(index)"><text class="contact-display-label">PhoneNumber</text><text class="contact-display-value" :class="{ empty: !contact.phone }">{{ displayLocalPhone(contact.phone) || 'Select contact' }}</text><text class="contact-display-arrow">›</text></button>
+            <button class="contact-display-field contact-action-field" :disabled="busy" @click="pick(index)"><text class="contact-display-label">Full Name</text><text class="contact-display-value" :class="{ empty: !contact.name }">{{ contact.name || 'Select contact' }}</text><text class="contact-display-arrow">›</text></button>
+          </view>
+        </view>
       </view>
-      <view class="gc-safe-note">We only use these details to contact you about your application or account support. We do not upload your full address book.</view>
-      <button class="gc-button" :loading="busy" :disabled="busy" @click="submit">{{ busy ? 'Saving…' : 'Save and continue' }}</button>
+      <button class="gc-button submit-btn" :loading="busy" :disabled="busy" @click="submit">{{ busy ? 'Submitting…' : 'Submit Application' }}</button>
     </AsyncState>
   </view>
 </template>
 
 <style scoped>
-.contact-card { margin-top:20rpx; }
-.contact-card .gc-section-title { margin:0; }
-.picker-field { display:flex; align-items:center; justify-content:space-between; color:var(--gc-muted); line-height:94rpx; }
-.gc-button--secondary { margin-top:18rpx; }
-.selected-contact { margin-top:18rpx; padding:20rpx; border-radius:18rpx; background:#f7f9fc; }
-.selected-contact__name,.selected-contact__phone { display:block; }
-.selected-contact__name { font-size:28rpx; font-weight:700; }
-.selected-contact__phone { margin-top:6rpx; color:var(--gc-muted); font-size:24rpx; }
+.application-page { padding:calc(40px + env(safe-area-inset-top)) 12px calc(88px + env(safe-area-inset-bottom)); }
+.application-page :deep(.gc-page-header) { margin:0 -12px 8px; }
+.application-heading { display:flex; flex-direction:column; align-items:flex-start; width:100%; padding:0; }
+.hero-chip { display:inline-flex; align-items:center; min-height:22px; padding:0 10px; border-radius:999px; color:var(--gc-brand-deep); background:rgba(234,149,24,.1); font-size:10px; font-weight:700; }
+.hero-title { display:block; margin-top:10px; font-size:24px; line-height:1.16; font-weight:800; }
+.hero-desc { display:block; margin-top:6px; color:var(--gc-muted); font-size:14px; line-height:1.4; }
+.contact-grid { display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px; }
+.contact-card { margin-top:0; padding:14px 12px; overflow:visible; }
+.contact-head { display:flex; align-items:flex-start; height:24px; margin-bottom:8px; }
+.contact-index { display:inline-flex; align-items:center; max-width:100%; min-height:24px; padding:0 10px; border-radius:999px; color:var(--gc-brand-deep); background:rgba(234,149,24,.08); font-size:12px; line-height:1.3; font-weight:700; }
+.contact-fields { display:grid; grid-template-columns:1fr; gap:8px; }
+.contact-display-field { display:flex; align-items:center; gap:12px; width:100%; min-height:56px; padding:0 14px; border:1px solid #e8eef8; border-radius:12px; color:var(--gc-ink); background:#f7faff; text-align:left; }
+.contact-display-field::after { border:0; }
+.contact-display-label { width:104px; flex:none; color:#9aa4b3; font-size:14px; font-weight:600; }
+.relation-picker { min-width:0; flex:1; }
+.relation-trigger { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; min-height:24px; color:var(--gc-ink); font-size:16px; font-weight:700; }
+.empty { color:#b2bed0 !important; font-weight:600 !important; }
+.contact-field { border-color:#d8e2f0; background:#fff; }
+.contact-display-value { min-width:0; flex:1; overflow:hidden; color:var(--gc-ink); font-size:16px; font-weight:700; text-align:right; text-overflow:ellipsis; white-space:nowrap; }
+.contact-display-arrow { flex:none; color:var(--gc-muted); font-size:22px; line-height:1; }
+.submit-btn { width:100%; height:48px; min-height:48px; margin-top:12px; border-radius:14px; font-size:17px; }
 </style>

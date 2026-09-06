@@ -71,6 +71,8 @@ public final class NativeWebViewActivity extends Activity {
         settings.setGeolocationEnabled(true);
         settings.setLoadWithOverviewMode(false);
         settings.setUseWideViewPort(false);
+        // 每次进入前台都从线上获取最新 H5，避免 WebView 保留旧页面导致手机继续显示已修复前的界面。
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         // 业务页面只允许通过 HTTPS 访问，避免混合内容和本地文件扩大 WebView 攻击面。
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setAllowFileAccess(false);
@@ -148,12 +150,14 @@ public final class NativeWebViewActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
+                injectLegacyMobileChrome(view);
                 if (!sessionInjected) {
                     sessionInjected = true;
                     String token = new ApiClient(NativeWebViewActivity.this).token();
                     String riskTask = new ApiClient(NativeWebViewActivity.this).riskTask();
                     String script = "window.GalaCreditNativeInfo=" + buildNativeInfo() + ";"
-                        + "localStorage.setItem('token'," + JSONObjectEscaper.quote(token) + ");"
+                        // H5 的 UniApp 存储层按 JSON 字符串保存 token；这里必须保持相同格式，避免页面 JSON.parse JWT 失败。
+                        + "localStorage.setItem('token',JSON.stringify(" + JSONObjectEscaper.quote(token) + "));"
                         + (riskTask.isEmpty() ? "" : "localStorage.setItem('galacredit_risk_task'," + JSONObjectEscaper.quote(riskTask) + ");");
                     view.evaluateJavascript(script, ignored -> view.reload());
                 }
@@ -161,6 +165,30 @@ public final class NativeWebViewActivity extends Activity {
         });
         setContentView(webView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         webView.loadUrl(resolveInitialUrl(getIntent()));
+    }
+
+    /**
+     * 为仍在远端运行的旧版 H5 注入统一移动端导航，避免旧 PWA 安装提示遮挡业务内容。
+     *
+     * :param view: 当前 WebView
+     * :return: 无；通过幂等 JavaScript 更新当前页面
+     */
+    private void injectLegacyMobileChrome(WebView view) {
+        String script = "(function(){"
+            + "var styleId='gc-native-compat-style';"
+            + "if(!document.getElementById(styleId)){"
+            + "var s=document.createElement('style');s.id=styleId;"
+            + "s.textContent='.install-app-button{display:none!important;}#gc-native-back{display:none!important;}';"
+            + "document.head&&document.head.appendChild(s);}"
+            + "document.querySelectorAll('.install-app-button,[data-install-app],.pwa-install-button').forEach(function(e){e.remove();});"
+            // UniApp 页面已有统一导航，旧版原生返回气泡不能覆盖品牌和标题。
+            + "var removeUniAppBack=function(){if(document.querySelector('.gc-page')){var old=document.getElementById('gc-native-back');if(old)old.remove();return true;}return false;};"
+            + "if(removeUniAppBack())return;"
+            + "var p=location.pathname||'';var isEntry=p==='/login'||p==='/home'||p.indexOf('/login/')===0||p.indexOf('/home/')===0;"
+            + "if(!isEntry){var old=document.getElementById('gc-native-back');if(old)old.remove();}"
+            + "if(window.MutationObserver){new MutationObserver(function(){removeUniAppBack();}).observe(document.documentElement,{childList:true,subtree:true});}"
+            + "})();";
+        view.evaluateJavascript(script, null);
     }
 
     @Override
@@ -185,7 +213,7 @@ public final class NativeWebViewActivity extends Activity {
     }
 
     /**
-     * 只允许配置源站的 HTTPS 页面，并将电话链接交给系统拨号器。
+     * 只允许配置源站页面；Debug 局域网地址可使用 HTTP，发布源站仍由构建配置限定为 HTTPS。
      *
      * :param target: 待访问地址
      * :return: 允许 WebView 继续加载时返回 True
@@ -200,15 +228,15 @@ public final class NativeWebViewActivity extends Activity {
             }
             return false;
         }
-        if (!"https".equalsIgnoreCase(target.getScheme())) return false;
         Uri base = Uri.parse(AppConfig.WEB_BASE_URL);
+        if (base.getScheme() == null || !base.getScheme().equalsIgnoreCase(target.getScheme())) return false;
         return base.getHost() != null
             && base.getHost().equalsIgnoreCase(target.getHost())
             && (base.getPort() == -1 || base.getPort() == target.getPort());
     }
 
     /**
-     * 解析原生壳入口地址，并限制到配置的 HTTPS 源站。
+     * 解析原生壳入口地址，并限制到构建时配置的源站。
      *
      * :param intent: 启动业务页的 Intent
      * :return: 可安全加载的完整 URL
@@ -226,7 +254,7 @@ public final class NativeWebViewActivity extends Activity {
         } catch (Exception ignored) {
             return AppConfig.WEB_BASE_URL + "/home";
         }
-        if (!"https".equalsIgnoreCase(target.getScheme())
+        if (base.getScheme() == null || !base.getScheme().equalsIgnoreCase(target.getScheme())
             || target.getHost() == null
             || base.getHost() == null
             || !base.getHost().equalsIgnoreCase(target.getHost())

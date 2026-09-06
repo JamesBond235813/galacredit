@@ -5,8 +5,11 @@ vi.mock('./request.js', () => ({ request: vi.fn((options) => Promise.resolve(opt
 
 describe('business api mapping', () => {
   it('maps verification and loan endpoints', async () => {
-    globalThis.uni = { chooseImage: vi.fn(({ success }) => success({ tempFilePaths: ['/tmp/front.jpg', '/tmp/back.jpg'] })), uploadFiles: vi.fn(({ success }) => success({ data: '{}' })), uploadFile: vi.fn(({ success }) => success({ data: '{}' })), getStorageSync: () => 'token' }
+    const chooseImage = vi.fn(({ success }) => success({ tempFilePaths: ['/tmp/front.jpg', '/tmp/back.jpg'] }))
+    globalThis.uni = { chooseImage, uploadFiles: vi.fn(({ success }) => success({ data: '{}' })), uploadFile: vi.fn(({ success }) => success({ data: '{}' })), getStorageSync: () => 'token' }
     expect((await api.submitOCR({ a: 1 }))).toEqual({})
+    await api.submitOCR({ a: 1 }, { sourceType: ['camera'] })
+    expect(chooseImage).toHaveBeenLastCalledWith(expect.objectContaining({ sourceType: ['camera'] }))
     expect((await api.submitFaceAuth({ a: 1 }))).toEqual({})
     expect((await api.submitApplication({ amount: 10 })).url).toBe('/user/application')
     expect((await api.submitWithdraw({ amount: 10 })).url).toBe('/loan/withdraw')

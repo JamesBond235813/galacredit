@@ -1,11 +1,16 @@
 {
   "pages": [
-    { "path": "pages/login/index", "style": { "navigationBarTitleText": "Sign in", "navigationStyle": "custom" } },
+    { "path": "pages/login/index", "style": { "navigationBarTitleText": "Sign in", "app-plus": { "softinputMode": "adjustResize" }, "navigationStyle": "custom" } },
     { "path": "pages/home/index", "style": { "navigationBarTitleText": "My Credit", "navigationStyle": "custom" } },
     { "path": "pages/orders/index", "style": { "navigationBarTitleText": "My Applications" } },
     { "path": "pages/profile/index", "style": { "navigationBarTitleText": "My Account" } },
     { "path": "pages/application/index", "style": { "navigationBarTitleText": "Loan Application" } },
+    { "path": "pages/review/index", "style": { "navigationBarTitleText": "Application Review" } },
     { "path": "pages/verification/index", "style": { "navigationBarTitleText": "Identity Verification" } },
+    { "path": "pages/face/index", "style": { "navigationBarTitleText": "Face Verification" } },
+    { "path": "pages/face-mismatch/index", "style": { "navigationBarTitleText": "Verification Result" } },
+    { "path": "pages/about/index", "style": { "navigationBarTitleText": "About Us" } },
+    { "path": "pages/personal-info-authorization/index", "style": { "navigationBarTitleText": "Personal Data Authorization" } },
     { "path": "pages/withdraw/index", "style": { "navigationBarTitleText": "Loan Application" } },
     { "path": "pages/bill/index", "style": { "navigationBarTitleText": "Repayment Bill" } },
     { "path": "pages/location/index", "style": { "navigationBarTitleText": "Location Check" } },
@@ -16,6 +21,7 @@
     { "path": "pages/support/index", "style": { "navigationBarTitleText": "Customer Support" } }
   ],
   "globalStyle": {
+    "navigationStyle": "custom",
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "GalaCredit",
     "navigationBarBackgroundColor": "#f6f8fb",
@@ -28,8 +34,7 @@
     "borderStyle": "white",
     "list": [
       { "pagePath": "pages/home/index", "text": "Home" },
-      { "pagePath": "pages/orders/index", "text": "Applications" },
-      { "pagePath": "pages/profile/index", "text": "Account" }
+      { "pagePath": "pages/profile/index", "text": "My Account" }
     ]
   }
 }

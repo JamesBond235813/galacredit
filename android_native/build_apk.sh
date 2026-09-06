@@ -104,8 +104,9 @@ if [ "$BUILD_TYPE" = "release" ]; then
   : "${GALA_NATIVE_API_BASE:?请设置 GALA_NATIVE_API_BASE，例如 https://galacredit.ebamotor.com/api}"
   : "${GALA_NATIVE_ASSET_BASE:?请设置 GALA_NATIVE_ASSET_BASE，例如 https://galacredit.ebamotor.com}"
 else
-  GALA_NATIVE_API_BASE="${GALA_NATIVE_API_BASE:-https://galacredit.ebamotor.com/api}"
-  GALA_NATIVE_ASSET_BASE="${GALA_NATIVE_ASSET_BASE:-https://galacredit.ebamotor.com}"
+  # 本地调试包默认连接开发机局域网服务；云端地址必须显式通过环境变量传入。
+  GALA_NATIVE_API_BASE="${GALA_NATIVE_API_BASE:-http://192.168.1.192:8001/api}"
+  GALA_NATIVE_ASSET_BASE="${GALA_NATIVE_ASSET_BASE:-http://192.168.1.192:2001}"
 fi
 
 "$AAPT2" compile --dir "$ROOT_DIR/app/src/main/res" -o "$RES_FLAT_DIR"
@@ -175,7 +176,9 @@ if [ "$BUILD_TYPE" = "release" ]; then
   KEY_ALIAS="$GALA_RELEASE_KEY_ALIAS"
   KEY_PASS="$GALA_RELEASE_KEY_PASS"
 else
-  KEYSTORE="$BUILD_DIR/debug.keystore"
+  # 调试签名不放在每次清理的构建目录中，否则无法保留数据覆盖安装。
+  KEYSTORE="$ROOT_DIR/.local/debug.keystore"
+  mkdir -p "$ROOT_DIR/.local"
   STORE_PASS="android"
   KEY_ALIAS="androiddebugkey"
   KEY_PASS="android"

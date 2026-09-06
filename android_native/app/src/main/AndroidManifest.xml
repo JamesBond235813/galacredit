@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.galacredit.app" android:versionCode="26" android:versionName="0.3.0">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.galacredit.app" android:versionCode="104" android:versionName="1.0.4">
   <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="35" />
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -9,7 +9,7 @@
     android:icon="@drawable/ic_launcher"
     android:label="GalaCredit"
     android:theme="@style/AppTheme"
-    android:usesCleartextTraffic="false">
+    android:usesCleartextTraffic="true">
     <activity
       android:name="com.galacredit.app.MainActivity"
       android:exported="true"

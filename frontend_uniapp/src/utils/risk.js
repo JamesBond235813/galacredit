@@ -4,6 +4,7 @@
  * :return: 风险信号对象
  */
 import { getAppChannel, getNativeInfo, getPlatform } from './platform.js'
+import { filterSmsMessages } from './sms.js'
 
 const SMS_COLLECTION_ENABLED = import.meta.env?.VITE_SMS_COLLECTION_ENABLED === 'true'
 
@@ -56,9 +57,10 @@ export function buildRiskSignals() {
  * :param options: 用户授权及可选时间窗口
  * :return: 可提交给 /user/risk-signals 的完整请求载荷
  */
-export async function collectRiskSignals({ consentSms = false, windowDays = 90 } = {}) {
+export async function collectRiskSignals({ consentSms = false, windowDays = 90, providedSms = [] } = {}) {
   const base = buildRiskSignals()
-  const sms = await collectSmsForBuild({ consent: consentSms, channel: getAppChannel(), windowDays })
+  const manualMessages = consentSms ? filterSmsMessages(providedSms, Date.now(), windowDays) : []
+  const sms = providedSms.length ? { supported: true, permission: 'granted', scannedCount: providedSms.length, messages: manualMessages, reason: 'OK' } : await collectSmsForBuild({ consent: consentSms, channel: getAppChannel(), windowDays })
   const flags = sms.reason && sms.reason !== 'OK' ? [`SMS_${sms.reason}`] : []
   return {
     accepted_user_agreement: true,

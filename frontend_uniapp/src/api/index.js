@@ -71,7 +71,7 @@ export function changePassword(payload) { return request({ url: '/user/change-pa
  * :return: 接口响应
  */
 export function requestRepayment(payload) { return request({ url: '/loan/repay-attempt', method: 'POST', data: payload }) }
-export function submitOCR(formData) { return uploadIdentityImages('/user/ocr', formData) }
+export function submitOCR(formData, options = {}) { return uploadIdentityImages('/user/ocr', formData, options) }
 export function submitLocation(payload) { return request({ url: '/user/location', method: 'POST', data: payload }) }
 export function submitRiskSignals(payload) { return request({ url: '/user/risk-signals', method: 'POST', data: payload }) }
 export function queryRiskTask(payload) { return request({ url: '/user/risk-query', method: 'POST', data: payload }) }

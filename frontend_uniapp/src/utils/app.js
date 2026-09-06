@@ -51,6 +51,18 @@ export function formatDate(value) {
 }
 
 /**
+ * 将后端时间转换为包含时间的用户可读文本。
+ *
+ * :param value: ISO 或日期字符串
+ * :return: 日期时间文本
+ */
+export function formatDateTime(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-GH')
+}
+
+/**
  * 将后端借款状态转换为用户可读文案。
  *
  * :param value: 后端状态枚举

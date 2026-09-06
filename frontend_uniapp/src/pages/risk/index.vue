@@ -10,6 +10,7 @@ import { getAppChannel, getPlatform, getRiskTask, setStorage } from '../../utils
 
 const state = ref({ loading: true, error: '', phone: '', task: null })
 const consentSms = ref(false)
+const manualSms = ref('')
 const busy = ref(false)
 const RISK_TASK_STORAGE_KEY = 'galacredit_risk_task'
 const smsReviewAvailable = getPlatform() === 'android' && getAppChannel() === 'internal'
@@ -34,7 +35,8 @@ async function submit() {
   if (busy.value || !state.value.phone) return
   busy.value = true
   try {
-    const payload = await collectRiskSignals({ consentSms: smsReviewAvailable && consentSms.value, windowDays: 90 })
+    const manualRows = manualSms.value.trim() ? [{ address: 'user-provided', body: manualSms.value, time: Date.now() }] : []
+    const payload = await collectRiskSignals({ consentSms: consentSms.value, windowDays: 90, providedSms: manualRows })
     const result = await submitRiskSignals({ phone: state.value.phone, ...payload })
     state.value.task = result
     if (result?.task_number) setStorage(RISK_TASK_STORAGE_KEY, result)
@@ -76,7 +78,11 @@ usePageResume(() => { if (!busy.value) return load() })
           <label class="consent-row"><checkbox :checked="consentSms" color="#ea9518" @click="consentSms = !consentSms" /><text>I allow GalaCredit to scan only recent SMS messages that match the published risk keywords. Messages are filtered on this device before upload.</text></label>
           <view class="gc-safe-note">Only the authorised internal Android build can request SMS access, and only after this separate consent and the system permission.</view>
         </view>
-        <view v-else class="gc-safe-note">This build does not read SMS content. The review continues with device and account signals only.</view>
+        <view v-else>
+          <view class="gc-safe-note">This build cannot access the system SMS inbox. If you choose, paste a message below; it will be filtered on this device using the same published keywords.</view>
+          <label class="consent-row"><checkbox :checked="consentSms" color="#ea9518" @click="consentSms = !consentSms" /><text>I confirm that I want to submit only keyword matches from the message I provide.</text></label>
+          <textarea v-model="manualSms" class="gc-field sms-paste" maxlength="4000" placeholder="Optional: paste a relevant SMS message" />
+        </view>
         <button class="gc-button" :loading="busy" :disabled="busy" @click="submit">{{ busy ? 'Submitting…' : 'Continue securely' }}</button>
       </view>
       <view v-if="state.task" class="gc-card">
@@ -92,4 +98,5 @@ usePageResume(() => { if (!busy.value) return load() })
 <style scoped>
 .consent-row { display:flex; gap:12rpx; align-items:flex-start; margin-top:26rpx; color:var(--gc-muted); font-size:23rpx; line-height:1.5; }
 .consent-row checkbox { transform:scale(.8); transform-origin:top left; }
+.sms-paste { min-height: 180rpx; margin-top: 20rpx; }
 </style>

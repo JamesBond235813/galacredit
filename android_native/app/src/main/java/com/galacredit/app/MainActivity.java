@@ -100,12 +100,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        api = new ApiClient(this);
-        if (api.token().isEmpty()) {
-            showLogin();
-        } else {
-            loadSessionAndShowHome();
-        }
+        // 用户端页面统一由 UniApp H5 产物提供；原生层只保留 WebView、权限和设备能力桥接。
+        // 这样 Android 与线上 H5 使用同一套路由、状态和业务页面，避免原生登录页再次产生视觉分叉。
+        Intent intent = new Intent(this, NativeWebViewActivity.class);
+        intent.putExtra("path", "/login");
+        startActivity(intent);
+        finish();
     }
 
     @Override
@@ -168,6 +168,7 @@ public class MainActivity extends Activity {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(Ui.dp(this, 20), Ui.dp(this, 50), Ui.dp(this, 20), Ui.dp(this, 28));
+        applySafeAreaInsets(root, Ui.dp(this, 50), Ui.dp(this, 28));
         android.graphics.drawable.GradientDrawable loginBackground = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
             new int[]{Color.rgb(255, 248, 237), Color.rgb(246, 248, 251), Color.rgb(242, 248, 246)}
@@ -214,11 +215,12 @@ public class MainActivity extends Activity {
         root.addView(loginCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         phoneInput = Ui.input(this, "000000000");
-        phoneInput.setInputType(InputType.TYPE_CLASS_PHONE);
-        phoneInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(12)});
+        phoneInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        phoneInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(9)});
         phoneInputWatcher = simpleWatcher(() -> {
-            phone = normalizePhone(phoneInput.getText().toString());
-            syncPhoneField(phone);
+            // 编辑中保留用户输入，禁止格式化函数补零或移动光标。
+            String entered = phoneInput.getText().toString();
+            phone = entered.isEmpty() ? "" : "233" + entered;
             if (limitLabelText != null) {
                 String local = phone.startsWith("233") ? phone.substring(3) : phone;
                 limitLabelText.setText(local.length() + "/9");
@@ -446,6 +448,10 @@ public class MainActivity extends Activity {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout((int) (getResources().getDisplayMetrics().widthPixels * 0.86f), ViewGroup.LayoutParams.WRAP_CONTENT);
+            android.view.WindowManager.LayoutParams placement = dialog.getWindow().getAttributes();
+            placement.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            placement.y = (int) (getResources().getDisplayMetrics().heightPixels * 0.22f);
+            dialog.getWindow().setAttributes(placement);
         }
         slider.post(() -> prepareCaptchaChallenge(dialog, slider, hint));
     }
@@ -704,6 +710,7 @@ public class MainActivity extends Activity {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(Ui.dp(this, 16), Ui.dp(this, 14), Ui.dp(this, 16), Ui.dp(this, 100));
+        applySafeAreaInsets(root, Ui.dp(this, 14), Ui.dp(this, 100));
         scroll.addView(root, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
@@ -949,7 +956,7 @@ public class MainActivity extends Activity {
             float right = getWidth() - Ui.dp(getContext(), 28);
             float center = getHeight() / 2f;
             float radius = Ui.dp(getContext(), 22);
-            paint.setColor(Color.argb(110, 255, 255, 255));
+            paint.setColor(Color.rgb(231, 219, 200));
             canvas.drawRoundRect(left, center - Ui.dp(getContext(), 7), right, center + Ui.dp(getContext(), 7), Ui.dp(getContext(), 7), Ui.dp(getContext(), 7), paint);
             paint.setColor(Ui.BLUE);
             canvas.drawRoundRect(left, center - Ui.dp(getContext(), 7), left + (right - left) * progress, center + Ui.dp(getContext(), 7), Ui.dp(getContext(), 7), Ui.dp(getContext(), 7), paint);
@@ -959,11 +966,14 @@ public class MainActivity extends Activity {
             canvas.drawCircle(knobX, center, radius, paint);
             paint.clearShadowLayer();
             paint.setColor(Ui.BLUE);
-            canvas.drawCircle(knobX, center, Ui.dp(getContext(), 8), paint);
+            paint.setStrokeWidth(Ui.dp(getContext(), 3));
+            canvas.drawLine(knobX - Ui.dp(getContext(), 4), center - Ui.dp(getContext(), 7), knobX + Ui.dp(getContext(), 3), center, paint);
+            canvas.drawLine(knobX + Ui.dp(getContext(), 3), center, knobX - Ui.dp(getContext(), 4), center + Ui.dp(getContext(), 7), paint);
         }
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
+            if (!isEnabled()) return false;
             float left = Ui.dp(getContext(), 28);
             float right = getWidth() - Ui.dp(getContext(), 28);
             switch (event.getActionMasked()) {
@@ -1147,5 +1157,22 @@ public class MainActivity extends Activity {
         View view = new View(this);
         view.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(this, widthDp), 1));
         return view;
+    }
+
+    /**
+     * 根据系统状态栏、刘海/灵动岛和底部手势区动态调整容器内边距。
+     *
+     * :param target: 页面根容器
+     * :param baseTop: 页面原始顶部内边距
+     * :param baseBottom: 页面原始底部内边距
+     */
+    private void applySafeAreaInsets(View target, int baseTop, int baseBottom) {
+        target.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top = Math.max(baseTop, insets.getSystemWindowInsetTop());
+            int bottom = Math.max(baseBottom, insets.getSystemWindowInsetBottom());
+            view.setPadding(view.getPaddingLeft(), top, view.getPaddingRight(), bottom);
+            return insets;
+        });
+        target.requestApplyInsets();
     }
 }

@@ -35,7 +35,8 @@ export function collectAndroidSmsBridge({ consent = false } = {}) {
     timeout = setTimeout(() => finish({ supported: true, permission: 'timeout', reason: 'SMS_BRIDGE_TIMEOUT' }), 15000)
     window[callbackName] = finish
     try {
-      bridge.startSmsReview(callbackName, true)
+      // 将页面的单独同意状态传给原生层；原生层仍需再次校验包名和系统权限。
+      bridge.startSmsReview(callbackName, Boolean(consent))
     } catch (error) {
       finish({ supported: true, permission: 'bridge_failed', reason: String(error?.message || error || 'SMS_BRIDGE_FAILED').slice(0, 160) })
     }

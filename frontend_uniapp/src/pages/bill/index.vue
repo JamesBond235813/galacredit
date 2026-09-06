@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import PageHeader from '../../components/PageHeader.vue'
 import AsyncState from '../../components/AsyncState.vue'
-import { getBill, requestRepayment } from '../../api/index.js'
+import { getBill, getLoanStatus, requestRepayment } from '../../api/index.js'
 import { errorMessage, formatDate, formatMoney, installmentStatusLabel, requireSession } from '../../utils/app.js'
 import { usePageResume } from '../../utils/page-resume.js'
 
@@ -13,7 +13,15 @@ const overdue = computed(() => state.value.loan?.status === 'OVERDUE' || Number(
 
 async function load() {
   if (!requireSession()) return
-  try { state.value = { loading: false, error: '', loan: await getBill() } }
+  try {
+    const loanStatus = await getLoanStatus()
+    // 与 frontend_h5 保持同一流程守卫：尚未进入还款阶段时返回首页，避免展示空的还款单。
+    if (['INIT', 'REVIEWING', 'APPROVED', 'REJECTED'].includes(loanStatus?.status)) {
+      uni.reLaunch({ url: '/pages/home/index' })
+      return
+    }
+    state.value = { loading: false, error: '', loan: await getBill() }
+  }
   catch (error) { state.value = { loading: false, error: errorMessage(error), loan: null } }
 }
 
