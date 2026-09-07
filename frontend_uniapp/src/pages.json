@@ -25,9 +25,13 @@
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "GalaCredit",
     "navigationBarBackgroundColor": "#f6f8fb",
-    "backgroundColor": "#f6f8fb"
+    "backgroundColor": "#f6f8fb",
+    "app-plus": {
+      "softinputMode": "adjustResize"
+    }
   },
   "tabBar": {
+    "custom": true,
     "color": "#8a96a8",
     "selectedColor": "#c86f0c",
     "backgroundColor": "#ffffff",

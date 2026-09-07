@@ -19,7 +19,7 @@ export async function loadHomeData() {
   const [profile, status, products] = await Promise.all([
     request({ url: '/user/info', method: 'GET' }),
     request({ url: '/loan/status', method: 'GET' }),
-    request({ url: '/loan/products', method: 'GET' })
+    request({ url: '/loan/products', method: 'GET', data: { display_only: true } })
   ])
   return { profile, status, products }
 }

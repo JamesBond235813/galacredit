@@ -33,7 +33,12 @@ async function load() {
  * :return: 无
  */
 async function startVerification() {
-  if (scanning.value || success.value) return
+  // 已完成认证时仍允许用户继续进入紧急联系人页面，避免从历史状态返回后按钮失效。
+  if (success.value) {
+    uni.navigateTo({ url: '/pages/application/index' })
+    return
+  }
+  if (scanning.value) return
   scanning.value = true
   try {
     selected.value = true
@@ -68,7 +73,7 @@ usePageResume(() => { if (!scanning.value) return load() })
         <view class="gc-row"><view><text class="card-title">Live Face Check</text><text class="card-desc">Keep your face centred in the frame</text></view><text class="capture-status" :class="{ done: success }">{{ statusText }}</text></view>
         <view class="scan-panel"><view class="scan-grid"><text></text><text></text><text></text><text></text></view><view class="scan-ring" :class="{ scanning, success }"><Icon name="user-circle" :size="74" /><text v-if="scanning" class="scan-line"></text></view></view>
         <view class="status-block"><text class="status-title">{{ success ? 'Verification successful' : scanning ? 'Verification in progress...' : 'Face the camera and keep still' }}</text><text class="status-desc">{{ success ? 'Next, provide two emergency contacts.' : 'Avoid backlighting, face coverings and sudden movement.' }}</text><text v-if="selected && !success" class="selected-tip">Photo selected. Complete the verification step.</text></view>
-        <button class="gc-button" :loading="scanning" :disabled="scanning || success" @click="startVerification">{{ success ? 'Continuing…' : 'Start Verification' }}</button>
+        <button class="gc-button" :loading="scanning" :disabled="scanning" @click="startVerification">{{ success ? 'Continue Application' : 'Start Verification' }}</button>
       </view>
       <view class="safe-note"><Icon name="shield-check" :size="13" />Your image is used only for identity and risk verification</view>
     </AsyncState>

@@ -1,0 +1,142 @@
+{
+  "@platforms": [
+    "android",
+    "iPhone",
+    "iPad"
+  ],
+  "id": "__UNI__G882E18E",
+  "name": "GalaCredit",
+  "version": {
+    "name": "1.0.5",
+    "code": "105"
+  },
+  "description": "GalaCredit customer application",
+  "developer": {
+    "name": "",
+    "email": "",
+    "url": ""
+  },
+  "permissions": {
+    "Camera": {},
+    "Geolocation": {},
+    "Push": {},
+    "UniNView": {
+      "description": "UniNView原生渲染"
+    }
+  },
+  "plus": {
+    "useragent": {
+      "value": "uni-app",
+      "concatenate": true
+    },
+    "splashscreen": {
+      "target": "id:1",
+      "autoclose": true,
+      "waiting": true,
+      "delay": 0
+    },
+    "popGesture": "close",
+    "launchwebview": {
+      "id": "1",
+      "kernel": "WKWebview"
+    },
+    "distribute": {
+      "icons": {
+        "android": {
+          "hdpi": "./src/static/icons/icon-hdpi.png",
+          "xhdpi": "./src/static/icons/icon-xhdpi.png",
+          "xxhdpi": "./src/static/icons/icon-xxhdpi.png",
+          "xxxhdpi": "./src/static/icons/icon-xxxhdpi.png"
+        }
+      },
+      "google": {
+        "packagename": "com.galacredit.app",
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.CAMERA\" />",
+          "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" />",
+          "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />"
+        ]
+      },
+      "apple": {
+        "privacyDescription": {
+          "NSCameraUsageDescription": "Used to verify your identity.",
+          "NSLocationWhenInUseUsageDescription": "Used for one-time application security checks.",
+          "NSPhotoLibraryUsageDescription": "Used to select identity documents and verification photos.",
+          "NSContactsUsageDescription": "Used to select emergency contact details for your application."
+        },
+        "dSYMs": false
+      },
+      "plugins": {
+        "audio": {
+          "mp3": {
+            "description": "Android平台录音支持MP3格式文件"
+          }
+        }
+      }
+    },
+    "statusbar": {
+      "immersed": "supportedDevice",
+      "style": "dark",
+      "background": "#f6f8fb"
+    },
+    "allowsInlineMediaPlayback": true,
+    "safearea": {
+      "background": "#ffffff",
+      "bottom": {
+        "offset": "auto"
+      }
+    },
+    "uni-app": {
+      "control": "uni-v3",
+      "vueVersion": "3",
+      "compilerVersion": "5.24",
+      "nvueCompiler": "uni-app",
+      "renderer": "auto",
+      "nvue": {
+        "flex-direction": "column"
+      },
+      "nvueLaunchMode": "normal",
+      "webView": {
+        "minUserAgentVersion": "49.0"
+      }
+    },
+    "tabBar": {
+      "position": "bottom",
+      "color": "#8a96a8",
+      "selectedColor": "#c86f0c",
+      "borderStyle": "rgba(255,255,255,0.4)",
+      "blurEffect": "none",
+      "fontSize": "10px",
+      "iconWidth": "24px",
+      "spacing": "3px",
+      "height": "50px",
+      "list": [
+        {
+          "pagePath": "pages/home/index",
+          "text": "Home"
+        },
+        {
+          "pagePath": "pages/profile/index",
+          "text": "My Account"
+        }
+      ],
+      "custom": true,
+      "backgroundColor": "#ffffff",
+      "selectedIndex": 0,
+      "shown": true
+    }
+  },
+  "app-harmony": {
+    "useragent": {
+      "value": "uni-app",
+      "concatenate": true
+    },
+    "safearea": {
+      "background": "#ffffff",
+      "bottom": {
+        "offset": "auto"
+      }
+    }
+  },
+  "launch_path": "__uniappview.html"
+}

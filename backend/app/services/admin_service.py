@@ -956,6 +956,9 @@ def serialize_product(product: Product):
         "is_active": bool(product.is_active),
         "created_at": product.created_at,
         "updated_at": product.updated_at,
+        "expected_credit_limit": float((fee_components or {}).get("expected_credit_limit") or product.nominal_loan_amount or 0),
+        "min_daily_interest_rate": float((fee_components or {}).get("min_daily_interest_rate") or 0),
+        "max_loan_term_days": int((fee_components or {}).get("max_loan_term_days") or product.term_days or 0),
     }
 
 def serialize_ecard_pool_item(item: EcardPool):

@@ -5,6 +5,7 @@ import AsyncState from '../../components/AsyncState.vue'
 import { getLoanStatus, getProducts } from '../../api/index.js'
 import { errorMessage, formatMoney, requireSession } from '../../utils/app.js'
 import { usePageResume } from '../../utils/page-resume.js'
+import { applicationNextPage } from '../../utils/application-flow.js'
 
 const state = ref({ loading: true, error: '', loan: null, products: [] })
 let timer = null
@@ -13,12 +14,10 @@ const status = computed(() => String(state.value.loan?.status || 'REVIEWING').to
 const creditLimit = computed(() => Number(state.value.loan?.available_credit_limit ?? state.value.loan?.approved_credit_limit ?? state.value.loan?.credit_limit ?? 0))
 const recommended = computed(() => state.value.products.find((item) => Number(item.payment_amount || 0) <= creditLimit.value + 1e-6) || state.value.products[0] || null)
 const others = computed(() => state.value.products.filter((item) => item.id !== recommended.value?.id))
-const rejectReason = computed(() => state.value.loan?.review_note || 'Your application was not approved. Review your information and submit again.')
+const rejectReason = computed(() => state.value.loan?.review_note || 'Please improve your credit record and apply again later.')
 
 function routeByStatus(value) {
-  if (value === 'INIT') return uni.reLaunch({ url: '/pages/application/index' })
-  if (['WITHDRAWING', 'DISBURSED', 'OVERDUE'].includes(value)) return uni.reLaunch({ url: '/pages/bill/index' })
-  if (value === 'SETTLED') return uni.reLaunch({ url: '/pages/home/index' })
+  if (['INIT', 'WITHDRAWING', 'DISBURSED', 'OVERDUE', 'SETTLED'].includes(value)) return uni.reLaunch({ url: applicationNextPage(value) })
   return false
 }
 
@@ -51,7 +50,7 @@ function openProduct(productId) {
 }
 
 function resubmit() {
-  uni.navigateTo({ url: '/pages/application/index' })
+  uni.navigateTo({ url: applicationNextPage('REJECTED') })
 }
 
 onMounted(async () => { await load(); startPolling() })

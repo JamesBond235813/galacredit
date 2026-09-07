@@ -52,7 +52,7 @@ view, text, button, input, navigator { box-sizing: border-box; }
 .gc-vant-icon--underway::before { content: "\e731"; }
 /* H5 适配层保留 view 标签，需要补齐块级语义，否则容器高度失效并造成控件重叠。 */
 view, scroll-view { display: block; }
-.gc-page { position:relative; width: 100%; min-height: 100vh; padding: calc(40px + env(safe-area-inset-top)) 32rpx calc(120rpx + env(safe-area-inset-bottom)); }
+.gc-page { position:relative; width: 100%; min-height: 100vh; padding: calc(40px + env(safe-area-inset-top)) 32rpx calc(140rpx + env(safe-area-inset-bottom)); }
 .gc-page::before { content:''; position:absolute; top:0; left:0; right:0; height:280px; pointer-events:none; opacity:.95; background:repeating-radial-gradient(circle at top right, transparent 0 13px, rgba(234,149,24,.06) 13px 14px), radial-gradient(circle at top left, rgba(255,255,255,.7), transparent 34%); }
 .gc-page > * { position:relative; z-index:1; }
 .gc-page--plain { padding-top: calc(24rpx + env(safe-area-inset-top)); }

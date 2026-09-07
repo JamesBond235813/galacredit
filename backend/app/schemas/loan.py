@@ -502,6 +502,9 @@ class ProductItemResponse(BaseModel):
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
+    expected_credit_limit: Optional[float] = None
+    min_daily_interest_rate: Optional[float] = None
+    max_loan_term_days: Optional[int] = None
 
 
 class ProductCreateRequest(BaseModel):

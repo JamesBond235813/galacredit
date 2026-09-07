@@ -6,6 +6,7 @@ import Icon from '../../components/Icon.vue'
 import { getLoanHistory } from '../../api/index.js'
 import { errorMessage, formatDateTime, formatMoney, requireSession } from '../../utils/app.js'
 import { usePageResume } from '../../utils/page-resume.js'
+import { applicationNextPage } from '../../utils/application-flow.js'
 
 const state = ref({ loading: true, error: '', loan: null })
 const statusLabel = computed(() => ({ INIT: 'Not Started', REVIEWING: 'Under Review', APPROVED: 'Approved', WITHDRAWING: 'Preparing Disbursement', DISBURSED: 'Repayment in Progress', OVERDUE: 'Overdue', SETTLED: 'Settled', REJECTED: 'Needs an Update' }[state.value.loan?.status] || 'Account Update'))
@@ -18,9 +19,7 @@ async function load() {
 }
 
 function openNext() {
-  const status = state.value.loan?.status
-  const url = ['DISBURSED', 'OVERDUE', 'SETTLED'].includes(status) ? '/pages/bill/index' : status === 'APPROVED' ? '/pages/withdraw/index' : '/pages/application/index'
-  uni.navigateTo({ url })
+  uni.navigateTo({ url: applicationNextPage(state.value.loan?.status) })
 }
 onMounted(load)
 usePageResume(load)

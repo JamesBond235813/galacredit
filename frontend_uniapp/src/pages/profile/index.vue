@@ -3,11 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import PageHeader from '../../components/PageHeader.vue'
 import AsyncState from '../../components/AsyncState.vue'
 import Icon from '../../components/Icon.vue'
-import { getUserInfo } from '../../api/index.js'
+import { getLoanStatus, getUserInfo } from '../../api/index.js'
 import { errorMessage, formatDate, requireSession, signOut, verificationStatusLabel } from '../../utils/app.js'
 import { usePageResume } from '../../utils/page-resume.js'
+import { checkForAppUpdate } from '../../utils/app-update.js'
+import { applicationNextPage } from '../../utils/application-flow.js'
 
-const state = ref({ loading: true, error: '', user: null })
+const state = ref({ loading: true, error: '', loanError: '', user: null, loan: null })
 const maskedPhone = computed(() => {
   const value = String(state.value.user?.phone || '')
   return /^\d{11}$/.test(value) ? value.replace(/(\d{3})\d{6}(\d{2})/, '$1******$2') : value
@@ -15,13 +17,26 @@ const maskedPhone = computed(() => {
 
 async function load() {
   if (!requireSession()) return
-  try { state.value = { loading: false, error: '', user: await getUserInfo() } }
-  catch (error) { state.value = { loading: false, error: errorMessage(error), user: null } }
+  const [userResult, loanResult] = await Promise.allSettled([getUserInfo(), getLoanStatus()])
+  if (userResult.status === 'rejected') {
+    state.value = { loading: false, error: errorMessage(userResult.reason), loanError: '', user: null, loan: null }
+    return
+  }
+  state.value = {
+    loading: false,
+    error: '',
+    loanError: loanResult.status === 'rejected' ? 'Application status is temporarily unavailable. You can retry shortly.' : '',
+    user: userResult.value,
+    loan: loanResult.status === 'fulfilled' ? loanResult.value : null
+  }
+}
+function openApplicationFlow() {
+  uni.navigateTo({ url: applicationNextPage(state.value.loan?.status) })
 }
 function confirmSignOut() {
   uni.showModal({ title: 'Sign out?', content: 'You can sign in again with your phone.', success: ({ confirm }) => { if (confirm) signOut() } })
 }
-onMounted(load)
+onMounted(() => { load(); checkForAppUpdate({ silent: false }).catch(() => {}) })
 usePageResume(load)
 </script>
 
@@ -29,7 +44,7 @@ usePageResume(load)
   <view class="gc-page profile-page">
     <view class="profile-header"><view><text class="greeting">Hello, {{ maskedPhone || 'there' }}</text><view class="protection"><Icon name="shield-check" :size="16" /><text>Your information is encrypted and protected</text></view></view><view class="avatar"><Icon name="account" :size="34" /></view></view>
     <AsyncState :loading="state.loading" :error="state.error" :empty="!state.user" empty-text="No account details yet." @retry="load">
-      <view class="notice-panel"><view class="notice-banner"><Icon name="volume" :size="16" /><text class="notice-copy">Notice: Never send repayment funds to a private account.</text><text class="notice-brand">GalaCredit</text></view><view class="gc-card services-card"><text class="gc-section-title">My Services</text><view class="services-grid"><navigator url="/pages/withdraw/index" class="service-item"><view class="service-icon"><Icon name="balance" :size="23" /></view><text>Apply</text></navigator><navigator url="/pages/review/index" class="service-item"><view class="service-icon"><Icon name="records" :size="23" /></view><text>Under Review</text></navigator><navigator url="/pages/bill/index" class="service-item"><view class="service-icon"><Icon name="idcard" :size="23" /></view><text>Repayment</text></navigator></view></view></view>
+      <view class="notice-panel"><view class="notice-banner"><Icon name="volume" :size="16" /><text class="notice-copy">Notice: Never send repayment funds to a private account.</text><text class="notice-brand">GalaCredit</text></view><view v-if="state.loanError" class="status-note">{{ state.loanError }}</view><view class="gc-card services-card"><text class="gc-section-title">My Services</text><view class="services-grid"><view class="service-item" @click="openApplicationFlow"><view class="service-icon"><Icon name="balance" :size="23" /></view><text>Apply</text></view><view class="service-item" @click="openApplicationFlow"><view class="service-icon"><Icon name="records" :size="23" /></view><text>Under Review</text></view><view class="service-item" @click="openApplicationFlow"><view class="service-icon"><Icon name="idcard" :size="23" /></view><text>Repayment</text></view></view></view></view>
       <view class="gc-card menu-card"><text class="gc-section-title">More Services</text><navigator url="/pages/support/index" class="menu"><Icon name="support" :size="21" /><text>Customer Support</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/password/index" class="menu"><Icon name="shield-check" :size="21" /><text>Change Password</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/profile/index" class="menu" @click="uni.showToast({ title: 'Your information has been refreshed', icon: 'none' })"><Icon name="refresh" :size="21" /><text>Refresh Status</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/about/index" class="menu"><Icon name="info" :size="21" /><text>About Us</text><Icon name="chevron-right" :size="20" /></navigator><navigator url="/pages/agreement/index" class="menu"><Icon name="document" :size="21" /><text>User Agreement</text><Icon name="chevron-right" :size="20" /></navigator><view class="menu" @click="uni.showToast({ title: 'The feedback channel is being prepared', icon: 'none' })"><Icon name="message" :size="21" /><text>Feedback</text><Icon name="chevron-right" :size="20" /></view></view>
     </AsyncState>
   </view>
@@ -51,6 +66,7 @@ usePageResume(load)
 .menu .gc-icon { color:var(--gc-muted); }
 .menu .gc-vant-icon { color:var(--gc-muted); }
 .notice-panel { margin-top:28px; }
+.status-note { margin:10px 0; padding:10px 12px; border-radius:10px; color:var(--gc-muted); background:#fff8ed; font-size:12px; line-height:1.45; }
 .notice-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:78px; padding:14px 16px 40px; border-radius:18px; color:rgba(255,255,255,.92); background:var(--gc-brand-deep); box-shadow:0 18px 36px rgba(201,111,12,.18); font-size:13px; }
 .notice-copy { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .notice-icon { flex:none; }

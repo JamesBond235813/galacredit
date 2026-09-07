@@ -105,7 +105,10 @@ onBeforeUnmount(() => {
   <view v-if="toastMessage" class="gc-h5-toast" role="status">{{ toastMessage }}</view>
   <view v-if="showBottomNav" class="gc-h5-bottom-nav" role="navigation" aria-label="Primary navigation">
     <navigator url="/pages/home/index" class="gc-h5-bottom-nav__item" :class="{ 'gc-h5-bottom-nav__item--active': path === '/pages/home/index' || path === '/home' }">
-      <Icon class="gc-h5-bottom-nav__icon" name="balance-list" :size="23" /><text>GalaCredit</text>
+      <Icon class="gc-h5-bottom-nav__icon" name="home" :size="23" /><text>Home</text>
+    </navigator>
+    <navigator url="/pages/orders/index" class="gc-h5-bottom-nav__item" :class="{ 'gc-h5-bottom-nav__item--active': path === '/pages/orders/index' || path === '/orders' }">
+      <Icon class="gc-h5-bottom-nav__icon" name="applications" :size="23" /><text>My Applications</text>
     </navigator>
     <navigator url="/pages/profile/index" class="gc-h5-bottom-nav__item" :class="{ 'gc-h5-bottom-nav__item--active': path === '/pages/profile/index' || path === '/profile' }">
       <Icon class="gc-h5-bottom-nav__icon" name="account" :size="23" /><text>My Account</text>
@@ -114,7 +117,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
-.gc-h5-bottom-nav { position:fixed; z-index:50; left:50%; bottom:10px; width:calc(100% - 28px); max-width:402px; height:68px; transform:translateX(-50%); display:flex; justify-content:space-around; padding:0 24px; border:1px solid var(--gc-border); border-radius:34px; background:rgba(255,255,255,.96); box-shadow:0 -2px 14px rgba(23,32,51,.08); backdrop-filter:blur(12px); }
+.gc-h5-bottom-nav { position:fixed; z-index:50; left:50%; bottom:10px; width:calc(100% - 28px); max-width:402px; height:68px; transform:translateX(-50%); display:flex; justify-content:space-around; padding:0 12px; border:1px solid var(--gc-border); border-radius:34px; background:rgba(255,255,255,.96); box-shadow:0 -2px 14px rgba(23,32,51,.08); backdrop-filter:blur(12px); }
 .gc-h5-bottom-nav__item { display:flex; flex:1; flex-direction:column; align-items:center; justify-content:center; gap:4rpx; color:var(--gc-muted); font-size:13px; text-decoration:none; }
 .gc-h5-bottom-nav__item--active { color:var(--gc-brand-deep); font-weight:750; }
 .gc-h5-bottom-nav__icon { font-size:23px; line-height:1; }

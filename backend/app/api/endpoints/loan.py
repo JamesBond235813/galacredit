@@ -739,6 +739,7 @@ async def register_repay_attempt(
 @router.get("/products", response_model=list[ProductItemResponse])
 async def get_products(
     extension_source_loan_id: Optional[int] = Query(None, ge=1),
+    display_only: bool = Query(False, description="仅用于首页展示，不开放提现产品资格"),
     current_user: User = Depends(get_current_user_async),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -769,12 +770,19 @@ async def get_products(
             if getattr(item, "product_type", None) != "CASH_LOAN"
             or (getattr(item, "borrower_type", None) or "ALL") in {"ALL", borrower_type}
         ]
-    if available_limit > 0:
+    if display_only:
+        # 首页需要在新用户尚未获得额度时展示运营配置，但不能因此放开提现资格。
+        products = products[:1]
+    elif available_limit > 0:
         products = [item for item in products if float(item.payment_amount or 0) <= available_limit + 1e-6]
     else:
         products = []
     result = []
     for item in products:
+        try:
+            display_config = json.loads(item.fee_components_json or "{}")
+        except (TypeError, ValueError):
+            display_config = {}
         rights_detail = None
         if getattr(item, "rights_detail_json", None):
             try:
@@ -807,6 +815,9 @@ async def get_products(
                 "is_active": item.is_active,
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
+                "expected_credit_limit": float(display_config.get("expected_credit_limit") or item.nominal_loan_amount or 0),
+                "min_daily_interest_rate": float(display_config.get("min_daily_interest_rate") or 0),
+                "max_loan_term_days": int(display_config.get("max_loan_term_days") or item.term_days or 0),
             }
         )
     return result

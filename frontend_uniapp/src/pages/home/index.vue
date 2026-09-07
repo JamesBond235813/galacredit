@@ -5,21 +5,24 @@ import AsyncState from '../../components/AsyncState.vue'
 import Icon from '../../components/Icon.vue'
 import { loadHomeData } from '../../api/index.js'
 import { errorMessage, formatMoney, loanStatusLabel, requireSession } from '../../utils/app.js'
+import { applicationNextPage } from '../../utils/application-flow.js'
 import { usePageResume } from '../../utils/page-resume.js'
 
 const state = ref({ loading: true, error: '', profile: null, loan: null, products: [] })
 const status = computed(() => state.value.loan?.status || 'INIT')
-const available = computed(() => state.value.loan?.available_credit_limit ?? state.value.loan?.credit_limit ?? 0)
+const available = computed(() => state.value.loan?.available_credit_limit ?? state.value.loan?.approved_credit_limit ?? state.value.loan?.credit_limit ?? 0)
 const actionText = computed(() => ({ INIT: 'Apply Now', REVIEWING: 'View Review Status', REJECTED: 'Resubmit Application', APPROVED: 'Choose a Loan', WITHDRAWING: 'View Disbursement', DISBURSED: 'View Repayment Bill', OVERDUE: 'Resolve Overdue Bill', SETTLED: 'Apply Again' }[status.value] || 'Processing'))
 const statusLabel = computed(() => ({ INIT: 'Ready when you are', REVIEWING: 'Application under review', APPROVED: 'Credit approved', WITHDRAWING: 'Preparing disbursement', DISBURSED: 'Repayment in progress', OVERDUE: 'Action required', SETTLED: 'Previous loan settled', REJECTED: 'Application needs an update' }[status.value] || 'Account update'))
-const limitTitle = computed(() => ['INIT', 'REJECTED', 'SETTLED'].includes(status.value) ? 'Estimated Credit Limit (GHS)' : status.value === 'REVIEWING' ? 'Maximum Available Credit (GHS)' : 'Available Credit (GHS)')
-const limitAmount = computed(() => status.value === 'REVIEWING' ? 'Under review' : status.value === 'REJECTED' ? 'Resubmit' : available.value ? formatMoney(available.value) : '--')
+const displayProduct = computed(() => state.value.products?.find((item) => item.product_type === 'CASH_LOAN') || state.value.products?.[0] || {})
+const estimatedLimit = computed(() => Number(displayProduct.value.expected_credit_limit ?? displayProduct.value.nominal_loan_amount ?? 0))
+const limitTitle = computed(() => status.value === 'REJECTED' ? 'Application status' : ['INIT', 'SETTLED'].includes(status.value) ? 'Estimated Credit Limit (GHS)' : status.value === 'REVIEWING' ? 'Maximum Available Credit (GHS)' : 'Available Credit (GHS)')
+const limitAmount = computed(() => status.value === 'REJECTED' ? 'Please improve your credit record and apply again later.' : status.value === 'REVIEWING' ? 'Under review' : (['INIT', 'SETTLED'].includes(status.value) ? (estimatedLimit.value ? `${formatMoney(estimatedLimit.value)}+` : '--') : available.value ? formatMoney(available.value) : '--'))
 const rateText = computed(() => {
-  const rate = state.value.products?.[0]?.fee_components?.interest_rate
+  const rate = displayProduct.value?.min_daily_interest_rate ?? displayProduct.value?.fee_components?.min_daily_interest_rate ?? displayProduct.value?.fee_components?.interest_rate
   return rate === undefined || rate === null ? '--' : `${Number(rate) * 100}%`
 })
 const termText = computed(() => {
-  const term = state.value.products?.[0]?.repayment_due_day || state.value.products?.[0]?.term_days || state.value.loan?.term_days
+  const term = displayProduct.value?.max_loan_term_days || displayProduct.value?.repayment_due_day || displayProduct.value?.term_days || state.value.loan?.term_days
   return term === undefined || term === null ? '--' : `${term} days`
 })
 
@@ -31,8 +34,7 @@ async function load() {
 }
 
 function action() {
-  const page = ['INIT', 'REJECTED', 'SETTLED'].includes(status.value) ? '/pages/verification/index' : status.value === 'REVIEWING' ? '/pages/review/index' : status.value === 'APPROVED' ? '/pages/withdraw/index' : '/pages/bill/index'
-  uni.navigateTo({ url: page })
+  uni.navigateTo({ url: applicationNextPage(status.value) })
 }
 
 onMounted(load)

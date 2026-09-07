@@ -1,0 +1,1 @@
+function n(i){const e=String(i||"INIT").toUpperCase();return["INIT","REJECTED","SETTLED"].includes(e)?"/pages/verification/index":e==="REVIEWING"?"/pages/review/index":e==="APPROVED"?"/pages/withdraw/index":["WITHDRAWING","DISBURSED","OVERDUE"].includes(e)?"/pages/bill/index":"/pages/home/index"}export{n as a};

@@ -51,6 +51,8 @@ curl -I https://galacredit.ebamotor.com/
 curl -I https://galacredit.ebamotor.com/manifest.webmanifest
 ```
 
+用户端下载目录 `/data/www/galacredit/download` 与管理端下载目录 `/data/www/gala.ebamotor.com/download` 均由 Caddy 独立静态处理，不能落入 H5 SPA 的 `/index.html` 回退。下载站点应为 `/download/*` 增加 `Content-Disposition: attachment; filename="galacredit.apk"` 和 `Cache-Control: public, max-age=3600`，发布后同时检查 `Content-Type: application/vnd.android.package-archive`、`Content-Length` 与 APK SHA-256。
+
 ## 6. 数据库与账号
 
 GalaCredit 仅使用 `galacredit` 库。当前超级管理员为 `xiaojiang`，账号密码应通过安全渠道交付并定期修改。禁止在数据库、日志和 Git 中保存明文密码。

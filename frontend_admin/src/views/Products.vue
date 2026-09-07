@@ -194,6 +194,17 @@
         <el-form-item :label="t('nominalPrincipal')">
           <el-input-number v-model="form.nominal_loan_amount" :min="1" :step="100" />
         </el-form-item>
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="首页预期额度">
+          <el-input-number v-model="form.expected_credit_limit" :min="0" :step="100" />
+          <span class="inline-tip">新用户完成申请前展示，留空则使用名义本金</span>
+        </el-form-item>
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="首页最小日利率">
+          <el-input-number v-model="form.min_daily_interest_rate" :min="0" :max="1" :step="0.0001" />
+          <span class="inline-tip">0.05%填写0.0005</span>
+        </el-form-item>
+        <el-form-item v-if="form.product_type === 'CASH_LOAN'" label="首页最大贷款期限">
+          <el-input-number v-model="form.max_loan_term_days" :min="1" :max="364" :step="1" />
+        </el-form-item>
         <el-form-item :label="t('upfrontFeeRate')">
           <el-input-number v-model="form.upfront_fee_rate" :min="0" :max="1" :step="0.01" />
           <span class="inline-tip">40%填写0.4</span>
@@ -320,6 +331,9 @@ const form = reactive({
   repayment_due_day: 7,
   payment_amount: 1600,
   nominal_loan_amount: 1000,
+  expected_credit_limit: 8000,
+  min_daily_interest_rate: 0.0005,
+  max_loan_term_days: 180,
   upfront_fee_rate: 0.4,
   audit_fee: 0.1,
   risk_control_fee: 0.1,
@@ -549,6 +563,9 @@ const openDialog = (row = null) => {
   form.repayment_due_day = Number(row.repayment_due_day || row.term_days || 7);
   form.payment_amount = Number(row.payment_amount || 0);
   form.nominal_loan_amount = Number(row.nominal_loan_amount || row.payment_amount || 0);
+  form.expected_credit_limit = Number(row.expected_credit_limit || row.nominal_loan_amount || 0);
+  form.min_daily_interest_rate = Number(row.min_daily_interest_rate || 0);
+  form.max_loan_term_days = Number(row.max_loan_term_days || row.term_days || 180);
   form.upfront_fee_rate = Number(row.upfront_fee_rate ?? 0.4);
   form.audit_fee = Number(row.fee_components?.system_service_fee_rate ?? row.fee_components?.audit_fee ?? 0);
   form.risk_control_fee = Number(row.fee_components?.control_fee_rate ?? row.fee_components?.risk_control_fee ?? 0);
@@ -616,6 +633,9 @@ const submit = async () => {
         control_fee_rate: Number(form.risk_control_fee || 0),
         channel_fee_rate: Number(form.system_fee || 0),
         interest_rate: Number(form.interest_fee || 0)
+        ,expected_credit_limit: Number(form.expected_credit_limit || form.nominal_loan_amount || 0)
+        ,min_daily_interest_rate: Number(form.min_daily_interest_rate || 0)
+        ,max_loan_term_days: Number(form.max_loan_term_days || form.repayment_due_day || 1)
       },
       interest_start_day: Number(form.interest_start_day),
       repayment_due_day: Number(form.repayment_due_day),
