@@ -17,8 +17,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 <template>
   <view v-if="current !== 'pages/login/index'" class="gc-app-bottom-nav" role="navigation" aria-label="Primary navigation">
-    <view class="gc-app-bottom-nav__item" :class="{ active: current === 'pages/home/index' }" @click="go('pages/home/index')"><Icon name="home" :size="22" /><text>Home</text></view>
-    <view class="gc-app-bottom-nav__item" :class="{ active: current === 'pages/orders/index' }" @click="go('pages/orders/index')"><Icon name="applications" :size="22" /><text>My Applications</text></view>
+    <view class="gc-app-bottom-nav__item" :class="{ active: current === 'pages/home/index' }" @click="go('pages/home/index')"><Icon name="home" :size="22" /><text>GalaCredit</text></view>
     <view class="gc-app-bottom-nav__item" :class="{ active: current === 'pages/profile/index' }" @click="go('pages/profile/index')"><Icon name="account" :size="22" /><text>My Account</text></view>
   </view>
 </template>

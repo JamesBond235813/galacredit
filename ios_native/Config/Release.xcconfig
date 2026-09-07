@@ -1,2 +1,0 @@
-GALA_API_BASE = https:/$()/galacredit.ebamotor.com/api
-GALA_APP_FLAVOR = prod

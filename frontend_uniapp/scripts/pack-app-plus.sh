@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HX_CLI="${GALA_HX_CLI:-/Applications/HBuilderX.app/Contents/MacOS/cli}"
 # 复用已安装测试包的证书，保证覆盖安装时不因签名不一致丢失应用数据。
-KEYSTORE="${GALA_KEYSTORE:-$ROOT_DIR/../android_native/.local/app-plus-compatible.jks}"
+KEYSTORE="${GALA_KEYSTORE:-$ROOT_DIR/.local/app-plus-compatible.jks}"
 test -x "$HX_CLI"
 test -f "$KEYSTORE"
 cd "$ROOT_DIR"

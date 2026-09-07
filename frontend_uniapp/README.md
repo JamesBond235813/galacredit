@@ -20,6 +20,6 @@ npm run build:h5
 npm run build:app
 ```
 
-`build:app` 会自动探测 HBuilderX/uni-app CLI；未安装时给出明确诊断。该命令需要 Android SDK、Xcode 和签名环境；渠道差异见 `../android_native/channel-config.json`。
+`build:app` 会自动探测 HBuilderX/uni-app CLI；未安装时给出明确诊断。该命令需要 Android SDK、Xcode 和签名环境；渠道差异见 `channel-config.json`。
 
 完整发布前检查见 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)。

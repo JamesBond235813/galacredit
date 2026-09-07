@@ -15,7 +15,7 @@ async function load() {
   if (!requireSession()) return
   try {
     const loanStatus = await getLoanStatus()
-    // 与 frontend_h5 保持同一流程守卫：尚未进入还款阶段时返回首页，避免展示空的还款单。
+    // 与统一用户端流程守卫保持一致：尚未进入还款阶段时返回首页，避免展示空的还款单。
     if (['INIT', 'REVIEWING', 'APPROVED', 'REJECTED'].includes(loanStatus?.status)) {
       uni.reLaunch({ url: '/pages/home/index' })
       return
