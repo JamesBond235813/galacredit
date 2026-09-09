@@ -31,4 +31,18 @@ describe('UniApp route integrity', () => {
     expect(face).not.toContain(':disabled="scanning || success"')
   })
 
+  it('keeps back navigation on secondary pages and off root tab pages', () => {
+    const expectedBackPages = ['about', 'agreement', 'application', 'bill', 'channel', 'face-mismatch', 'face', 'location', 'orders', 'password', 'personal-info-authorization', 'review', 'risk', 'support', 'verification', 'withdraw']
+    const noBackPages = ['home', 'login', 'profile']
+    for (const page of expectedBackPages) {
+      const source = readFileSync(resolve(root, 'src/pages', page, 'index.vue'), 'utf8')
+      expect(source).toContain('<PageHeader')
+      expect(source).toContain(':back="true"')
+    }
+    for (const page of noBackPages) {
+      const source = readFileSync(resolve(root, 'src/pages', page, 'index.vue'), 'utf8')
+      expect(source).not.toContain('<PageHeader')
+    }
+  })
+
 })

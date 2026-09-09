@@ -81,7 +81,7 @@ usePageResume(() => { if (!scanning.value) return load() })
 </template>
 
 <style scoped>
-.face-page { padding:calc(40px + env(safe-area-inset-top)) 16px calc(88px + env(safe-area-inset-bottom)); }
+.face-page { padding:calc(24px + env(safe-area-inset-top)) 16px calc(88px + env(safe-area-inset-bottom)); }
 .face-page :deep(.gc-page-header) { margin:0 -16px 8px; }
 .face-hero { display:flex; flex-direction:column; align-items:flex-start; width:100%; margin:14px 0 0; padding:0; }
 .hero-chip { display:inline-flex; align-items:center; min-height:28px; padding:0 12px; border-radius:999px; color:var(--gc-brand-deep); background:rgba(234,149,24,.1); font-size:12px; font-weight:700; }

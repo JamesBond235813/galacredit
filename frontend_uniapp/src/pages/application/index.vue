@@ -101,7 +101,7 @@ usePageResume(() => { if (!busy.value) return load() })
 </template>
 
 <style scoped>
-.application-page { padding:calc(40px + env(safe-area-inset-top)) 12px calc(88px + env(safe-area-inset-bottom)); }
+.application-page { padding:calc(24px + env(safe-area-inset-top)) 12px calc(88px + env(safe-area-inset-bottom)); }
 .application-page :deep(.gc-page-header) { margin:0 -12px 8px; }
 .application-heading { display:flex; flex-direction:column; align-items:flex-start; width:100%; padding:0; }
 .hero-chip { display:inline-flex; align-items:center; min-height:22px; padding:0 10px; border-radius:999px; color:var(--gc-brand-deep); background:rgba(234,149,24,.1); font-size:10px; font-weight:700; }

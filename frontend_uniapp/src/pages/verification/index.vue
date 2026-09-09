@@ -75,7 +75,7 @@ usePageResume(() => { if (!busy.value) return load() })
 </template>
 
 <style scoped>
-.verification-page { padding:calc(40px + env(safe-area-inset-top)) 16px calc(150px + 88px + env(safe-area-inset-bottom)); background:#fffaf2; }
+.verification-page { padding:calc(24px + env(safe-area-inset-top)) 16px calc(150px + 88px + env(safe-area-inset-bottom)); background:#fffaf2; }
 .verification-page :deep(.gc-page-header) { margin:0 -16px 18px; }
 .document-heading { display:flex; flex-direction:column; gap:6px; margin:0 2px 16px; color:var(--gc-ink); font-size:14px; line-height:1.45; }
 .document-heading__strong { display:block; color:var(--gc-brand-deep); font-size:24px; line-height:1.15; font-weight:800; }

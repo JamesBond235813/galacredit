@@ -29,7 +29,7 @@ function goBack() {
 </template>
 
 <style scoped>
-.gc-page-header { display:flex; align-items:center; gap:8px; min-height:54px; margin:0 -16px 8px; padding:0 8px; background:transparent; }
+.gc-page-header { display:flex; align-items:center; gap:8px; min-height:48px; margin:0 -16px 4px; padding:0 8px; background:transparent; }
 .gc-page-header__back { width:36px; height:36px; padding:0; border:0; border-radius:50%; color:var(--gc-ink); background:rgba(255,255,255,.96); box-shadow:0 4px 12px rgba(31,42,58,.12); font-size:24px; line-height:36px; }
 .gc-page-header__back::after { border:0; }
 .gc-page-header__copy { flex:1; }

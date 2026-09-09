@@ -5,7 +5,8 @@ import { ICON_PATHS } from './iconPaths.js'
 const props = defineProps({
   name: { type: String, required: true },
   size: { type: [String, Number], default: 24 },
-  label: { type: String, default: '' }
+  label: { type: String, default: '' },
+  useVant: { type: Boolean, default: true }
 })
 
 const paths = computed(() => ICON_PATHS[props.name] || [])
@@ -35,7 +36,7 @@ const VANT_NAMES = Object.freeze({
   passed: 'passed',
   underway: 'underway'
 })
-const vantName = computed(() => VANT_NAMES[props.name] || '')
+const vantName = computed(() => props.useVant ? (VANT_NAMES[props.name] || '') : '')
 </script>
 
 <template>

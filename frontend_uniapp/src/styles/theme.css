@@ -11,8 +11,8 @@
   --gc-danger: #c2413b;
 }
 
-html, body { margin: 0; padding: 0; min-width: 0; overflow-x: hidden; }
-page, #app { min-height: 100%; overflow-x: hidden; }
+html, body { margin: 0; padding: 0; min-width: 0; overflow-x: hidden; overscroll-behavior-y: none; }
+page, #app { min-height: 100%; overflow-x: hidden; overscroll-behavior-y: none; }
 page, body { background: #f6f8fb; color: var(--gc-ink); }
 body {
   background:
@@ -52,11 +52,11 @@ view, text, button, input, navigator { box-sizing: border-box; }
 .gc-vant-icon--underway::before { content: "\e731"; }
 /* H5 适配层保留 view 标签，需要补齐块级语义，否则容器高度失效并造成控件重叠。 */
 view, scroll-view { display: block; }
-.gc-page { position:relative; width: 100%; min-height: 100vh; padding: calc(40px + env(safe-area-inset-top)) 32rpx calc(140rpx + env(safe-area-inset-bottom)); }
+.gc-page { position:relative; width: 100%; min-height: 100vh; padding: calc(24px + env(safe-area-inset-top)) 32rpx calc(140rpx + env(safe-area-inset-bottom)); }
 .gc-page::before { content:''; position:absolute; top:0; left:0; right:0; height:280px; pointer-events:none; opacity:.95; background:repeating-radial-gradient(circle at top right, transparent 0 13px, rgba(234,149,24,.06) 13px 14px), radial-gradient(circle at top left, rgba(255,255,255,.7), transparent 34%); }
 .gc-page > * { position:relative; z-index:1; }
 .gc-page--plain { padding-top: calc(24rpx + env(safe-area-inset-top)); }
-.gc-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28rpx; }
+.gc-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
 .gc-brand { display: flex; align-items: center; gap: 24rpx; }
 .gc-brand__logo { width: 142rpx; height: 142rpx; flex:none; border-radius:34rpx; background-color:#fffaf2; background-image:url('../static/logo.svg'); background-position:center; background-repeat:no-repeat; background-size:78%; box-shadow:0 2rpx 0 rgba(255,255,255,.8); }
 .gc-brand__name { display: block; font-size: 64rpx; line-height:1; font-weight: 800; letter-spacing: -1rpx; color: var(--gc-ink); }

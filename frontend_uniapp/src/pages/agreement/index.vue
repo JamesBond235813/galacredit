@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import PageHeader from '../../components/PageHeader.vue'
 
 const loading = ref(true)
 const content = ref('')
@@ -29,12 +30,13 @@ onMounted(load)
 
 <template>
   <view class="gc-page agreement-page">
+    <PageHeader title="User Agreement" :back="true" />
     <view class="gc-card agreement-card"><text class="agreement-title">User Agreement</text><text class="agreement-tip">The latest version of the platform agreement is shown below.</text><text v-if="loading" class="agreement-loading">Loading agreement...</text><view v-else class="agreement-content"><text v-for="(item, index) in paragraphs" :key="index" class="agreement-paragraph">{{ item }}</text></view></view>
   </view>
 </template>
 
 <style scoped>
-.agreement-page { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:calc(40px + env(safe-area-inset-top)) 10px calc(32px + env(safe-area-inset-bottom)); }
+.agreement-page { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:calc(24px + env(safe-area-inset-top)) 10px calc(32px + env(safe-area-inset-bottom)); }
 .agreement-card { padding:16px 14px 18px; }
 .agreement-title { display:block; color:var(--gc-ink); font-size:22px; line-height:1.2; font-weight:700; }
 .agreement-tip { display:block; margin:8px 0 12px; color:var(--gc-muted); font-size:12px; line-height:1.4; }

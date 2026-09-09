@@ -60,7 +60,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 <template>
   <view class="gc-page">
-    <PageHeader title="Application Review" :back="false" />
+    <PageHeader title="Application Review" :back="true" />
     <AsyncState :loading="state.loading" :error="state.error" :empty="false" @retry="load">
       <view v-if="status === 'REVIEWING'" class="gc-card review-card"><view class="loading-orbit">◎</view><text class="card-title">Application Under Review</text><text class="copy">We are reviewing your information and determining your available credit limit.</text></view>
       <template v-else-if="status === 'APPROVED'">

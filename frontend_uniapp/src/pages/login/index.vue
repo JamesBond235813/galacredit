@@ -53,6 +53,11 @@ const sliderRef = ref(null)
 const sliderTrackWidth = ref(0)
 let sliderStartX = 0
 let sliderStartValue = 0
+let sliderPointerId = null
+let sliderMoveFrame = null
+let sliderPendingX = null
+const scheduleFrame = (callback) => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(callback) : setTimeout(callback, 16)
+const cancelFrame = (frame) => typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame(frame) : clearTimeout(frame)
 const cooldown = ref(0)
 let timer = null
 let sliderStartedAt = 0
@@ -119,7 +124,10 @@ async function verifyCaptcha(event) {
   finally { captchaBusy.value = false }
 }
 
-function touchX(event) { return Number(event?.touches?.[0]?.clientX ?? event?.changedTouches?.[0]?.clientX ?? event?.clientX ?? 0) }
+function touchX(event) {
+  const point = event?.touches?.[0] || event?.changedTouches?.[0] || event
+  return Number(point?.clientX ?? point?.pageX ?? point?.screenX ?? 0)
+}
 function sliderThumbWidth() { return typeof uni.upx2px === 'function' ? uni.upx2px(92) : 46 }
 function measureSlider() {
   const rect = sliderRef.value?.getBoundingClientRect?.()
@@ -141,22 +149,46 @@ function sliderUsableWidth() {
 const sliderThumbLeft = computed(() => sliderTrackWidth.value ? `${(sliderValue.value / 100) * sliderUsableWidth()}px` : `${sliderValue.value}%`)
 function startSlider(event) {
   event?.preventDefault?.()
+  if (captchaBusy.value) return
   sliderDragging.value = true
   sliderStartX = touchX(event)
   sliderStartValue = sliderValue.value
+  sliderPointerId = event?.pointerId ?? null
+  const target = event?.currentTarget
+  if (sliderPointerId !== null) target?.setPointerCapture?.(sliderPointerId)
 }
 function moveSlider(event) {
-  if (!sliderDragging.value) return
+  if (!sliderDragging.value || (sliderPointerId !== null && event?.pointerId !== sliderPointerId)) return
   event?.preventDefault?.()
-  sliderValue.value = Math.min(100, Math.max(0, sliderStartValue + ((touchX(event) - sliderStartX) / sliderUsableWidth()) * 100))
+  sliderPendingX = touchX(event)
+  if (sliderMoveFrame !== null) return
+  // 触摸事件频率高于渲染频率时只在下一帧提交一次，避免 Android WebView/iOS WKWebView 掉帧。
+  sliderMoveFrame = scheduleFrame(() => {
+    sliderMoveFrame = null
+    if (!sliderDragging.value || sliderPendingX === null) return
+    sliderValue.value = Math.min(100, Math.max(0, sliderStartValue + ((sliderPendingX - sliderStartX) / sliderUsableWidth()) * 100))
+    sliderPendingX = null
+  })
 }
-function endSlider() {
+function endSlider(event) {
+  if (sliderPointerId !== null && event?.pointerId !== sliderPointerId) return
+  if (sliderMoveFrame !== null) {
+    cancelFrame(sliderMoveFrame)
+    sliderMoveFrame = null
+  }
+  if (sliderPendingX !== null) {
+    sliderValue.value = Math.min(100, Math.max(0, sliderStartValue + ((sliderPendingX - sliderStartX) / sliderUsableWidth()) * 100))
+    sliderPendingX = null
+  }
   sliderDragging.value = false
+  const target = event?.currentTarget
+  if (sliderPointerId !== null) target?.releasePointerCapture?.(sliderPointerId)
+  sliderPointerId = null
   if (sliderValue.value >= 98) verifyCaptcha({ detail: { value: 100 } })
 }
-function pointerSlider(event) { startSlider({ touches: [{ clientX: event.clientX }] }) }
-function movePointerSlider(event) { moveSlider({ touches: [{ clientX: event.clientX }] }) }
-function endPointerSlider() { endSlider() }
+function pointerSlider(event) { startSlider(event) }
+function movePointerSlider(event) { moveSlider(event) }
+function endPointerSlider(event) { endSlider(event) }
 
 /**
  * 关闭滑块挑战并清理一次性状态，避免旧挑战被重复提交。
@@ -169,6 +201,10 @@ function closeCaptcha() {
   captcha.value = null
   sliderValue.value = 0
   sliderDragging.value = false
+  sliderPointerId = null
+  sliderPendingX = null
+  if (sliderMoveFrame !== null) cancelFrame(sliderMoveFrame)
+  sliderMoveFrame = null
 }
 
 /**
@@ -227,13 +263,13 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     </view>
     <button class="gc-button sign-in-button" :disabled="!canSignIn" :loading="busy" @click="signIn">{{ busy ? 'Signing in…' : 'Sign In' }}</button>
     </view>
-    <view v-if="captchaVisible" class="captcha-mask"><view class="captcha-modal gc-card"><text class="gc-section-title">Complete security check</text><text class="captcha-copy">Slide all the way to confirm you are human.</text><view ref="sliderRef" class="captcha-slider" :class="{ 'is-dragging': sliderDragging }" role="slider" aria-label="Slide to verify" :aria-valuenow="Math.round(sliderValue)" aria-valuemin="0" aria-valuemax="100" @touchstart="startSlider" @touchmove="moveSlider" @touchend="endSlider" @pointerdown="pointerSlider" @pointermove="movePointerSlider" @pointerup="endPointerSlider" @pointercancel="endPointerSlider"><view class="captcha-slider__track" /><view class="captcha-slider__fill" :style="{ width: `${sliderValue}%` }" /><view class="captcha-slider__thumb" :style="{ left: sliderThumbLeft }">›</view><text class="captcha-slider__label">Slide to verify</text></view><button class="captcha-cancel gc-button gc-button--ghost" :disabled="captchaBusy" @click="closeCaptcha">Cancel</button></view></view>
+    <view v-if="captchaVisible" class="captcha-mask" @touchmove.stop.prevent @wheel.stop.prevent><view class="captcha-modal gc-card"><text class="gc-section-title">Complete security check</text><text class="captcha-copy">Slide all the way to confirm you are human.</text><view ref="sliderRef" class="captcha-slider" :class="{ 'is-dragging': sliderDragging }" role="slider" aria-label="Slide to verify" :aria-valuenow="Math.round(sliderValue)" aria-valuemin="0" aria-valuemax="100" @touchstart.stop.prevent="startSlider" @touchmove.stop.prevent="moveSlider" @touchend.stop.prevent="endSlider" @touchcancel.stop.prevent="endSlider" @pointerdown.stop.prevent="pointerSlider" @pointermove.stop.prevent="movePointerSlider" @pointerup.stop.prevent="endPointerSlider" @pointercancel.stop.prevent="endPointerSlider"><view class="captcha-slider__track" /><view class="captcha-slider__fill" :style="{ width: `${sliderValue}%` }" /><view class="captcha-slider__thumb" :style="{ left: sliderThumbLeft }">›</view><text class="captcha-slider__label">Slide to verify</text></view><button class="captcha-cancel gc-button gc-button--ghost" :disabled="captchaBusy" @click="closeCaptcha">Cancel</button></view></view>
   </view>
 </template>
 
 <style scoped>
-.login-page { display:flex; flex-direction:column; width:100%; max-width:800rpx; min-height:100vh; margin:0 auto; padding:calc(40px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom)); background:radial-gradient(circle at top left,rgba(234,149,24,.16),transparent 28%),radial-gradient(circle at top right,rgba(242,165,61,.14),transparent 30%),linear-gradient(180deg,#fffaf2 0%,#f6f8fb 56%,#f6f8fb 100%); }
-.login-page__hero { margin-top:100rpx; padding:10px 2px 14px; }
+.login-page { display:flex; flex-direction:column; width:100%; max-width:800rpx; min-height:100vh; margin:0 auto; padding:calc(24px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom)); background:radial-gradient(circle at top left,rgba(234,149,24,.16),transparent 28%),radial-gradient(circle at top right,rgba(242,165,61,.14),transparent 30%),linear-gradient(180deg,#fffaf2 0%,#f6f8fb 56%,#f6f8fb 100%); }
+.login-page__hero { margin-top:48rpx; padding:10px 2px 14px; }
 .login-page__hero :deep(.gc-brand) { gap:32rpx; }
 .login-page__hero :deep(.gc-brand__logo) { width:126rpx; height:126rpx; border-radius:38rpx; }
 .login-page__hero :deep(.gc-brand__logo-card) { inset:20rpx; }
@@ -242,7 +278,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 .login-page__hero :deep(.gc-brand > view:last-child) { position:relative; }
 .login-page__hero :deep(.gc-brand > view:last-child)::after { content:''; display:block; width:64rpx; height:4rpx; margin-top:10rpx; border-radius:999rpx; background:linear-gradient(90deg,#f2a53d 0%,rgba(200,111,12,.72) 100%); }
 .login-page__headline,.login-page__intro { display:none; }
-.login-card { margin-top:calc(114rpx + 12px); padding:0; border:1rpx solid rgba(255,255,255,.28); border-radius:28rpx; background:rgba(247,249,252,.94); box-shadow:0 10px 22px rgba(23,32,51,.08); overflow:hidden; }
+.login-card { margin-top:24rpx; padding:0; border:1rpx solid rgba(255,255,255,.28); border-radius:28rpx; background:rgba(247,249,252,.94); box-shadow:0 10px 22px rgba(23,32,51,.08); overflow:hidden; }
 .agreement-card { margin-top:16px; padding:14px 14px 16px; border-radius:18px; background:rgba(255,255,255,.62); border:1rpx solid rgba(255,255,255,.68); box-shadow:0 10px 24px rgba(28,71,142,.06); }
 .phone-wrap { position:relative; display:flex; align-items:center; min-height:64px; }
 .phone-prefix { position:absolute; z-index:1; left:24rpx; top:0; height:64px; display:flex; align-items:center; font-size:25rpx; font-weight:650; }
@@ -262,14 +298,15 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 .login-page .gc-safe-note { display:block; margin-top:10px; padding:0; border-radius:0; color:#6a7c92; background:transparent; font-size:12px; line-height:1.55; }
 .sign-in-button { margin-top:18px; min-height:50px; border-radius:25px; background:linear-gradient(135deg,#f2a53d 0%,#d9790d 100%); font-size:16px; font-weight:800; }
 .login-page__footer { margin-top:auto; padding:48rpx 0 12rpx; text-align:center; color:#9aa4b3; font-size:21rpx; }
-.captcha-mask { position:fixed; z-index:20; inset:0; display:flex; align-items:flex-start; justify-content:center; padding:22vh 24rpx 24rpx; background:rgba(19,26,39,.52); }
+.captcha-mask { position:fixed; z-index:20; inset:0; display:flex; align-items:flex-start; justify-content:center; padding:22vh 24rpx 24rpx; background:rgba(19,26,39,.52); touch-action:none; overscroll-behavior:contain; }
 .captcha-modal { width:100%; max-width:620rpx; padding:34rpx; margin:0; }
 .captcha-copy { display:block; color:var(--gc-muted); font-size:24rpx; }
-.captcha-slider { position:relative; height:92rpx; margin:34rpx 0 20rpx; overflow:hidden; border-radius:46rpx; touch-action:none; user-select:none; cursor:grab; }
+.captcha-slider { position:relative; height:92rpx; margin:34rpx 0 20rpx; overflow:hidden; border-radius:46rpx; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
 .captcha-slider:active { cursor:grabbing; }
 .captcha-slider__track { position:absolute; inset:20rpx 0; border-radius:26rpx; background:#f1e9dc; }
 .captcha-slider__fill { position:absolute; left:0; top:20rpx; bottom:20rpx; border-radius:26rpx; background:#f7c477; }
-.captcha-slider__thumb { position:absolute; top:0; width:92rpx; height:92rpx; border-radius:50%; color:#fff; background:#ea9518; text-align:center; font-size:64rpx; line-height:82rpx; box-shadow:0 6rpx 18rpx rgba(201,111,12,.28); transition:left .08s linear; }
+.captcha-slider__thumb { position:absolute; top:0; width:92rpx; height:92rpx; border-radius:50%; color:#fff; background:#ea9518; text-align:center; font-size:64rpx; line-height:82rpx; box-shadow:0 6rpx 18rpx rgba(201,111,12,.28); transition:left .08s linear; will-change:left; }
+.captcha-slider.is-dragging .captcha-slider__thumb { transition:none; }
 .captcha-slider__label { position:absolute; left:112rpx; right:24rpx; color:#9b774a; text-align:center; font-size:24rpx; line-height:92rpx; pointer-events:none; }
 .captcha-slider.is-dragging .captcha-slider__label { opacity:.2; }
 .captcha-cancel { position:relative; display:flex; clear:both; width:100%; margin:18rpx 0 0; }

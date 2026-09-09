@@ -9,8 +9,20 @@ function setResponsiveRootFontSize() {
   document.documentElement.style.fontSize = `${designWidth / 7.5}px`
 }
 
+function lockViewportZoom() {
+  if (typeof document === 'undefined') return
+  let viewport = document.querySelector('meta[name="viewport"]')
+  if (!viewport) {
+    viewport = document.createElement('meta')
+    viewport.name = 'viewport'
+    document.head.appendChild(viewport)
+  }
+  viewport.content = 'width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no'
+}
+
 function installH5Uni() {
   if (typeof window === 'undefined') return
+  lockViewportZoom()
   if (!window.__gcResponsiveRootInstalled) {
     window.__gcResponsiveRootInstalled = true
     setResponsiveRootFontSize()

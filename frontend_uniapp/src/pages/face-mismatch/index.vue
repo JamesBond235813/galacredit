@@ -32,7 +32,7 @@ function retry() {
 </template>
 
 <style scoped>
-.mismatch-page { padding:calc(40px + env(safe-area-inset-top)) 16px calc(88px + env(safe-area-inset-bottom)); }
+.mismatch-page { padding:calc(24px + env(safe-area-inset-top)) 16px calc(88px + env(safe-area-inset-bottom)); }
 .mismatch-page :deep(.gc-page-header) { margin:0 -16px 20px; }
 .mismatch-card { margin-top:0; text-align:center; padding:28px 18px 20px; }
 .mismatch-icon { display:flex; align-items:center; justify-content:center; width:54px; height:54px; margin:0 auto 10px; border-radius:50%; color:#e64858; background:rgba(243,84,96,.12); font-size:28px; font-weight:700; }

@@ -44,7 +44,7 @@ usePageResume(load)
 </template>
 
 <style scoped>
-.support-page { padding-top:calc(40px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
+.support-page { padding-top:calc(24px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
 .support-page :deep(.gc-page-header) { margin:0 -16px 10px; }
 .support-page :deep(.gc-card) { margin-top:0; padding:18px; }
 .support-page .quick-card,

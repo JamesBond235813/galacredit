@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import PageHeader from '../../components/PageHeader.vue'
 import AsyncState from '../../components/AsyncState.vue'
 import Icon from '../../components/Icon.vue'
 import { getLoanStatus, getUserInfo } from '../../api/index.js'
@@ -51,7 +50,7 @@ usePageResume(load)
 </template>
 
 <style scoped>
-.profile-page { padding:calc(40px + env(safe-area-inset-top)) 10px calc(120px + env(safe-area-inset-bottom)); }
+.profile-page { padding:calc(24px + env(safe-area-inset-top)) 10px calc(120px + env(safe-area-inset-bottom)); }
 .profile-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 10px; }
 .greeting { display:block; font-size:24px; line-height:1.2; font-weight:700; }
 .protection { display:flex; align-items:center; gap:6px; width:max-content; max-width:304px; margin-top:14px; padding:8px 14px; border-radius:999px; color:#b37712; background:linear-gradient(180deg,#fff7dc 0%,#fff1cb 100%); font-size:13px; line-height:1.2; }

@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import PageHeader from '../../components/PageHeader.vue'
 import { changePassword } from '../../api/index.js'
 import { errorMessage, requireSession } from '../../utils/app.js'
 
@@ -18,10 +19,10 @@ async function submit() {
 </script>
 
 <template>
-  <view class="gc-page password-page"><view class="gc-card form-card"><text class="section-title">Change Sign-in Password</text><input v-model="form.oldPassword" class="gc-field" password placeholder="Current password" /><input v-model="form.newPassword" class="gc-field" password placeholder="New password (at least 6 characters)" /><input v-model="form.confirmPassword" class="gc-field" password placeholder="Confirm new password" /><button class="gc-button" :loading="busy" :disabled="busy" @click="submit">{{ busy ? 'Saving…' : 'Update Password' }}</button></view></view></template>
+  <view class="gc-page password-page"><PageHeader title="Change Password" :back="true" /><view class="gc-card form-card"><text class="section-title">Change Sign-in Password</text><input v-model="form.oldPassword" class="gc-field" password placeholder="Current password" /><input v-model="form.newPassword" class="gc-field" password placeholder="New password (at least 6 characters)" /><input v-model="form.confirmPassword" class="gc-field" password placeholder="Confirm new password" /><button class="gc-button" :loading="busy" :disabled="busy" @click="submit">{{ busy ? 'Saving…' : 'Update Password' }}</button></view></view></template>
 
 <style scoped>
-.password-page { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:calc(40px + env(safe-area-inset-top)) 12px calc(32px + env(safe-area-inset-bottom)); }
+.password-page { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:calc(24px + env(safe-area-inset-top)) 12px calc(32px + env(safe-area-inset-bottom)); }
 .form-card { padding:16px 0 20px; }
 .section-title { display:block; margin:0 16px 14px; color:var(--gc-ink); font-size:18px; line-height:1.3; font-weight:700; }
 .form-card .gc-field { width:100%; height:56px; min-height:56px; margin:0; padding:16px 18px; border:0; border-bottom:1px solid #eef3fb; border-radius:0; background:transparent; color:var(--gc-ink); font-size:16px; line-height:24px; }

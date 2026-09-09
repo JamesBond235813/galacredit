@@ -47,7 +47,7 @@ usePageResume(load)
 </template>
 
 <style scoped>
-.orders-page { padding-top:calc(40px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
+.orders-page { padding-top:calc(24px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
 .orders-page :deep(.gc-page-header) { margin-bottom:10px; }
 .orders-page :deep(.gc-card) { margin-top:0; }
 .order-card,.timeline-card { padding:18px; }

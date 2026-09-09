@@ -18,7 +18,7 @@ function confirmSignOut() {
 </template>
 
 <style scoped>
-.about-page { padding-top:calc(40px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
+.about-page { padding-top:calc(24px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
 .about-page :deep(.gc-page-header) { margin:0 -16px 19px; }
 .about-card { text-align:center; }
 .brand-card { padding:28px 20px 24px; }

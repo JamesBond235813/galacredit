@@ -52,7 +52,7 @@ usePageResume(load)
 </template>
 
 <style scoped>
-.home-page { padding-top:calc(40px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
+.home-page { padding-top:calc(24px + env(safe-area-inset-top)); padding-left:16px; padding-right:16px; }
 .home-page :deep(.gc-topbar) { margin-bottom:18px; }
 .home-page :deep(.gc-brand) { gap:9px; }
 .home-page :deep(.gc-brand__logo) { width:30px; height:30px; border-radius:0; background-color:transparent; background-size:100%; box-shadow:none; }

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import PageHeader from '../../components/PageHeader.vue'
 
 const loading = ref(true)
 const content = ref('')
@@ -22,12 +23,13 @@ onMounted(load)
 
 <template>
   <view class="gc-page authorization-page">
+    <PageHeader title="Personal Data Authorization" :back="true" />
     <view class="gc-card authorization-card"><text class="authorization-title">Personal Data Authorization</text><text class="tip">The latest version of the authorization terms is shown below.</text><text v-if="loading" class="copy">Loading authorization…</text><view v-else class="authorization-content"><text v-for="(item, index) in paragraphs" :key="index" class="copy">{{ item }}</text></view></view>
   </view>
 </template>
 
 <style scoped>
-.authorization-page { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:calc(40px + env(safe-area-inset-top)) 10px calc(32px + env(safe-area-inset-bottom)); }
+.authorization-page { width:min(100%,430px); min-height:100vh; margin:0 auto; padding:calc(24px + env(safe-area-inset-top)) 10px calc(32px + env(safe-area-inset-bottom)); }
 .authorization-card { padding:16px 14px 18px; }
 .authorization-title { display:block; font-size:22px; line-height:1.2; font-weight:700; }
 .tip,.copy { display:block; color:var(--gc-muted); font-size:12px; line-height:1.72; }
